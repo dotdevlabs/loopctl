@@ -1,0 +1,49 @@
+version: 2
+
+before:
+  hooks:
+    - go mod tidy
+
+builds:
+  - id: loopctl
+    main: ./cmd/loopctl
+    binary: loopctl
+    env:
+      - CGO_ENABLED=0
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+    ldflags:
+      - -s -w -X main.version={{.Version}}
+
+archives:
+  - id: loopctl
+    builds:
+      - loopctl
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+
+checksum:
+  name_template: "checksums.txt"
+
+release:
+  github:
+    owner: dotdevlabs
+    name: loopctl
+
+brews:
+  - name: loopctl
+    repository:
+      owner: dotdevlabs
+      name: homebrew-tap
+    homepage: https://github.com/dotdevlabs/loopctl
+    description: "CLI tool for managing the LoopControl platform"
+    install: bin.install "loopctl"
+    test: |
+      system "#{bin}/loopctl version"
