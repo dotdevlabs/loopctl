@@ -18,7 +18,11 @@ builds:
       - amd64
       - arm64
     ldflags:
-      - -s -w -X main.version={{.Version}}
+      - >-
+        -s -w
+        -X github.com/dotdevlabs/ctlkit/pkg/version.Version={{.Version}}
+        -X github.com/dotdevlabs/ctlkit/pkg/version.Commit={{.Commit}}
+        -X github.com/dotdevlabs/ctlkit/pkg/version.Date={{.Date}}
 
 archives:
   - id: loopctl
@@ -36,12 +40,17 @@ release:
   github:
     owner: dotdevlabs
     name: loopctl
+  extra_files:
+    - glob: scripts/install.sh
 
 brews:
   - name: loopctl
     repository:
       owner: dotdevlabs
       name: homebrew-tap
+    commit_author:
+      name: dotdevlabs-bot
+      email: bot@dotdevlabs.com
     homepage: https://github.com/dotdevlabs/loopctl
     description: "CLI tool for managing the LoopControl platform"
     install: bin.install "loopctl"
