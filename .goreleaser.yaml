@@ -26,7 +26,7 @@ builds:
 
 archives:
   - id: loopctl
-    builds:
+    ids:
       - loopctl
     name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
     format_overrides:
