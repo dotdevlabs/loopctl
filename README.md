@@ -277,7 +277,7 @@ go test ./... -race
 go test ./... -coverprofile=coverage.out && go tool cover -html=coverage.out
 ```
 
-**Private module access**: the shared `ctlkit` module is at `github.com/dotdevlabs/ctlkit` (private). Set these env vars when building outside CI:
+**Module proxy**: `ctlkit` (`github.com/dotdevlabs/ctlkit`) is a public GitHub repo but is not indexed by the public Go module proxy. Set these env vars when building outside CI so Go fetches it directly and skips the checksum database:
 
 ```bash
 export GONOSUMDB='github.com/dotdevlabs/*'
