@@ -3,6 +3,9 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
+export GONOSUMDB='github.com/dotdevlabs/*'
+export GOPRIVATE='github.com/dotdevlabs/*'
+
 echo "==> gofmt"
 GOFMT_OUT=$(gofmt -l .)
 if [ -n "$GOFMT_OUT" ]; then
@@ -19,6 +22,15 @@ golangci-lint run
 
 echo "==> go test"
 go test ./... -race -coverprofile=coverage.out -covermode=atomic
+
+echo "==> coverage gate"
+COVERAGE=$(go tool cover -func=coverage.out | grep '^total:' | awk '{print $3}' | tr -d '%')
+if awk "BEGIN {exit ($COVERAGE >= 70) ? 0 : 1}"; then
+  echo "Coverage: ${COVERAGE}% (OK)"
+else
+  echo "Coverage: ${COVERAGE}% (FAIL — minimum 70%)"
+  exit 1
+fi
 
 echo "==> go build"
 go build ./...
