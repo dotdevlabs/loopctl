@@ -82,19 +82,36 @@ loopctl projects get <id> --json
 
 #### projects create
 
-Create a new project.
+Create a new project. By default, bootstraps a brand-new GitHub repository under the configured organization. Pass `--repo` to link an existing repository instead.
 
 ```bash
-loopctl projects create --name <name> --platform-id <platform-id> [--repo <repo-url>]
+# Bootstrap a new repo (default path)
+loopctl projects create --name "Daybreak" --platform-id <platform-id>
+
+# Bootstrap with explicit pipeline and slug override
+loopctl projects create --name "Daybreak" --platform-id <platform-id> \
+  --pipeline-id <pipeline-id> --slug daybreak-v2
+
+# Link to an existing repository
+loopctl projects create --name "Daybreak" --platform-id <platform-id> \
+  --repo https://github.com/org/repo
 ```
 
 **Flags:**
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--name` | yes | Project name |
-| `--platform-id` | yes | Platform ID |
-| `--repo` | no | Repository URL |
+| Flag | Required | Default | Description |
+|------|----------|---------|-------------|
+| `--name` | yes | | Human/display name for the project |
+| `--platform-id` | yes | | Platform ID |
+| `--pipeline-id` | no | | Pipeline ID (sets the project's default pipeline) |
+| `--slug` | no | derived from `--name` | Repo slug override (lowercase letters/digits/hyphens, must start with a letter) |
+| `--organization` | no | `dotdevlabs` | GitHub organization for the new repo |
+| `--organization-type` | no | `Organization` | Organization type (`Organization` or `User`) |
+| `--repo` | no | | Existing repository URL; triggers existing-repo path instead of bootstrap |
+
+The slug is automatically derived from `--name`: lowercased, spaces/underscores converted to hyphens, non-alphanumeric characters stripped, leading digits/hyphens removed. Use `--slug` to override.
+
+On any API error (e.g. validation failure), the CLI prints the API's error messages rather than a bare HTTP status code.
 
 **API:** `POST /api/projects`
 
@@ -285,7 +302,7 @@ loopctl tasks list --project-id <project-id> --json
 ### Preview a write without making API calls
 
 ```bash
-loopctl projects create --name "test" --platform-id "pf1" --dry-run
+loopctl projects create --name "Daybreak" --platform-id "pf1" --dry-run
 loopctl tasks create --project-id p1 --kind bug --title "Fix it" --description "..." --dry-run
 ```
 
