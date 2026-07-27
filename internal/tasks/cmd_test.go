@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/dotdevlabs/ctlkit/pkg/ctxutil"
@@ -299,5 +300,238 @@ func TestTasksComments(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "A comment") {
 		t.Errorf("output missing comment body:\n%s", out.String())
+	}
+}
+
+func TestTasksWatch_Completion(t *testing.T) {
+	var taskCallIdx int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/tasks/t1":
+			n := atomic.AddInt32(&taskCallIdx, 1)
+			stages := []string{"planning", "implementing", "completed"}
+			idx := int(n) - 1
+			if idx >= len(stages) {
+				idx = len(stages) - 1
+			}
+			_, _ = fmt.Fprintf(w, `{"data":{"id":"t1","stage":%q,"pr_number":0}}`, stages[idx])
+		case "/api/tasks/t1/activities":
+			_, _ = fmt.Fprint(w, `{"activities":[]}`)
+		}
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := watchCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("interval", "10ms")
+
+	if err := cmd.RunE(cmd, []string{"t1"}); err != nil {
+		t.Fatalf("watch completion failed: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "stage=implementing") {
+		t.Errorf("expected stage=implementing in output:\n%s", got)
+	}
+	if !strings.Contains(got, "stage=completed") {
+		t.Errorf("expected stage=completed in output:\n%s", got)
+	}
+}
+
+func TestTasksWatch_AlreadyTerminal(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/tasks/t1":
+			_, _ = fmt.Fprint(w, `{"data":{"id":"t1","stage":"completed","pr_number":0}}`)
+		case "/api/tasks/t1/activities":
+			_, _ = fmt.Fprint(w, `{"activities":[]}`)
+		}
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := watchCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("interval", "10ms")
+
+	if err := cmd.RunE(cmd, []string{"t1"}); err != nil {
+		t.Fatalf("watch already-terminal failed: %v", err)
+	}
+	if !strings.Contains(out.String(), "stage=completed") {
+		t.Errorf("expected stage=completed in output:\n%s", out.String())
+	}
+}
+
+func TestTasksWatch_Rejected(t *testing.T) {
+	var taskCallIdx int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/tasks/t1":
+			n := atomic.AddInt32(&taskCallIdx, 1)
+			stages := []string{"planning", "rejected"}
+			idx := int(n) - 1
+			if idx >= len(stages) {
+				idx = len(stages) - 1
+			}
+			_, _ = fmt.Fprintf(w, `{"data":{"id":"t1","stage":%q,"pr_number":0}}`, stages[idx])
+		case "/api/tasks/t1/activities":
+			_, _ = fmt.Fprint(w, `{"activities":[]}`)
+		}
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := watchCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("interval", "10ms")
+
+	err := cmd.RunE(cmd, []string{"t1"})
+	if err == nil {
+		t.Fatal("expected non-nil error for rejected task")
+	}
+	if !strings.Contains(err.Error(), "task rejected") {
+		t.Errorf("expected 'task rejected' in error; got: %v", err)
+	}
+}
+
+func TestTasksWatch_ContainerError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/tasks/t1":
+			_, _ = fmt.Fprint(w, `{"data":{"id":"t1","stage":"implementing","pr_number":0}}`)
+		case "/api/tasks/t1/activities":
+			_, _ = fmt.Fprint(w, `{"activities":[{"id":"a1","action":"container.error","details":"OOM killed","created_at":"2026-01-01T00:00:00Z"}]}`)
+		}
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := watchCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("interval", "10ms")
+
+	err := cmd.RunE(cmd, []string{"t1"})
+	if err == nil {
+		t.Fatal("expected non-nil error for container.error")
+	}
+	if !strings.Contains(err.Error(), "container error") {
+		t.Errorf("expected 'container error' in error; got: %v", err)
+	}
+	if !strings.Contains(out.String(), "OOM killed") {
+		t.Errorf("expected detail 'OOM killed' in output:\n%s", out.String())
+	}
+}
+
+func TestTasksWatch_Timeout(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/tasks/t1":
+			_, _ = fmt.Fprint(w, `{"data":{"id":"t1","stage":"planning","pr_number":0}}`)
+		case "/api/tasks/t1/activities":
+			_, _ = fmt.Fprint(w, `{"activities":[]}`)
+		}
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := watchCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("interval", "10s")
+	_ = cmd.Flags().Set("timeout", "50ms")
+
+	err := cmd.RunE(cmd, []string{"t1"})
+	if err == nil {
+		t.Fatal("expected non-nil error for timeout")
+	}
+	if !strings.Contains(err.Error(), "timed out") {
+		t.Errorf("expected 'timed out' in error; got: %v", err)
+	}
+}
+
+func TestTasksWatch_JSONMode(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/tasks/t1":
+			_, _ = fmt.Fprint(w, `{"data":{"id":"t1","stage":"completed","pr_number":0}}`)
+		case "/api/tasks/t1/activities":
+			_, _ = fmt.Fprint(w, `{"activities":[]}`)
+		}
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", true, &out)
+
+	cmd := watchCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("interval", "10ms")
+
+	if err := cmd.RunE(cmd, []string{"t1"}); err != nil {
+		t.Fatalf("watch json mode failed: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, `"data"`) {
+		t.Errorf("expected JSON envelope with 'data' key:\n%s", got)
+	}
+	if !strings.Contains(got, `"t1"`) {
+		t.Errorf("expected task id in JSON output:\n%s", got)
+	}
+}
+
+func TestTasksWatch_ActivityLine(t *testing.T) {
+	var actCallIdx int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/tasks/t1":
+			_, _ = fmt.Fprint(w, `{"data":{"id":"t1","stage":"implementing","pr_number":0}}`)
+		case "/api/tasks/t1/activities":
+			n := atomic.AddInt32(&actCallIdx, 1)
+			if n == 1 {
+				_, _ = fmt.Fprint(w, `{"activities":[]}`)
+			} else {
+				_, _ = fmt.Fprint(w, `{"activities":[{"id":"a1","action":"container.provisioned","details":"","created_at":"2026-01-01T00:00:00Z"}]}`)
+			}
+		}
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := watchCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("interval", "10ms")
+	_ = cmd.Flags().Set("timeout", "500ms")
+
+	// Will time out since stage never reaches terminal — that's expected for this test.
+	_ = cmd.RunE(cmd, []string{"t1"})
+
+	got := out.String()
+	if !strings.Contains(got, "container.provisioned") {
+		t.Errorf("expected activity action in output:\n%s", got)
 	}
 }
