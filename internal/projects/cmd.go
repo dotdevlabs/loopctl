@@ -4,6 +4,7 @@ package projects
 import (
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -11,6 +12,8 @@ import (
 	"github.com/dotdevlabs/ctlkit/pkg/ctxutil"
 	"github.com/dotdevlabs/ctlkit/pkg/httpclient"
 	"github.com/dotdevlabs/ctlkit/pkg/output"
+
+	"github.com/dotdevlabs/loopctl/internal/apiclient"
 )
 
 // Project is the JSON representation returned by the LoopControl API.
@@ -92,11 +95,45 @@ func getCmd() *cobra.Command {
 	}
 }
 
+// slugFromName derives a slug from a human display name.
+// Spaces and underscores become hyphens; non-alphanumeric chars are stripped;
+// leading digits/hyphens are removed; consecutive hyphens are collapsed.
+func slugFromName(name string) (string, error) {
+	s := strings.ToLower(name)
+	s = strings.NewReplacer(" ", "-", "_", "-").Replace(s)
+
+	var b strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			b.WriteRune(r)
+		}
+	}
+	s = b.String()
+
+	s = strings.TrimLeft(s, "0123456789-")
+	s = strings.TrimRight(s, "-")
+
+	for strings.Contains(s, "--") {
+		s = strings.ReplaceAll(s, "--", "-")
+	}
+
+	if s == "" {
+		return "", clierror.New(clierror.CodeUsage,
+			"cannot derive a valid slug from the given name",
+			"use --slug to provide one explicitly (lowercase letters/digits/hyphens, must start with a letter)")
+	}
+	return s, nil
+}
+
 func createCmd() *cobra.Command {
 	var (
-		name       string
-		platformID string
-		repo       string
+		name             string
+		platformID       string
+		pipelineID       string
+		slug             string
+		organization     string
+		organizationType string
+		repo             string
 	)
 
 	cmd := &cobra.Command{
@@ -105,22 +142,61 @@ func createCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 
+			// Determine effective slug for new-repo path.
+			effectiveSlug := slug
+			if effectiveSlug == "" && repo == "" {
+				derived, err := slugFromName(name)
+				if err != nil {
+					return err
+				}
+				effectiveSlug = derived
+			}
+
 			if ctxutil.GlobalFlagsFrom(ctx).DryRun {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would POST /api/projects {name=%q platform_id=%q repo=%q}\n", name, platformID, repo)
+				if repo != "" {
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(),
+						"dry-run: would POST /api/projects {display_name=%q platform_id=%q repo=%q}\n",
+						name, platformID, repo)
+				} else {
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(),
+						"dry-run: would POST /api/projects {display_name=%q slug=%q platform_id=%q pipeline_id=%q organization=%q}\n",
+						name, effectiveSlug, platformID, pipelineID, organization)
+				}
 				return nil
 			}
 
-			client := ctxutil.ClientFrom(ctx)
+			activeCtx := ctxutil.ActiveContextFrom(ctx)
 			r := ctxutil.RendererFrom(ctx)
 
-			body := map[string]any{
-				"project": map[string]any{
-					"name":        name,
-					"platform_id": platformID,
-					"repo":        repo,
-				},
+			var body map[string]any
+			if repo != "" {
+				// Existing-repo path.
+				body = map[string]any{
+					"project": map[string]any{
+						"display_name": name,
+						"platform_id":  platformID,
+						"repo":         repo,
+					},
+				}
+			} else {
+				// Bootstrap/new-repo path.
+				proj := map[string]any{
+					"display_name": name,
+					"platform_id":  platformID,
+				}
+				if pipelineID != "" {
+					proj["pipeline_id"] = pipelineID
+				}
+				body = map[string]any{
+					"create_new_repo":   "true",
+					"new_repo_name":     effectiveSlug,
+					"organization":      organization,
+					"organization_type": organizationType,
+					"project":           proj,
+				}
 			}
-			env, err := httpclient.PostEnvelope[Project](ctx, client, "/api/projects", body)
+
+			env, err := apiclient.PostEnvelope[Project](ctx, activeCtx, "/api/projects", body)
 			if err != nil {
 				return err
 			}
@@ -141,9 +217,13 @@ func createCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&name, "name", "", "Project name")
+	cmd.Flags().StringVar(&name, "name", "", "Human/display name for the project")
 	cmd.Flags().StringVar(&platformID, "platform-id", "", "Platform ID")
-	cmd.Flags().StringVar(&repo, "repo", "", "Repository URL (optional)")
+	cmd.Flags().StringVar(&pipelineID, "pipeline-id", "", "Pipeline ID (sets the project's default pipeline)")
+	cmd.Flags().StringVar(&slug, "slug", "", "Override derived repo slug (lowercase letters/digits/hyphens, must start with a letter)")
+	cmd.Flags().StringVar(&organization, "organization", "dotdevlabs", "GitHub organization for the new repo")
+	cmd.Flags().StringVar(&organizationType, "organization-type", "Organization", "Organization type (Organization or User)")
+	cmd.Flags().StringVar(&repo, "repo", "", "Existing repository URL; triggers existing-repo path instead of bootstrap")
 
 	_ = cmd.MarkFlagRequired("name")
 	_ = cmd.MarkFlagRequired("platform-id")
