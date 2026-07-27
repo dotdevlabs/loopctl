@@ -61,5 +61,14 @@ func loopWorkflows() []airef.Workflow {
 				`loopctl tasks list --project-id <project-id> --json`,
 			},
 		},
+		{
+			Name:        "Watch a task to completion",
+			Description: "Stream stage transitions of a running task until it reaches a terminal state.",
+			Steps: []string{
+				`loopctl tasks watch <task-id>`,
+				`loopctl tasks watch <task-id> --interval 30s --timeout 60m`,
+				`loopctl tasks watch <task-id> --json`,
+			},
+		},
 	}
 }
