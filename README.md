@@ -187,6 +187,30 @@ loopctl tasks comments <id> --json
 
 **API:** `GET /api/tasks/:id/comments`
 
+#### tasks watch
+
+Follow a task to a terminal state, streaming stage and activity changes as they occur. Exits with code 0 when the task reaches `completed` or `reviewed`; exits non-zero on `rejected`, container error, or timeout.
+
+```bash
+loopctl tasks watch <id>
+loopctl tasks watch <id> --interval 30s --timeout 60m
+loopctl tasks watch <id> --json
+```
+
+**Flags:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--interval` | `15s` | Poll interval (e.g. `15s`, `1m`) |
+| `--timeout` | _(none)_ | Give up after this duration (e.g. `30m`); empty means no timeout |
+| `--json` | — | Emit final task state as a JSON envelope on exit |
+
+**Exit codes:**
+- `0` — task reached `completed` or `reviewed`
+- non-zero — task `rejected`, `container.error` activity received, timeout exceeded, or network error
+
+**APIs:** `GET /api/tasks/:id`, `GET /api/tasks/:id/activities`
+
 ---
 
 ### ai
@@ -232,7 +256,7 @@ loopctl version --json
 
 ## Common Workflows
 
-### Create a task and poll its status
+### Create a task and follow it to completion
 
 ```bash
 # Create the task
@@ -242,8 +266,14 @@ loopctl tasks create \
   --title "My task" \
   --description "Details"
 
-# Retrieve it to check status
-loopctl tasks get <task-id>
+# Stream stage transitions until the task completes (or fails)
+loopctl tasks watch <task-id>
+
+# Same with a 60-minute safety timeout and 30-second poll interval
+loopctl tasks watch <task-id> --interval 30s --timeout 60m
+
+# Emit final state as JSON (for scripting or agents)
+loopctl tasks watch <task-id> --json
 ```
 
 ### List a project's tasks as JSON (for scripting or agents)
