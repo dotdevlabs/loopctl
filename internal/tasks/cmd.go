@@ -12,11 +12,12 @@ import (
 	"github.com/dotdevlabs/ctlkit/pkg/ctxutil"
 	"github.com/dotdevlabs/ctlkit/pkg/httpclient"
 	"github.com/dotdevlabs/ctlkit/pkg/output"
+
+	"github.com/dotdevlabs/loopctl/internal/apiclient"
 )
 
-// Task is the JSON representation returned by the LoopControl API.
-type Task struct {
-	ID          string `json:"id"`
+// TaskAttrs holds the attributes nested under JSON:API data.attributes.
+type TaskAttrs struct {
 	ProjectID   string `json:"project_id"`
 	Kind        string `json:"kind"`
 	Title       string `json:"title"`
@@ -74,7 +75,7 @@ func listCmd() *cobra.Command {
 			r := ctxutil.RendererFrom(ctx)
 
 			path := "/api/tasks?project_id=" + url.QueryEscape(projectID)
-			env, err := httpclient.GetEnvelope[[]Task](ctx, client, path)
+			col, err := httpclient.GetJSONAPICollection[TaskAttrs](ctx, client, path)
 			if err != nil {
 				return err
 			}
@@ -83,13 +84,14 @@ func listCmd() *cobra.Command {
 				{Header: "ID"},
 				{Header: "KIND"},
 				{Header: "TITLE"},
+				{Header: "STAGE"},
 				{Header: "STATUS"},
 			}
-			rows := make([][]string, len(env.Data))
-			for i, t := range env.Data {
-				rows[i] = []string{t.ID, t.Kind, t.Title, t.Status}
+			rows := make([][]string, len(col.Data))
+			for i, t := range col.Data {
+				rows[i] = []string{t.ID, t.Attributes.Kind, t.Attributes.Title, t.Attributes.Stage, t.Attributes.Status}
 			}
-			return r.Render(cols, rows, env)
+			return r.Render(cols, rows, col)
 		},
 	}
 
@@ -109,20 +111,21 @@ func getCmd() *cobra.Command {
 			r := ctxutil.RendererFrom(ctx)
 
 			path := "/api/tasks/" + url.PathEscape(args[0])
-			env, err := httpclient.GetEnvelope[Task](ctx, client, path)
+			res, err := httpclient.GetJSONAPISingle[TaskAttrs](ctx, client, path)
 			if err != nil {
 				return err
 			}
 
-			t := env.Data
+			t := res.Attributes
 			cols := []output.Column{
 				{Header: "ID"},
 				{Header: "KIND"},
 				{Header: "TITLE"},
+				{Header: "STAGE"},
 				{Header: "STATUS"},
 			}
-			rows := [][]string{{t.ID, t.Kind, t.Title, t.Status}}
-			return r.Render(cols, rows, env)
+			rows := [][]string{{res.ID, t.Kind, t.Title, t.Stage, t.Status}}
+			return r.Render(cols, rows, res)
 		},
 	}
 }
@@ -159,20 +162,21 @@ func createCmd() *cobra.Command {
 					"description": description,
 				},
 			}
-			env, err := httpclient.PostEnvelope[Task](ctx, client, "/api/tasks", body)
+			res, err := httpclient.PostJSONAPISingle[TaskAttrs](ctx, client, "/api/tasks", body)
 			if err != nil {
 				return err
 			}
 
-			t := env.Data
+			t := res.Attributes
 			cols := []output.Column{
 				{Header: "ID"},
 				{Header: "KIND"},
 				{Header: "TITLE"},
+				{Header: "STAGE"},
 				{Header: "STATUS"},
 			}
-			rows := [][]string{{t.ID, t.Kind, t.Title, t.Status}}
-			return r.Render(cols, rows, env)
+			rows := [][]string{{res.ID, t.Kind, t.Title, t.Stage, t.Status}}
+			return r.Render(cols, rows, res)
 		},
 	}
 
@@ -223,26 +227,27 @@ func updateCmd() *cobra.Command {
 				return nil
 			}
 
-			client := ctxutil.ClientFrom(ctx)
+			activeCtx := ctxutil.ActiveContextFrom(ctx)
 			r := ctxutil.RendererFrom(ctx)
 
 			body := map[string]any{"task": patch}
 			path := "/api/tasks/" + url.PathEscape(args[0])
 
-			var env httpclient.Envelope[Task]
-			if err := client.Patch(ctx, path, body, &env); err != nil {
+			res, err := apiclient.PatchJSONAPISingle[TaskAttrs](ctx, activeCtx, path, body)
+			if err != nil {
 				return err
 			}
 
-			t := env.Data
+			t := res.Attributes
 			cols := []output.Column{
 				{Header: "ID"},
 				{Header: "KIND"},
 				{Header: "TITLE"},
+				{Header: "STAGE"},
 				{Header: "STATUS"},
 			}
-			rows := [][]string{{t.ID, t.Kind, t.Title, t.Status}}
-			return r.Render(cols, rows, env)
+			rows := [][]string{{res.ID, t.Kind, t.Title, t.Stage, t.Status}}
+			return r.Render(cols, rows, res)
 		},
 	}
 
@@ -317,15 +322,15 @@ func watchCmd() *cobra.Command {
 			var lastStage string
 			var lastPRNumber int
 			var lastActID string
-			var lastEnv httpclient.Envelope[Task]
+			var lastRes httpclient.Resource[TaskAttrs]
 
 			poll := func() (bool, error) {
-				var env httpclient.Envelope[Task]
-				if err := client.Get(ctx, taskPath, &env); err != nil {
+				res, err := httpclient.GetJSONAPISingle[TaskAttrs](ctx, client, taskPath)
+				if err != nil {
 					return false, err
 				}
-				lastEnv = env
-				t := env.Data
+				lastRes = res
+				t := res.Attributes
 
 				var actsResp activitiesResponse
 				if err := client.Get(ctx, activitiesPath, &actsResp); err != nil {
@@ -364,7 +369,7 @@ func watchCmd() *cobra.Command {
 					if !jsonMode {
 						_, _ = fmt.Fprintf(out, "container error detail: %s\n", newest.Details)
 					} else {
-						_ = output.JSONTo(out, lastEnv)
+						_ = output.JSONTo(out, lastRes)
 					}
 					return true, clierror.New(clierror.CodeServerError, "container error: "+newest.Details, "")
 				}
@@ -373,12 +378,12 @@ func watchCmd() *cobra.Command {
 				switch t.Stage {
 				case "completed", "reviewed":
 					if jsonMode {
-						_ = output.JSONTo(out, lastEnv)
+						_ = output.JSONTo(out, lastRes)
 					}
 					return true, nil
 				case "rejected":
 					if jsonMode {
-						_ = output.JSONTo(out, lastEnv)
+						_ = output.JSONTo(out, lastRes)
 					}
 					return true, clierror.New(clierror.CodeServerError, "task rejected", "")
 				}

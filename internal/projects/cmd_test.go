@@ -39,8 +39,11 @@ func TestProjectsList(t *testing.T) {
 		if r.Header.Get("Authorization") != "Bearer test-token" {
 			t.Errorf("missing/wrong auth header: %s", r.Header.Get("Authorization"))
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"data":[{"id":"p1","name":"Alpha","platform_id":"pf1","repo":"https://github.com/a/b"}]}`)
+		if r.Header.Get("Accept") != "application/vnd.api+json" {
+			t.Errorf("expected JSON:API Accept header; got: %s", r.Header.Get("Accept"))
+		}
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":[{"type":"projects","id":"p1","attributes":{"name":"Alpha","platform_id":"pf1","git_repo_url":"https://github.com/a/b"}}]}`)
 	}))
 	defer ts.Close()
 
@@ -65,8 +68,8 @@ func TestProjectsList(t *testing.T) {
 
 func TestProjectsListJSON(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"data":[{"id":"p1","name":"Alpha","platform_id":"pf1"}]}`)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":[{"type":"projects","id":"p1","attributes":{"name":"Alpha","platform_id":"pf1"}}]}`)
 	}))
 	defer ts.Close()
 
@@ -82,7 +85,7 @@ func TestProjectsListJSON(t *testing.T) {
 	}
 	got := out.String()
 	if !strings.Contains(got, `"data"`) {
-		t.Errorf("expected JSON envelope; got:\n%s", got)
+		t.Errorf("expected JSON collection envelope; got:\n%s", got)
 	}
 	if !strings.Contains(got, "Alpha") {
 		t.Errorf("expected project name in JSON; got:\n%s", got)
@@ -94,8 +97,8 @@ func TestProjectsGet(t *testing.T) {
 		if r.URL.Path != "/api/projects/p1" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"data":{"id":"p1","name":"Alpha","platform_id":"pf1"}}`)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"projects","id":"p1","attributes":{"name":"Alpha","platform_id":"pf1"}}}`)
 	}))
 	defer ts.Close()
 
@@ -116,8 +119,9 @@ func TestProjectsGet(t *testing.T) {
 
 func TestProjectsGet404(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
 		w.WriteHeader(http.StatusNotFound)
-		_, _ = fmt.Fprint(w, `{"message":"not found"}`)
+		_, _ = fmt.Fprint(w, `{"errors":[{"status":"404","detail":"not found"}]}`)
 	}))
 	defer ts.Close()
 
@@ -148,8 +152,8 @@ func TestProjectsCreateNewRepo(t *testing.T) {
 		}
 		b, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(b, &gotBody)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"data":{"id":"p99","name":"newproj","platform_id":"pf2"}}`)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"projects","id":"p99","attributes":{"name":"newproj","platform_id":"pf2"}}}`)
 	}))
 	defer ts.Close()
 
@@ -198,8 +202,8 @@ func TestProjectsCreateNewRepoWithPipelineID(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(b, &gotBody)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"data":{"id":"p100","name":"daybreak","platform_id":"pf1"}}`)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"projects","id":"p100","attributes":{"name":"daybreak","platform_id":"pf1"}}}`)
 	}))
 	defer ts.Close()
 
@@ -231,8 +235,8 @@ func TestProjectsCreateExistingRepo(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(b, &gotBody)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"data":{"id":"p88","name":"existing","platform_id":"pf3","repo":"https://github.com/dotdevlabs/existing"}}`)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"projects","id":"p88","attributes":{"name":"existing","platform_id":"pf3","git_repo_url":"https://github.com/dotdevlabs/existing"}}}`)
 	}))
 	defer ts.Close()
 
@@ -271,8 +275,8 @@ func TestProjectsCreateSlugOverride(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(b, &gotBody)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"data":{"id":"p77","name":"daybreak-v2","platform_id":"pf1"}}`)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"projects","id":"p77","attributes":{"name":"daybreak-v2","platform_id":"pf1"}}}`)
 	}))
 	defer ts.Close()
 
@@ -300,8 +304,8 @@ func TestProjectsCreateSlugDerivation(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		b, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(b, &gotBody)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"data":{"id":"p55","name":"hello-world","platform_id":"pf1"}}`)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"projects","id":"p55","attributes":{"name":"hello-world","platform_id":"pf1"}}}`)
 	}))
 	defer ts.Close()
 
@@ -325,8 +329,9 @@ func TestProjectsCreateSlugDerivation(t *testing.T) {
 
 func TestProjectsCreateAPIError(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
 		w.WriteHeader(http.StatusUnprocessableEntity)
-		_, _ = fmt.Fprint(w, `{"errors":["slug is taken"]}`)
+		_, _ = fmt.Fprint(w, `{"errors":[{"status":"422","detail":"slug is taken"}]}`)
 	}))
 	defer ts.Close()
 
@@ -350,8 +355,9 @@ func TestProjectsCreateAPIError(t *testing.T) {
 
 func TestProjectsCreate422Message(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
 		w.WriteHeader(http.StatusUnprocessableEntity)
-		_, _ = fmt.Fprint(w, `{"message":"bad request"}`)
+		_, _ = fmt.Fprint(w, `{"errors":[{"status":"422","detail":"bad request"}]}`)
 	}))
 	defer ts.Close()
 
