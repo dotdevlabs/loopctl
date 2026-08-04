@@ -11,6 +11,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/dotdevlabs/ctlkit/pkg/config"
 	"github.com/dotdevlabs/ctlkit/pkg/ctxutil"
 	"github.com/dotdevlabs/ctlkit/pkg/httpclient"
 	"github.com/dotdevlabs/ctlkit/pkg/output"
@@ -23,6 +24,7 @@ func makeCtx(t *testing.T, serverURL, token string, jsonMode bool, out io.Writer
 	ctx := ctxutil.WithClient(context.Background(), client)
 	ctx = ctxutil.WithRenderer(ctx, renderer)
 	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{JSON: jsonMode})
+	ctx = ctxutil.WithActiveContext(ctx, &config.Context{BaseURL: serverURL, Token: token})
 	return ctx
 }
 
@@ -40,8 +42,11 @@ func TestTasksList(t *testing.T) {
 		if r.Header.Get("Authorization") != "Bearer test-token" {
 			t.Errorf("missing/wrong auth: %s", r.Header.Get("Authorization"))
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"data":[{"id":"t1","project_id":"proj1","kind":"feature","title":"My Task","status":"open"}]}`)
+		if r.Header.Get("Accept") != "application/vnd.api+json" {
+			t.Errorf("expected JSON:API Accept header; got: %s", r.Header.Get("Accept"))
+		}
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":[{"type":"tasks","id":"t1","attributes":{"project_id":"proj1","kind":"feature","title":"My Task","stage":"planning","status":"open"}}]}`)
 	}))
 	defer ts.Close()
 
@@ -67,8 +72,8 @@ func TestTasksList(t *testing.T) {
 
 func TestTasksListJSON(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"data":[{"id":"t1","kind":"bug","title":"Bug Task","status":"open"}]}`)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":[{"type":"tasks","id":"t1","attributes":{"kind":"bug","title":"Bug Task","stage":"implementing","status":"open"}}]}`)
 	}))
 	defer ts.Close()
 
@@ -85,7 +90,7 @@ func TestTasksListJSON(t *testing.T) {
 	}
 	got := out.String()
 	if !strings.Contains(got, `"data"`) {
-		t.Errorf("expected JSON envelope; got:\n%s", got)
+		t.Errorf("expected JSON collection envelope; got:\n%s", got)
 	}
 	if !strings.Contains(got, "Bug Task") {
 		t.Errorf("expected task title in JSON; got:\n%s", got)
@@ -97,8 +102,8 @@ func TestTasksGet(t *testing.T) {
 		if r.URL.Path != "/api/tasks/t42" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"data":{"id":"t42","kind":"feature","title":"Feature Task","status":"open"}}`)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t42","attributes":{"kind":"feature","title":"Feature Task","stage":"planning","status":"open"}}}`)
 	}))
 	defer ts.Close()
 
@@ -119,8 +124,9 @@ func TestTasksGet(t *testing.T) {
 
 func TestTasksGet404(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
 		w.WriteHeader(http.StatusNotFound)
-		_, _ = fmt.Fprint(w, `{"message":"task not found"}`)
+		_, _ = fmt.Fprint(w, `{"errors":[{"status":"404","detail":"task not found"}]}`)
 	}))
 	defer ts.Close()
 
@@ -151,8 +157,8 @@ func TestTasksCreate(t *testing.T) {
 		}
 		b, _ := io.ReadAll(r.Body)
 		gotBody = string(b)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"data":{"id":"t99","project_id":"proj1","kind":"feature","title":"New Task","status":"open"}}`)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t99","attributes":{"project_id":"proj1","kind":"feature","title":"New Task","stage":"planning","status":"open"}}}`)
 	}))
 	defer ts.Close()
 
@@ -228,8 +234,8 @@ func TestTasksUpdate(t *testing.T) {
 		}
 		b, _ := io.ReadAll(r.Body)
 		gotBody = string(b)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"data":{"id":"t1","kind":"bug","title":"Updated Title","status":"open"}}`)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{"kind":"bug","title":"Updated Title","stage":"planning","status":"open"}}}`)
 	}))
 	defer ts.Close()
 
@@ -306,7 +312,7 @@ func TestTasksComments(t *testing.T) {
 func TestTasksWatch_Completion(t *testing.T) {
 	var taskCallIdx int32
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Type", "application/vnd.api+json")
 		switch r.URL.Path {
 		case "/api/tasks/t1":
 			n := atomic.AddInt32(&taskCallIdx, 1)
@@ -315,7 +321,7 @@ func TestTasksWatch_Completion(t *testing.T) {
 			if idx >= len(stages) {
 				idx = len(stages) - 1
 			}
-			_, _ = fmt.Fprintf(w, `{"data":{"id":"t1","stage":%q,"pr_number":0}}`, stages[idx])
+			_, _ = fmt.Fprintf(w, `{"data":{"type":"tasks","id":"t1","attributes":{"stage":%q,"pr_number":0}}}`, stages[idx])
 		case "/api/tasks/t1/activities":
 			_, _ = fmt.Fprint(w, `{"activities":[]}`)
 		}
@@ -344,10 +350,10 @@ func TestTasksWatch_Completion(t *testing.T) {
 
 func TestTasksWatch_AlreadyTerminal(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Type", "application/vnd.api+json")
 		switch r.URL.Path {
 		case "/api/tasks/t1":
-			_, _ = fmt.Fprint(w, `{"data":{"id":"t1","stage":"completed","pr_number":0}}`)
+			_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{"stage":"completed","pr_number":0}}}`)
 		case "/api/tasks/t1/activities":
 			_, _ = fmt.Fprint(w, `{"activities":[]}`)
 		}
@@ -373,7 +379,7 @@ func TestTasksWatch_AlreadyTerminal(t *testing.T) {
 func TestTasksWatch_Rejected(t *testing.T) {
 	var taskCallIdx int32
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Type", "application/vnd.api+json")
 		switch r.URL.Path {
 		case "/api/tasks/t1":
 			n := atomic.AddInt32(&taskCallIdx, 1)
@@ -382,7 +388,7 @@ func TestTasksWatch_Rejected(t *testing.T) {
 			if idx >= len(stages) {
 				idx = len(stages) - 1
 			}
-			_, _ = fmt.Fprintf(w, `{"data":{"id":"t1","stage":%q,"pr_number":0}}`, stages[idx])
+			_, _ = fmt.Fprintf(w, `{"data":{"type":"tasks","id":"t1","attributes":{"stage":%q,"pr_number":0}}}`, stages[idx])
 		case "/api/tasks/t1/activities":
 			_, _ = fmt.Fprint(w, `{"activities":[]}`)
 		}
@@ -408,10 +414,10 @@ func TestTasksWatch_Rejected(t *testing.T) {
 
 func TestTasksWatch_ContainerError(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Type", "application/vnd.api+json")
 		switch r.URL.Path {
 		case "/api/tasks/t1":
-			_, _ = fmt.Fprint(w, `{"data":{"id":"t1","stage":"implementing","pr_number":0}}`)
+			_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{"stage":"implementing","pr_number":0}}}`)
 		case "/api/tasks/t1/activities":
 			_, _ = fmt.Fprint(w, `{"activities":[{"id":"a1","action":"container.error","details":"OOM killed","created_at":"2026-01-01T00:00:00Z"}]}`)
 		}
@@ -440,10 +446,10 @@ func TestTasksWatch_ContainerError(t *testing.T) {
 
 func TestTasksWatch_Timeout(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Type", "application/vnd.api+json")
 		switch r.URL.Path {
 		case "/api/tasks/t1":
-			_, _ = fmt.Fprint(w, `{"data":{"id":"t1","stage":"planning","pr_number":0}}`)
+			_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{"stage":"planning","pr_number":0}}}`)
 		case "/api/tasks/t1/activities":
 			_, _ = fmt.Fprint(w, `{"activities":[]}`)
 		}
@@ -470,10 +476,10 @@ func TestTasksWatch_Timeout(t *testing.T) {
 
 func TestTasksWatch_JSONMode(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Type", "application/vnd.api+json")
 		switch r.URL.Path {
 		case "/api/tasks/t1":
-			_, _ = fmt.Fprint(w, `{"data":{"id":"t1","stage":"completed","pr_number":0}}`)
+			_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{"stage":"completed","pr_number":0}}}`)
 		case "/api/tasks/t1/activities":
 			_, _ = fmt.Fprint(w, `{"activities":[]}`)
 		}
@@ -492,8 +498,9 @@ func TestTasksWatch_JSONMode(t *testing.T) {
 		t.Fatalf("watch json mode failed: %v", err)
 	}
 	got := out.String()
-	if !strings.Contains(got, `"data"`) {
-		t.Errorf("expected JSON envelope with 'data' key:\n%s", got)
+	// Resource[TaskAttrs] serializes as {"id":"...","type":"...","attributes":{...}} — no "data" wrapper.
+	if !strings.Contains(got, `"id"`) {
+		t.Errorf("expected 'id' field in JSON output:\n%s", got)
 	}
 	if !strings.Contains(got, `"t1"`) {
 		t.Errorf("expected task id in JSON output:\n%s", got)
@@ -503,10 +510,10 @@ func TestTasksWatch_JSONMode(t *testing.T) {
 func TestTasksWatch_ActivityLine(t *testing.T) {
 	var actCallIdx int32
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Type", "application/vnd.api+json")
 		switch r.URL.Path {
 		case "/api/tasks/t1":
-			_, _ = fmt.Fprint(w, `{"data":{"id":"t1","stage":"implementing","pr_number":0}}`)
+			_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{"stage":"implementing","pr_number":0}}}`)
 		case "/api/tasks/t1/activities":
 			n := atomic.AddInt32(&actCallIdx, 1)
 			if n == 1 {

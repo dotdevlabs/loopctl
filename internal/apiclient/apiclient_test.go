@@ -140,3 +140,81 @@ func TestPostEnvelopeContextCancelled(t *testing.T) {
 		t.Errorf("expected context.Canceled; got: %v", err)
 	}
 }
+
+func TestPatchJSONAPISingleSuccess(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != "PATCH" {
+			t.Errorf("expected PATCH; got: %s", r.Method)
+		}
+		if r.Header.Get("Accept") != "application/vnd.api+json" {
+			t.Errorf("expected JSON:API Accept; got: %s", r.Header.Get("Accept"))
+		}
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"items","id":"42","attributes":{"value":"patched"}}}`)
+	}))
+	defer ts.Close()
+
+	res, err := apiclient.PatchJSONAPISingle[testData](context.Background(), activeCtx(t, ts.URL), "/api/test/42", map[string]string{"value": "patched"})
+	if err != nil {
+		t.Fatalf("expected no error; got: %v", err)
+	}
+	if res.ID != "42" {
+		t.Errorf("expected ID=42; got: %q", res.ID)
+	}
+	if res.Attributes.Value != "patched" {
+		t.Errorf("expected value=patched; got: %q", res.Attributes.Value)
+	}
+}
+
+func TestPatchJSONAPISingleJSONAPIErrors(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = fmt.Fprint(w, `{"errors":[{"status":"422","detail":"value is invalid"}]}`)
+	}))
+	defer ts.Close()
+
+	_, err := apiclient.PatchJSONAPISingle[testData](context.Background(), activeCtx(t, ts.URL), "/api/test/1", nil)
+	if err == nil {
+		t.Fatal("expected error on 422")
+	}
+	if !strings.Contains(err.Error(), "value is invalid") {
+		t.Errorf("expected 'value is invalid' in error; got: %v", err)
+	}
+}
+
+func TestPatchJSONAPISingle404(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = fmt.Fprint(w, `{"errors":[{"status":"404","detail":"not found"}]}`)
+	}))
+	defer ts.Close()
+
+	_, err := apiclient.PatchJSONAPISingle[testData](context.Background(), activeCtx(t, ts.URL), "/api/test/999", nil)
+	if err == nil {
+		t.Fatal("expected error on 404")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("expected 'not found' in error; got: %v", err)
+	}
+}
+
+func TestPatchJSONAPISingleContextCancelled(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"items","id":"1","attributes":{"value":"ok"}}}`)
+	}))
+	defer ts.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := apiclient.PatchJSONAPISingle[testData](ctx, activeCtx(t, ts.URL), "/api/test/1", nil)
+	if err == nil {
+		t.Fatal("expected error for cancelled context")
+	}
+	if err != context.Canceled {
+		t.Errorf("expected context.Canceled; got: %v", err)
+	}
+}

@@ -1,5 +1,4 @@
-// Package apiclient provides an HTTP POST helper that surfaces the full API
-// error body (including the errors[] array) on non-2xx responses.
+// Package apiclient provides HTTP helpers that surface full API error bodies on non-2xx responses.
 package apiclient
 
 import (
@@ -70,6 +69,118 @@ func PostEnvelope[T any](ctx context.Context, activeCtx *config.Context, path st
 		extractAPIError(respBody, resp.StatusCode),
 		"",
 	)
+}
+
+// PatchJSONAPISingle PATCHes path with a JSON body and decodes the JSON:API single-resource response.
+// On non-2xx it extracts JSON:API errors[].detail/title and returns a CLIError.
+func PatchJSONAPISingle[T any](ctx context.Context, activeCtx *config.Context, path string, body any) (httpclient.Resource[T], error) {
+	b, err := json.Marshal(body)
+	if err != nil {
+		return httpclient.Resource[T]{}, fmt.Errorf("encoding request body: %w", err)
+	}
+
+	url := strings.TrimRight(activeCtx.BaseURL, "/") + path
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, url, bytes.NewReader(b))
+	if err != nil {
+		return httpclient.Resource[T]{}, fmt.Errorf("building request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/vnd.api+json")
+	req.Header.Set("Authorization", "Bearer "+activeCtx.Token)
+	req.Header.Set("Accept", "application/vnd.api+json")
+	req.Header.Set("User-Agent", browserUserAgent)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		if ctx.Err() != nil {
+			return httpclient.Resource[T]{}, ctx.Err()
+		}
+		return httpclient.Resource[T]{}, fmt.Errorf("request failed: %w", err)
+	}
+
+	respBody, readErr := io.ReadAll(resp.Body)
+	if closeErr := resp.Body.Close(); closeErr != nil {
+		return httpclient.Resource[T]{}, fmt.Errorf("closing response body: %w", closeErr)
+	}
+	if readErr != nil {
+		return httpclient.Resource[T]{}, fmt.Errorf("reading response: %w", readErr)
+	}
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		type patchRawResource struct {
+			ID         string          `json:"id"`
+			Type       string          `json:"type"`
+			Attributes json.RawMessage `json:"attributes"`
+		}
+		type patchRawDoc struct {
+			Data   patchRawResource  `json:"data"`
+			Errors []jsonAPIErrEntry `json:"errors"`
+		}
+		var doc patchRawDoc
+		if len(respBody) > 0 {
+			if err := json.Unmarshal(respBody, &doc); err != nil {
+				return httpclient.Resource[T]{}, fmt.Errorf("decoding response: %w", err)
+			}
+		}
+		if len(doc.Errors) > 0 {
+			return httpclient.Resource[T]{}, extractJSONAPIError(doc.Errors)
+		}
+		res := httpclient.Resource[T]{ID: doc.Data.ID, Type: doc.Data.Type}
+		if len(doc.Data.Attributes) > 0 {
+			if err := json.Unmarshal(doc.Data.Attributes, &res.Attributes); err != nil {
+				return httpclient.Resource[T]{}, fmt.Errorf("decoding attributes: %w", err)
+			}
+		}
+		return res, nil
+	}
+
+	return httpclient.Resource[T]{}, clierror.New(
+		statusToCode(resp.StatusCode),
+		extractJSONAPIOrFlatError(respBody, resp.StatusCode),
+		"",
+	)
+}
+
+type jsonAPIErrEntry struct {
+	Status string `json:"status"`
+	Title  string `json:"title"`
+	Detail string `json:"detail"`
+}
+
+func extractJSONAPIError(errs []jsonAPIErrEntry) error {
+	parts := make([]string, 0, len(errs))
+	for _, e := range errs {
+		if e.Detail != "" {
+			parts = append(parts, e.Detail)
+		} else if e.Title != "" {
+			parts = append(parts, e.Title)
+		}
+	}
+	if len(parts) == 0 {
+		return clierror.New(clierror.CodeServerError, "JSON:API error", "")
+	}
+	return clierror.New(clierror.CodeBadRequest, strings.Join(parts, "; "), "")
+}
+
+func extractJSONAPIOrFlatError(body []byte, status int) string {
+	if len(body) > 0 {
+		var errDoc struct {
+			Errors []jsonAPIErrEntry `json:"errors"`
+		}
+		if json.Unmarshal(body, &errDoc) == nil && len(errDoc.Errors) > 0 {
+			parts := make([]string, 0, len(errDoc.Errors))
+			for _, e := range errDoc.Errors {
+				if e.Detail != "" {
+					parts = append(parts, e.Detail)
+				} else if e.Title != "" {
+					parts = append(parts, e.Title)
+				}
+			}
+			if len(parts) > 0 {
+				return strings.Join(parts, "; ")
+			}
+		}
+	}
+	return fmt.Sprintf("HTTP %d", status)
 }
 
 func extractAPIError(body []byte, status int) string {

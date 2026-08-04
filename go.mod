@@ -3,7 +3,7 @@ module github.com/dotdevlabs/loopctl
 go 1.24.5
 
 require (
-	github.com/dotdevlabs/ctlkit v0.0.0-20260721210909-c3e7b5479e1e
+	github.com/dotdevlabs/ctlkit v0.0.0-20260728082306-4d26d6e2c11d
 	github.com/spf13/cobra v1.10.2
 )
 

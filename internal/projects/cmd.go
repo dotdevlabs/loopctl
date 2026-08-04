@@ -12,17 +12,15 @@ import (
 	"github.com/dotdevlabs/ctlkit/pkg/ctxutil"
 	"github.com/dotdevlabs/ctlkit/pkg/httpclient"
 	"github.com/dotdevlabs/ctlkit/pkg/output"
-
-	"github.com/dotdevlabs/loopctl/internal/apiclient"
 )
 
-// Project is the JSON representation returned by the LoopControl API.
-type Project struct {
-	ID         string `json:"id"`
-	Name       string `json:"name"`
-	PlatformID string `json:"platform_id"`
-	Repo       string `json:"repo,omitempty"`
-	CreatedAt  string `json:"created_at"`
+// ProjectAttrs holds the attributes nested under JSON:API data.attributes.
+type ProjectAttrs struct {
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name"`
+	PlatformID  string `json:"platform_id"`
+	GitRepoURL  string `json:"git_repo_url"`
+	CreatedAt   string `json:"created_at"`
 }
 
 // NewCmd returns the "projects" parent command with all verb subcommands.
@@ -46,7 +44,7 @@ func listCmd() *cobra.Command {
 			client := ctxutil.ClientFrom(ctx)
 			r := ctxutil.RendererFrom(ctx)
 
-			env, err := httpclient.GetEnvelope[[]Project](ctx, client, "/api/projects")
+			col, err := httpclient.GetJSONAPICollection[ProjectAttrs](ctx, client, "/api/projects")
 			if err != nil {
 				return err
 			}
@@ -57,11 +55,11 @@ func listCmd() *cobra.Command {
 				{Header: "PLATFORM"},
 				{Header: "REPO"},
 			}
-			rows := make([][]string, len(env.Data))
-			for i, p := range env.Data {
-				rows[i] = []string{p.ID, p.Name, p.PlatformID, p.Repo}
+			rows := make([][]string, len(col.Data))
+			for i, p := range col.Data {
+				rows[i] = []string{p.ID, p.Attributes.Name, p.Attributes.PlatformID, p.Attributes.GitRepoURL}
 			}
-			return r.Render(cols, rows, env)
+			return r.Render(cols, rows, col)
 		},
 	}
 }
@@ -77,20 +75,19 @@ func getCmd() *cobra.Command {
 			r := ctxutil.RendererFrom(ctx)
 
 			path := "/api/projects/" + url.PathEscape(args[0])
-			env, err := httpclient.GetEnvelope[Project](ctx, client, path)
+			res, err := httpclient.GetJSONAPISingle[ProjectAttrs](ctx, client, path)
 			if err != nil {
 				return err
 			}
 
-			p := env.Data
 			cols := []output.Column{
 				{Header: "ID"},
 				{Header: "NAME"},
 				{Header: "PLATFORM"},
 				{Header: "REPO"},
 			}
-			rows := [][]string{{p.ID, p.Name, p.PlatformID, p.Repo}}
-			return r.Render(cols, rows, env)
+			rows := [][]string{{res.ID, res.Attributes.Name, res.Attributes.PlatformID, res.Attributes.GitRepoURL}}
+			return r.Render(cols, rows, res)
 		},
 	}
 }
@@ -165,7 +162,7 @@ func createCmd() *cobra.Command {
 				return nil
 			}
 
-			activeCtx := ctxutil.ActiveContextFrom(ctx)
+			client := ctxutil.ClientFrom(ctx)
 			r := ctxutil.RendererFrom(ctx)
 
 			var body map[string]any
@@ -196,13 +193,12 @@ func createCmd() *cobra.Command {
 				}
 			}
 
-			env, err := apiclient.PostEnvelope[Project](ctx, activeCtx, "/api/projects", body)
+			res, err := httpclient.PostJSONAPISingle[ProjectAttrs](ctx, client, "/api/projects", body)
 			if err != nil {
 				return err
 			}
 
-			p := env.Data
-			if p.ID == "" {
+			if res.ID == "" {
 				return clierror.New(clierror.CodeServerError, "project created but no ID returned", "")
 			}
 
@@ -212,8 +208,8 @@ func createCmd() *cobra.Command {
 				{Header: "PLATFORM"},
 				{Header: "REPO"},
 			}
-			rows := [][]string{{p.ID, p.Name, p.PlatformID, p.Repo}}
-			return r.Render(cols, rows, env)
+			rows := [][]string{{res.ID, res.Attributes.Name, res.Attributes.PlatformID, res.Attributes.GitRepoURL}}
+			return r.Render(cols, rows, res)
 		},
 	}
 
