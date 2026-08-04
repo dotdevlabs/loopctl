@@ -123,7 +123,7 @@ Manage LoopControl tasks.
 
 #### tasks list
 
-List tasks for a project.
+List tasks for a project. Output columns: `ID`, `KIND`, `TITLE`, `STAGE`, `STATUS`.
 
 ```bash
 loopctl tasks list --project-id <project-id>
@@ -140,7 +140,7 @@ loopctl tasks list --project-id <project-id> --json
 
 #### tasks get
 
-Get a task by ID.
+Get a task by ID. Output columns: `ID`, `KIND`, `TITLE`, `STAGE`, `STATUS`.
 
 ```bash
 loopctl tasks get <id>
@@ -151,7 +151,7 @@ loopctl tasks get <id> --json
 
 #### tasks create
 
-Create a new task.
+Create a new task. Output columns: `ID`, `KIND`, `TITLE`, `STAGE`, `STATUS`.
 
 ```bash
 loopctl tasks create \
@@ -174,7 +174,7 @@ loopctl tasks create \
 
 #### tasks update
 
-Update an existing task. Only the flags you provide are changed.
+Update an existing task. Only the flags you provide are changed. Output columns: `ID`, `KIND`, `TITLE`, `STAGE`, `STATUS`.
 
 ```bash
 loopctl tasks update <id> --title "New title"
@@ -220,7 +220,7 @@ loopctl tasks watch <id> --json
 |------|---------|-------------|
 | `--interval` | `15s` | Poll interval (e.g. `15s`, `1m`) |
 | `--timeout` | _(none)_ | Give up after this duration (e.g. `30m`); empty means no timeout |
-| `--json` | — | Emit final task state as a JSON envelope on exit |
+| `--json` | — | Emit final task state as a JSON:API resource on exit (`{"id":"...","type":"tasks","attributes":{...}}`) |
 
 **Exit codes:**
 - `0` — task reached `completed` or `reviewed`
