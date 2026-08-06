@@ -542,3 +542,77 @@ func TestTasksWatch_ActivityLine(t *testing.T) {
 		t.Errorf("expected activity action in output:\n%s", got)
 	}
 }
+
+// TestGetJSONAPISingle_ContentNegotiation_AttributesPopulated verifies that
+// httpclient.GetJSONAPISingle sends Accept: application/vnd.api+json and that
+// the decoded resource has its non-id attributes fully populated.
+// The test server only returns a full JSON:API document when the correct
+// Accept header is present; otherwise it returns a flat body with no attributes.
+// This test would have FAILED against the old ctlkit (which omitted the header)
+// and PASSES after the bump.
+func TestGetJSONAPISingle_ContentNegotiation_AttributesPopulated(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Accept") == "application/vnd.api+json" {
+			w.Header().Set("Content-Type", "application/vnd.api+json")
+			fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{"kind":"feature","title":"My Feature Task","stage":"planning","status":"open"}}}`)
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"id":"t1"}`)
+		}
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := getCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	if err := cmd.RunE(cmd, []string{"t1"}); err != nil {
+		t.Fatalf("expected no error; got: %v", err)
+	}
+
+	if !strings.Contains(out.String(), "My Feature Task") {
+		t.Errorf("Attributes.Title not decoded — content negotiation broken (Accept header not set to application/vnd.api+json). Output:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "feature") {
+		t.Errorf("Attributes.Kind not decoded. Output:\n%s", out.String())
+	}
+}
+
+// TestGetJSONAPICollection_ContentNegotiation_AttributesPopulated verifies that
+// httpclient.GetJSONAPICollection sends Accept: application/vnd.api+json and that
+// the decoded collection resources have their non-id attributes fully populated.
+// This test would have FAILED against the old ctlkit and PASSES after the bump.
+func TestGetJSONAPICollection_ContentNegotiation_AttributesPopulated(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Accept") == "application/vnd.api+json" {
+			w.Header().Set("Content-Type", "application/vnd.api+json")
+			fmt.Fprint(w, `{"data":[{"type":"tasks","id":"t2","attributes":{"kind":"bug","title":"Regression Fix","stage":"implementing","status":"open"}}]}`)
+		} else {
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"data":[{"id":"t2"}]}`)
+		}
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := listCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("project-id", "proj1")
+
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("expected no error; got: %v", err)
+	}
+
+	if !strings.Contains(out.String(), "Regression Fix") {
+		t.Errorf("Attributes.Title not decoded — content negotiation broken. Output:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "implementing") {
+		t.Errorf("Attributes.Stage not decoded. Output:\n%s", out.String())
+	}
+}
