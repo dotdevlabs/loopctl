@@ -218,3 +218,290 @@ func TestPatchJSONAPISingleContextCancelled(t *testing.T) {
 		t.Errorf("expected context.Canceled; got: %v", err)
 	}
 }
+
+func TestGetJSONAPISingleSuccess(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Errorf("expected GET; got: %s", r.Method)
+		}
+		if r.Header.Get("Accept") != "application/vnd.api+json" {
+			t.Errorf("expected JSON:API Accept; got: %s", r.Header.Get("Accept"))
+		}
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"items","id":"7","attributes":{"value":"found"}}}`)
+	}))
+	defer ts.Close()
+
+	res, err := apiclient.GetJSONAPISingle[testData](context.Background(), activeCtx(t, ts.URL), "/api/test/7")
+	if err != nil {
+		t.Fatalf("expected no error; got: %v", err)
+	}
+	if res.ID != "7" {
+		t.Errorf("expected ID=7; got: %q", res.ID)
+	}
+	if res.Attributes.Value != "found" {
+		t.Errorf("expected value=found; got: %q", res.Attributes.Value)
+	}
+}
+
+func TestGetJSONAPISingleNotFound(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = fmt.Fprint(w, `{"errors":[{"status":"404","detail":"record not found"}]}`)
+	}))
+	defer ts.Close()
+
+	_, err := apiclient.GetJSONAPISingle[testData](context.Background(), activeCtx(t, ts.URL), "/api/test/99")
+	if err == nil {
+		t.Fatal("expected error on 404")
+	}
+	if !strings.Contains(err.Error(), "record not found") {
+		t.Errorf("expected 'record not found' in error; got: %v", err)
+	}
+}
+
+func TestGetJSONAPISingleBareStatus(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer ts.Close()
+
+	_, err := apiclient.GetJSONAPISingle[testData](context.Background(), activeCtx(t, ts.URL), "/api/test/1")
+	if err == nil {
+		t.Fatal("expected error on 500")
+	}
+	if !strings.Contains(err.Error(), "HTTP 500") {
+		t.Errorf("expected 'HTTP 500' in error; got: %v", err)
+	}
+}
+
+func TestGetJSONAPICollectionSuccess(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Accept") != "application/vnd.api+json" {
+			t.Errorf("expected JSON:API Accept; got: %s", r.Header.Get("Accept"))
+		}
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":[{"type":"items","id":"1","attributes":{"value":"first"}},{"type":"items","id":"2","attributes":{"value":"second"}}]}`)
+	}))
+	defer ts.Close()
+
+	col, err := apiclient.GetJSONAPICollection[testData](context.Background(), activeCtx(t, ts.URL), "/api/test")
+	if err != nil {
+		t.Fatalf("expected no error; got: %v", err)
+	}
+	if len(col.Data) != 2 {
+		t.Fatalf("expected 2 items; got: %d", len(col.Data))
+	}
+	if col.Data[0].ID != "1" || col.Data[0].Attributes.Value != "first" {
+		t.Errorf("first item wrong; got id=%q value=%q", col.Data[0].ID, col.Data[0].Attributes.Value)
+	}
+	if col.Data[1].ID != "2" || col.Data[1].Attributes.Value != "second" {
+		t.Errorf("second item wrong; got id=%q value=%q", col.Data[1].ID, col.Data[1].Attributes.Value)
+	}
+}
+
+func TestGetJSONAPICollectionError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = fmt.Fprint(w, `{"errors":[{"status":"403","detail":"access denied"}]}`)
+	}))
+	defer ts.Close()
+
+	_, err := apiclient.GetJSONAPICollection[testData](context.Background(), activeCtx(t, ts.URL), "/api/test")
+	if err == nil {
+		t.Fatal("expected error on 403")
+	}
+	if !strings.Contains(err.Error(), "access denied") {
+		t.Errorf("expected 'access denied' in error; got: %v", err)
+	}
+}
+
+func TestGetEnvelopeSuccess(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Accept") != "application/json" {
+			t.Errorf("expected application/json Accept; got: %s", r.Header.Get("Accept"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"data":{"value":"envelope-val"}}`)
+	}))
+	defer ts.Close()
+
+	env, err := apiclient.GetEnvelope[testData](context.Background(), activeCtx(t, ts.URL), "/api/test")
+	if err != nil {
+		t.Fatalf("expected no error; got: %v", err)
+	}
+	if env.Data.Value != "envelope-val" {
+		t.Errorf("expected value=envelope-val; got: %q", env.Data.Value)
+	}
+}
+
+func TestGetEnvelopeError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = fmt.Fprint(w, `{"message":"token expired"}`)
+	}))
+	defer ts.Close()
+
+	_, err := apiclient.GetEnvelope[testData](context.Background(), activeCtx(t, ts.URL), "/api/test")
+	if err == nil {
+		t.Fatal("expected error on 401")
+	}
+	if !strings.Contains(err.Error(), "token expired") {
+		t.Errorf("expected 'token expired' in error; got: %v", err)
+	}
+}
+
+func TestGetJSONSuccess(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Accept") != "application/json" {
+			t.Errorf("expected application/json Accept; got: %s", r.Header.Get("Accept"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"value":"direct"}`)
+	}))
+	defer ts.Close()
+
+	result, err := apiclient.GetJSON[testData](context.Background(), activeCtx(t, ts.URL), "/api/test")
+	if err != nil {
+		t.Fatalf("expected no error; got: %v", err)
+	}
+	if result.Value != "direct" {
+		t.Errorf("expected value=direct; got: %q", result.Value)
+	}
+}
+
+func TestGetJSONError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = fmt.Fprint(w, `{"error":"invalid param"}`)
+	}))
+	defer ts.Close()
+
+	_, err := apiclient.GetJSON[testData](context.Background(), activeCtx(t, ts.URL), "/api/test")
+	if err == nil {
+		t.Fatal("expected error on 400")
+	}
+	if !strings.Contains(err.Error(), "invalid param") {
+		t.Errorf("expected 'invalid param' in error; got: %v", err)
+	}
+}
+
+func TestPostJSONAPISingleSuccess(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST; got: %s", r.Method)
+		}
+		if r.Header.Get("Accept") != "application/vnd.api+json" {
+			t.Errorf("expected JSON:API Accept; got: %s", r.Header.Get("Accept"))
+		}
+		if r.Header.Get("Content-Type") != "application/vnd.api+json" {
+			t.Errorf("expected JSON:API Content-Type; got: %s", r.Header.Get("Content-Type"))
+		}
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = fmt.Fprint(w, `{"data":{"type":"items","id":"new1","attributes":{"value":"created"}}}`)
+	}))
+	defer ts.Close()
+
+	res, err := apiclient.PostJSONAPISingle[testData](context.Background(), activeCtx(t, ts.URL), "/api/test", map[string]string{"value": "x"})
+	if err != nil {
+		t.Fatalf("expected no error; got: %v", err)
+	}
+	if res.ID != "new1" {
+		t.Errorf("expected ID=new1; got: %q", res.ID)
+	}
+	if res.Attributes.Value != "created" {
+		t.Errorf("expected value=created; got: %q", res.Attributes.Value)
+	}
+}
+
+func TestPostJSONAPISingleError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = fmt.Fprint(w, `{"errors":[{"status":"422","detail":"title can't be blank"}]}`)
+	}))
+	defer ts.Close()
+
+	_, err := apiclient.PostJSONAPISingle[testData](context.Background(), activeCtx(t, ts.URL), "/api/test", nil)
+	if err == nil {
+		t.Fatal("expected error on 422")
+	}
+	if !strings.Contains(err.Error(), "title can't be blank") {
+		t.Errorf("expected 'title can't be blank' in error; got: %v", err)
+	}
+}
+
+func TestPostJSONAPISingleErrorFlatJSON(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = fmt.Fprint(w, `{"error":"unsupported format"}`)
+	}))
+	defer ts.Close()
+
+	_, err := apiclient.PostJSONAPISingle[testData](context.Background(), activeCtx(t, ts.URL), "/api/test", nil)
+	if err == nil {
+		t.Fatal("expected error on 400")
+	}
+	// flat error body: falls back to HTTP 400 since JSON:API parser finds no errors array
+	if !strings.Contains(err.Error(), "HTTP 400") {
+		t.Errorf("expected 'HTTP 400' fallback in error for flat body; got: %v", err)
+	}
+}
+
+func TestVerboseLogging(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = fmt.Fprint(w, `{"errors":[{"status":"422","detail":"title is required"}]}`)
+	}))
+	defer ts.Close()
+
+	var verboseBuf strings.Builder
+	ctx := apiclient.WithVerbose(context.Background(), &verboseBuf)
+
+	_, err := apiclient.PostEnvelope[testData](ctx, activeCtx(t, ts.URL), "/api/test", nil)
+	if err == nil {
+		t.Fatal("expected error on 422")
+	}
+
+	verbose := verboseBuf.String()
+	if !strings.Contains(verbose, "POST") {
+		t.Errorf("expected POST in verbose output; got: %q", verbose)
+	}
+	if !strings.Contains(verbose, "/api/test") {
+		t.Errorf("expected /api/test in verbose output; got: %q", verbose)
+	}
+	if !strings.Contains(verbose, "422") {
+		t.Errorf("expected 422 in verbose output; got: %q", verbose)
+	}
+	if !strings.Contains(verbose, "title is required") {
+		t.Errorf("expected error body in verbose output; got: %q", verbose)
+	}
+}
+
+func TestVerboseLoggingGetJSONAPISingle(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"items","id":"5","attributes":{"value":"ok"}}}`)
+	}))
+	defer ts.Close()
+
+	var verboseBuf strings.Builder
+	ctx := apiclient.WithVerbose(context.Background(), &verboseBuf)
+
+	_, err := apiclient.GetJSONAPISingle[testData](ctx, activeCtx(t, ts.URL), "/api/test/5")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	verbose := verboseBuf.String()
+	if !strings.Contains(verbose, "GET") {
+		t.Errorf("expected GET in verbose output; got: %q", verbose)
+	}
+	if !strings.Contains(verbose, "200") {
+		t.Errorf("expected 200 in verbose output; got: %q", verbose)
+	}
+	if !strings.Contains(verbose, "/api/test/5") {
+		t.Errorf("expected path in verbose output; got: %q", verbose)
+	}
+}

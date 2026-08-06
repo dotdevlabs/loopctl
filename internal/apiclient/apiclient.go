@@ -19,6 +19,323 @@ import (
 const browserUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) " +
 	"AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
+type contextKey int
+
+const verboseKey contextKey = 1
+
+// WithVerbose stores w in ctx so that subsequent requests log to it.
+func WithVerbose(ctx context.Context, w io.Writer) context.Context {
+	return context.WithValue(ctx, verboseKey, w)
+}
+
+func verboseFrom(ctx context.Context) io.Writer {
+	w, _ := ctx.Value(verboseKey).(io.Writer)
+	return w
+}
+
+func logVerbose(w io.Writer, method, url string, status int, body []byte) {
+	if w == nil {
+		return
+	}
+	fmt.Fprintf(w, "> %s %s\n", method, url)
+	fmt.Fprintf(w, "< %d %s\n", status, http.StatusText(status))
+	if len(body) > 0 {
+		fmt.Fprintf(w, "%s\n", body)
+	}
+}
+
+// rawResource is used to decode a JSON:API resource with deferred attribute parsing.
+type rawResource struct {
+	ID         string          `json:"id"`
+	Type       string          `json:"type"`
+	Attributes json.RawMessage `json:"attributes"`
+}
+
+// GetJSONAPISingle GETs path and decodes the JSON:API single-resource response.
+// On non-2xx it extracts the human-readable error and returns a CLIError.
+func GetJSONAPISingle[T any](ctx context.Context, activeCtx *config.Context, path string) (httpclient.Resource[T], error) {
+	url := strings.TrimRight(activeCtx.BaseURL, "/") + path
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return httpclient.Resource[T]{}, fmt.Errorf("building request: %w", err)
+	}
+	req.Header.Set("Accept", "application/vnd.api+json")
+	req.Header.Set("Authorization", "Bearer "+activeCtx.Token)
+	req.Header.Set("User-Agent", browserUserAgent)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		if ctx.Err() != nil {
+			return httpclient.Resource[T]{}, ctx.Err()
+		}
+		return httpclient.Resource[T]{}, fmt.Errorf("request failed: %w", err)
+	}
+
+	respBody, readErr := io.ReadAll(resp.Body)
+	if closeErr := resp.Body.Close(); closeErr != nil {
+		return httpclient.Resource[T]{}, fmt.Errorf("closing response body: %w", closeErr)
+	}
+	if readErr != nil {
+		return httpclient.Resource[T]{}, fmt.Errorf("reading response: %w", readErr)
+	}
+
+	logVerbose(verboseFrom(ctx), http.MethodGet, url, resp.StatusCode, respBody)
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		type rawDoc struct {
+			Data   rawResource       `json:"data"`
+			Errors []jsonAPIErrEntry `json:"errors"`
+		}
+		var doc rawDoc
+		if len(respBody) > 0 {
+			if err := json.Unmarshal(respBody, &doc); err != nil {
+				return httpclient.Resource[T]{}, fmt.Errorf("decoding response: %w", err)
+			}
+		}
+		if len(doc.Errors) > 0 {
+			return httpclient.Resource[T]{}, extractJSONAPIError(doc.Errors)
+		}
+		res := httpclient.Resource[T]{ID: doc.Data.ID, Type: doc.Data.Type}
+		if len(doc.Data.Attributes) > 0 {
+			if err := json.Unmarshal(doc.Data.Attributes, &res.Attributes); err != nil {
+				return httpclient.Resource[T]{}, fmt.Errorf("decoding attributes: %w", err)
+			}
+		}
+		return res, nil
+	}
+
+	return httpclient.Resource[T]{}, clierror.New(
+		statusToCode(resp.StatusCode),
+		extractJSONAPIOrFlatError(respBody, resp.StatusCode),
+		"",
+	)
+}
+
+// GetJSONAPICollection GETs path and decodes the JSON:API collection response.
+// On non-2xx it extracts the human-readable error and returns a CLIError.
+func GetJSONAPICollection[T any](ctx context.Context, activeCtx *config.Context, path string) (httpclient.Collection[T], error) {
+	url := strings.TrimRight(activeCtx.BaseURL, "/") + path
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return httpclient.Collection[T]{}, fmt.Errorf("building request: %w", err)
+	}
+	req.Header.Set("Accept", "application/vnd.api+json")
+	req.Header.Set("Authorization", "Bearer "+activeCtx.Token)
+	req.Header.Set("User-Agent", browserUserAgent)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		if ctx.Err() != nil {
+			return httpclient.Collection[T]{}, ctx.Err()
+		}
+		return httpclient.Collection[T]{}, fmt.Errorf("request failed: %w", err)
+	}
+
+	respBody, readErr := io.ReadAll(resp.Body)
+	if closeErr := resp.Body.Close(); closeErr != nil {
+		return httpclient.Collection[T]{}, fmt.Errorf("closing response body: %w", closeErr)
+	}
+	if readErr != nil {
+		return httpclient.Collection[T]{}, fmt.Errorf("reading response: %w", readErr)
+	}
+
+	logVerbose(verboseFrom(ctx), http.MethodGet, url, resp.StatusCode, respBody)
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		type rawCollectionDoc struct {
+			Data   []rawResource     `json:"data"`
+			Errors []jsonAPIErrEntry `json:"errors"`
+		}
+		var doc rawCollectionDoc
+		if len(respBody) > 0 {
+			if err := json.Unmarshal(respBody, &doc); err != nil {
+				return httpclient.Collection[T]{}, fmt.Errorf("decoding response: %w", err)
+			}
+		}
+		if len(doc.Errors) > 0 {
+			return httpclient.Collection[T]{}, extractJSONAPIError(doc.Errors)
+		}
+		col := httpclient.Collection[T]{Data: make([]httpclient.Resource[T], len(doc.Data))}
+		for i, item := range doc.Data {
+			res := httpclient.Resource[T]{ID: item.ID, Type: item.Type}
+			if len(item.Attributes) > 0 {
+				if err := json.Unmarshal(item.Attributes, &res.Attributes); err != nil {
+					return httpclient.Collection[T]{}, fmt.Errorf("decoding attributes[%d]: %w", i, err)
+				}
+			}
+			col.Data[i] = res
+		}
+		return col, nil
+	}
+
+	return httpclient.Collection[T]{}, clierror.New(
+		statusToCode(resp.StatusCode),
+		extractJSONAPIOrFlatError(respBody, resp.StatusCode),
+		"",
+	)
+}
+
+// GetEnvelope GETs path and decodes a flat JSON envelope {"data": T}.
+// On non-2xx it extracts the human-readable error and returns a CLIError.
+func GetEnvelope[T any](ctx context.Context, activeCtx *config.Context, path string) (httpclient.Envelope[T], error) {
+	url := strings.TrimRight(activeCtx.BaseURL, "/") + path
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return httpclient.Envelope[T]{}, fmt.Errorf("building request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "Bearer "+activeCtx.Token)
+	req.Header.Set("User-Agent", browserUserAgent)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		if ctx.Err() != nil {
+			return httpclient.Envelope[T]{}, ctx.Err()
+		}
+		return httpclient.Envelope[T]{}, fmt.Errorf("request failed: %w", err)
+	}
+
+	respBody, readErr := io.ReadAll(resp.Body)
+	if closeErr := resp.Body.Close(); closeErr != nil {
+		return httpclient.Envelope[T]{}, fmt.Errorf("closing response body: %w", closeErr)
+	}
+	if readErr != nil {
+		return httpclient.Envelope[T]{}, fmt.Errorf("reading response: %w", readErr)
+	}
+
+	logVerbose(verboseFrom(ctx), http.MethodGet, url, resp.StatusCode, respBody)
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		var env httpclient.Envelope[T]
+		if len(respBody) > 0 {
+			if err := json.Unmarshal(respBody, &env); err != nil {
+				return httpclient.Envelope[T]{}, fmt.Errorf("decoding response: %w", err)
+			}
+		}
+		return env, nil
+	}
+
+	return httpclient.Envelope[T]{}, clierror.New(
+		statusToCode(resp.StatusCode),
+		extractAPIError(respBody, resp.StatusCode),
+		"",
+	)
+}
+
+// GetJSON GETs path and decodes the flat JSON response body directly into T.
+// On non-2xx it extracts the human-readable error and returns a CLIError.
+func GetJSON[T any](ctx context.Context, activeCtx *config.Context, path string) (T, error) {
+	var zero T
+	url := strings.TrimRight(activeCtx.BaseURL, "/") + path
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return zero, fmt.Errorf("building request: %w", err)
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "Bearer "+activeCtx.Token)
+	req.Header.Set("User-Agent", browserUserAgent)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		if ctx.Err() != nil {
+			return zero, ctx.Err()
+		}
+		return zero, fmt.Errorf("request failed: %w", err)
+	}
+
+	respBody, readErr := io.ReadAll(resp.Body)
+	if closeErr := resp.Body.Close(); closeErr != nil {
+		return zero, fmt.Errorf("closing response body: %w", closeErr)
+	}
+	if readErr != nil {
+		return zero, fmt.Errorf("reading response: %w", readErr)
+	}
+
+	logVerbose(verboseFrom(ctx), http.MethodGet, url, resp.StatusCode, respBody)
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		var result T
+		if len(respBody) > 0 {
+			if err := json.Unmarshal(respBody, &result); err != nil {
+				return zero, fmt.Errorf("decoding response: %w", err)
+			}
+		}
+		return result, nil
+	}
+
+	return zero, clierror.New(
+		statusToCode(resp.StatusCode),
+		extractAPIError(respBody, resp.StatusCode),
+		"",
+	)
+}
+
+// PostJSONAPISingle POSTs a JSON body to path and decodes the JSON:API single-resource response.
+// On non-2xx it extracts JSON:API errors[].detail/title and returns a CLIError.
+func PostJSONAPISingle[T any](ctx context.Context, activeCtx *config.Context, path string, body any) (httpclient.Resource[T], error) {
+	b, err := json.Marshal(body)
+	if err != nil {
+		return httpclient.Resource[T]{}, fmt.Errorf("encoding request body: %w", err)
+	}
+
+	url := strings.TrimRight(activeCtx.BaseURL, "/") + path
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(b))
+	if err != nil {
+		return httpclient.Resource[T]{}, fmt.Errorf("building request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/vnd.api+json")
+	req.Header.Set("Accept", "application/vnd.api+json")
+	req.Header.Set("Authorization", "Bearer "+activeCtx.Token)
+	req.Header.Set("User-Agent", browserUserAgent)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		if ctx.Err() != nil {
+			return httpclient.Resource[T]{}, ctx.Err()
+		}
+		return httpclient.Resource[T]{}, fmt.Errorf("request failed: %w", err)
+	}
+
+	respBody, readErr := io.ReadAll(resp.Body)
+	if closeErr := resp.Body.Close(); closeErr != nil {
+		return httpclient.Resource[T]{}, fmt.Errorf("closing response body: %w", closeErr)
+	}
+	if readErr != nil {
+		return httpclient.Resource[T]{}, fmt.Errorf("reading response: %w", readErr)
+	}
+
+	logVerbose(verboseFrom(ctx), http.MethodPost, url, resp.StatusCode, respBody)
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		type rawDoc struct {
+			Data   rawResource       `json:"data"`
+			Errors []jsonAPIErrEntry `json:"errors"`
+		}
+		var doc rawDoc
+		if len(respBody) > 0 {
+			if err := json.Unmarshal(respBody, &doc); err != nil {
+				return httpclient.Resource[T]{}, fmt.Errorf("decoding response: %w", err)
+			}
+		}
+		if len(doc.Errors) > 0 {
+			return httpclient.Resource[T]{}, extractJSONAPIError(doc.Errors)
+		}
+		res := httpclient.Resource[T]{ID: doc.Data.ID, Type: doc.Data.Type}
+		if len(doc.Data.Attributes) > 0 {
+			if err := json.Unmarshal(doc.Data.Attributes, &res.Attributes); err != nil {
+				return httpclient.Resource[T]{}, fmt.Errorf("decoding attributes: %w", err)
+			}
+		}
+		return res, nil
+	}
+
+	return httpclient.Resource[T]{}, clierror.New(
+		statusToCode(resp.StatusCode),
+		extractJSONAPIOrFlatError(respBody, resp.StatusCode),
+		"",
+	)
+}
+
 // PostEnvelope POSTs a JSON body to path and decodes a successful response into
 // an Envelope[T]. On non-2xx it extracts errors[]/message/error from the body
 // and returns a CLIError with a human-readable message.
@@ -53,6 +370,8 @@ func PostEnvelope[T any](ctx context.Context, activeCtx *config.Context, path st
 	if readErr != nil {
 		return httpclient.Envelope[T]{}, fmt.Errorf("reading response: %w", readErr)
 	}
+
+	logVerbose(verboseFrom(ctx), http.MethodPost, url, resp.StatusCode, respBody)
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		var env httpclient.Envelope[T]
@@ -105,14 +424,11 @@ func PatchJSONAPISingle[T any](ctx context.Context, activeCtx *config.Context, p
 		return httpclient.Resource[T]{}, fmt.Errorf("reading response: %w", readErr)
 	}
 
+	logVerbose(verboseFrom(ctx), http.MethodPatch, url, resp.StatusCode, respBody)
+
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		type patchRawResource struct {
-			ID         string          `json:"id"`
-			Type       string          `json:"type"`
-			Attributes json.RawMessage `json:"attributes"`
-		}
 		type patchRawDoc struct {
-			Data   patchRawResource  `json:"data"`
+			Data   rawResource       `json:"data"`
 			Errors []jsonAPIErrEntry `json:"errors"`
 		}
 		var doc patchRawDoc

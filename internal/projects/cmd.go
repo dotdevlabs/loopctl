@@ -10,8 +10,9 @@ import (
 
 	"github.com/dotdevlabs/ctlkit/pkg/clierror"
 	"github.com/dotdevlabs/ctlkit/pkg/ctxutil"
-	"github.com/dotdevlabs/ctlkit/pkg/httpclient"
 	"github.com/dotdevlabs/ctlkit/pkg/output"
+
+	"github.com/dotdevlabs/loopctl/internal/apiclient"
 )
 
 // ProjectAttrs holds the attributes nested under JSON:API data.attributes.
@@ -41,10 +42,10 @@ func listCmd() *cobra.Command {
 		Short: "List all projects",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			client := ctxutil.ClientFrom(ctx)
+			activeCtx := ctxutil.ActiveContextFrom(ctx)
 			r := ctxutil.RendererFrom(ctx)
 
-			col, err := httpclient.GetJSONAPICollection[ProjectAttrs](ctx, client, "/api/projects")
+			col, err := apiclient.GetJSONAPICollection[ProjectAttrs](ctx, activeCtx, "/api/projects")
 			if err != nil {
 				return err
 			}
@@ -71,11 +72,11 @@ func getCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			client := ctxutil.ClientFrom(ctx)
+			activeCtx := ctxutil.ActiveContextFrom(ctx)
 			r := ctxutil.RendererFrom(ctx)
 
 			path := "/api/projects/" + url.PathEscape(args[0])
-			res, err := httpclient.GetJSONAPISingle[ProjectAttrs](ctx, client, path)
+			res, err := apiclient.GetJSONAPISingle[ProjectAttrs](ctx, activeCtx, path)
 			if err != nil {
 				return err
 			}
@@ -162,7 +163,7 @@ func createCmd() *cobra.Command {
 				return nil
 			}
 
-			client := ctxutil.ClientFrom(ctx)
+			activeCtx := ctxutil.ActiveContextFrom(ctx)
 			r := ctxutil.RendererFrom(ctx)
 
 			var body map[string]any
@@ -193,7 +194,7 @@ func createCmd() *cobra.Command {
 				}
 			}
 
-			res, err := httpclient.PostJSONAPISingle[ProjectAttrs](ctx, client, "/api/projects", body)
+			res, err := apiclient.PostJSONAPISingle[ProjectAttrs](ctx, activeCtx, "/api/projects", body)
 			if err != nil {
 				return err
 			}
