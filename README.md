@@ -50,7 +50,19 @@ These flags apply to every command:
 | `--json` | Output machine-stable JSON |
 | `--format <template>` | Go template for custom output |
 | `--dry-run` | Print what would happen without making API calls |
-| `--verbose` | Enable verbose logging |
+| `--verbose` | Show HTTP request and response details on stderr (method, URL, status, body) |
+
+When `--verbose` is set, each API call writes diagnostic lines to stderr:
+
+```
+> POST https://api.example.com/api/tasks
+< 422 Unprocessable Entity
+{"errors":[{"status":"422","detail":"title can't be blank"}]}
+```
+
+This output goes to stderr and does not affect `--json` stdout.
+
+When an API request fails (any command), the CLI prints the human-readable error reason from the API response alongside the HTTP status code.
 
 ## Commands
 
@@ -110,8 +122,6 @@ loopctl projects create --name "Daybreak" --platform-id <platform-id> \
 | `--repo` | no | | Existing repository URL; triggers existing-repo path instead of bootstrap |
 
 The slug is automatically derived from `--name`: lowercased, spaces/underscores converted to hyphens, non-alphanumeric characters stripped, leading digits/hyphens removed. Use `--slug` to override.
-
-On any API error (e.g. validation failure), the CLI prints the API's error messages rather than a bare HTTP status code.
 
 **API:** `POST /api/projects`
 
