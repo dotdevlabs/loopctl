@@ -13,15 +13,15 @@ import (
 
 	"github.com/dotdevlabs/ctlkit/pkg/config"
 	"github.com/dotdevlabs/ctlkit/pkg/ctxutil"
-	"github.com/dotdevlabs/ctlkit/pkg/httpclient"
 	"github.com/dotdevlabs/ctlkit/pkg/output"
+
+	"github.com/dotdevlabs/loopctl/internal/apiclient"
 )
 
 func makeCtx(t *testing.T, serverURL, token string, jsonMode bool, out io.Writer) context.Context {
 	t.Helper()
-	client := httpclient.NewWithTransport(serverURL, token, http.DefaultTransport)
 	renderer := output.New(jsonMode, "", out, io.Discard)
-	ctx := ctxutil.WithClient(context.Background(), client)
+	ctx := context.Background()
 	ctx = ctxutil.WithRenderer(ctx, renderer)
 	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{JSON: jsonMode})
 	ctx = ctxutil.WithActiveContext(ctx, &config.Context{BaseURL: serverURL, Token: token})
@@ -198,9 +198,8 @@ func TestTasksCreateDryRun(t *testing.T) {
 	defer ts.Close()
 
 	var out bytes.Buffer
-	client := httpclient.NewWithTransport(ts.URL, "tok", http.DefaultTransport)
 	renderer := output.New(false, "", &out, io.Discard)
-	ctx := ctxutil.WithClient(context.Background(), client)
+	ctx := context.Background()
 	ctx = ctxutil.WithRenderer(ctx, renderer)
 	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{DryRun: true})
 
@@ -544,12 +543,10 @@ func TestTasksWatch_ActivityLine(t *testing.T) {
 }
 
 // TestGetJSONAPISingle_ContentNegotiation_AttributesPopulated verifies that
-// httpclient.GetJSONAPISingle sends Accept: application/vnd.api+json and that
+// apiclient.GetJSONAPISingle sends Accept: application/vnd.api+json and that
 // the decoded resource has its non-id attributes fully populated.
 // The test server only returns a full JSON:API document when the correct
 // Accept header is present; otherwise it returns a flat body with no attributes.
-// This test would have FAILED against the old ctlkit (which omitted the header)
-// and PASSES after the bump.
 func TestGetJSONAPISingle_ContentNegotiation_AttributesPopulated(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Accept") == "application/vnd.api+json" {
@@ -582,9 +579,8 @@ func TestGetJSONAPISingle_ContentNegotiation_AttributesPopulated(t *testing.T) {
 }
 
 // TestGetJSONAPICollection_ContentNegotiation_AttributesPopulated verifies that
-// httpclient.GetJSONAPICollection sends Accept: application/vnd.api+json and that
+// apiclient.GetJSONAPICollection sends Accept: application/vnd.api+json and that
 // the decoded collection resources have their non-id attributes fully populated.
-// This test would have FAILED against the old ctlkit and PASSES after the bump.
 func TestGetJSONAPICollection_ContentNegotiation_AttributesPopulated(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Accept") == "application/vnd.api+json" {
@@ -614,5 +610,36 @@ func TestGetJSONAPICollection_ContentNegotiation_AttributesPopulated(t *testing.
 	}
 	if !strings.Contains(out.String(), "implementing") {
 		t.Errorf("Attributes.Stage not decoded. Output:\n%s", out.String())
+	}
+}
+
+func TestTasksGetVerbose(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{"kind":"feature","title":"My Task","stage":"planning","status":"open"}}}`)
+	}))
+	defer ts.Close()
+
+	var out, errBuf bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+	ctx = apiclient.WithVerbose(ctx, &errBuf)
+
+	cmd := getCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	if err := cmd.RunE(cmd, []string{"t1"}); err != nil {
+		t.Fatalf("get verbose failed: %v", err)
+	}
+
+	verbose := errBuf.String()
+	if !strings.Contains(verbose, "GET") {
+		t.Errorf("expected GET in verbose output; got: %q", verbose)
+	}
+	if !strings.Contains(verbose, "/api/tasks/t1") {
+		t.Errorf("expected /api/tasks/t1 in verbose output; got: %q", verbose)
+	}
+	if !strings.Contains(verbose, "200") {
+		t.Errorf("expected status 200 in verbose output; got: %q", verbose)
 	}
 }

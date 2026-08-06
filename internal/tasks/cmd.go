@@ -10,7 +10,6 @@ import (
 
 	"github.com/dotdevlabs/ctlkit/pkg/clierror"
 	"github.com/dotdevlabs/ctlkit/pkg/ctxutil"
-	"github.com/dotdevlabs/ctlkit/pkg/httpclient"
 	"github.com/dotdevlabs/ctlkit/pkg/output"
 
 	"github.com/dotdevlabs/loopctl/internal/apiclient"
@@ -71,11 +70,11 @@ func listCmd() *cobra.Command {
 		Short: "List tasks for a project",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			client := ctxutil.ClientFrom(ctx)
+			activeCtx := ctxutil.ActiveContextFrom(ctx)
 			r := ctxutil.RendererFrom(ctx)
 
 			path := "/api/tasks?project_id=" + url.QueryEscape(projectID)
-			col, err := httpclient.GetJSONAPICollection[TaskAttrs](ctx, client, path)
+			col, err := apiclient.GetJSONAPICollection[TaskAttrs](ctx, activeCtx, path)
 			if err != nil {
 				return err
 			}
@@ -107,11 +106,11 @@ func getCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			client := ctxutil.ClientFrom(ctx)
+			activeCtx := ctxutil.ActiveContextFrom(ctx)
 			r := ctxutil.RendererFrom(ctx)
 
 			path := "/api/tasks/" + url.PathEscape(args[0])
-			res, err := httpclient.GetJSONAPISingle[TaskAttrs](ctx, client, path)
+			res, err := apiclient.GetJSONAPISingle[TaskAttrs](ctx, activeCtx, path)
 			if err != nil {
 				return err
 			}
@@ -151,7 +150,7 @@ func createCmd() *cobra.Command {
 				return nil
 			}
 
-			client := ctxutil.ClientFrom(ctx)
+			activeCtx := ctxutil.ActiveContextFrom(ctx)
 			r := ctxutil.RendererFrom(ctx)
 
 			body := map[string]any{
@@ -162,7 +161,7 @@ func createCmd() *cobra.Command {
 					"description": description,
 				},
 			}
-			res, err := httpclient.PostJSONAPISingle[TaskAttrs](ctx, client, "/api/tasks", body)
+			res, err := apiclient.PostJSONAPISingle[TaskAttrs](ctx, activeCtx, "/api/tasks", body)
 			if err != nil {
 				return err
 			}
@@ -265,11 +264,11 @@ func commentsCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			client := ctxutil.ClientFrom(ctx)
+			activeCtx := ctxutil.ActiveContextFrom(ctx)
 			r := ctxutil.RendererFrom(ctx)
 
 			path := "/api/tasks/" + url.PathEscape(args[0]) + "/comments"
-			env, err := httpclient.GetEnvelope[[]Comment](ctx, client, path)
+			env, err := apiclient.GetEnvelope[[]Comment](ctx, activeCtx, path)
 			if err != nil {
 				return err
 			}
@@ -298,7 +297,7 @@ func watchCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
-			client := ctxutil.ClientFrom(ctx)
+			activeCtx := ctxutil.ActiveContextFrom(ctx)
 			out := cmd.OutOrStdout()
 			jsonMode := ctxutil.GlobalFlagsFrom(ctx).JSON
 
@@ -322,18 +321,16 @@ func watchCmd() *cobra.Command {
 			var lastStage string
 			var lastPRNumber int
 			var lastActID string
-			var lastRes httpclient.Resource[TaskAttrs]
 
 			poll := func() (bool, error) {
-				res, err := httpclient.GetJSONAPISingle[TaskAttrs](ctx, client, taskPath)
+				res, err := apiclient.GetJSONAPISingle[TaskAttrs](ctx, activeCtx, taskPath)
 				if err != nil {
 					return false, err
 				}
-				lastRes = res
 				t := res.Attributes
 
-				var actsResp activitiesResponse
-				if err := client.Get(ctx, activitiesPath, &actsResp); err != nil {
+				actsResp, err := apiclient.GetJSON[activitiesResponse](ctx, activeCtx, activitiesPath)
+				if err != nil {
 					return false, err
 				}
 
@@ -369,7 +366,7 @@ func watchCmd() *cobra.Command {
 					if !jsonMode {
 						_, _ = fmt.Fprintf(out, "container error detail: %s\n", newest.Details)
 					} else {
-						_ = output.JSONTo(out, lastRes)
+						_ = output.JSONTo(out, res)
 					}
 					return true, clierror.New(clierror.CodeServerError, "container error: "+newest.Details, "")
 				}
@@ -378,12 +375,12 @@ func watchCmd() *cobra.Command {
 				switch t.Stage {
 				case "completed", "reviewed":
 					if jsonMode {
-						_ = output.JSONTo(out, lastRes)
+						_ = output.JSONTo(out, res)
 					}
 					return true, nil
 				case "rejected":
 					if jsonMode {
-						_ = output.JSONTo(out, lastRes)
+						_ = output.JSONTo(out, res)
 					}
 					return true, clierror.New(clierror.CodeServerError, "task rejected", "")
 				}

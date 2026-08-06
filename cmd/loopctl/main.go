@@ -7,9 +7,11 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/dotdevlabs/ctlkit/pkg/airef"
+	"github.com/dotdevlabs/ctlkit/pkg/ctxutil"
 	"github.com/dotdevlabs/ctlkit/pkg/root"
 	"github.com/dotdevlabs/ctlkit/pkg/version"
 
+	"github.com/dotdevlabs/loopctl/internal/apiclient"
 	"github.com/dotdevlabs/loopctl/internal/projects"
 	"github.com/dotdevlabs/loopctl/internal/tasks"
 )
@@ -28,6 +30,21 @@ func main() {
 		},
 		Workflows: wfs,
 	})
+
+	// Wrap PersistentPreRunE to inject the verbose writer when --verbose is set.
+	prev := cmd.PersistentPreRunE
+	cmd.PersistentPreRunE = func(c *cobra.Command, args []string) error {
+		if prev != nil {
+			if err := prev(c, args); err != nil {
+				return err
+			}
+		}
+		ctx := c.Context()
+		if ctxutil.GlobalFlagsFrom(ctx).Verbose {
+			c.SetContext(apiclient.WithVerbose(ctx, c.ErrOrStderr()))
+		}
+		return nil
+	}
 
 	// Replace the nil-renderer ai command with one that honours --json.
 	for _, sub := range cmd.Commands() {

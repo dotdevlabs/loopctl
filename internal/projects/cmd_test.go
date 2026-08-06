@@ -13,15 +13,15 @@ import (
 
 	"github.com/dotdevlabs/ctlkit/pkg/config"
 	"github.com/dotdevlabs/ctlkit/pkg/ctxutil"
-	"github.com/dotdevlabs/ctlkit/pkg/httpclient"
 	"github.com/dotdevlabs/ctlkit/pkg/output"
+
+	"github.com/dotdevlabs/loopctl/internal/apiclient"
 )
 
 func makeCtx(t *testing.T, serverURL, token string, jsonMode bool, out io.Writer) context.Context {
 	t.Helper()
-	client := httpclient.NewWithTransport(serverURL, token, http.DefaultTransport)
 	renderer := output.New(jsonMode, "", out, io.Discard)
-	ctx := ctxutil.WithClient(context.Background(), client)
+	ctx := context.Background()
 	ctx = ctxutil.WithRenderer(ctx, renderer)
 	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{JSON: jsonMode})
 	ctx = ctxutil.WithActiveContext(ctx, &config.Context{BaseURL: serverURL, Token: token})
@@ -387,9 +387,8 @@ func TestProjectsCreateDryRun(t *testing.T) {
 	defer ts.Close()
 
 	var out bytes.Buffer
-	client := httpclient.NewWithTransport(ts.URL, "tok", http.DefaultTransport)
 	renderer := output.New(false, "", &out, io.Discard)
-	ctx := ctxutil.WithClient(context.Background(), client)
+	ctx := context.Background()
 	ctx = ctxutil.WithRenderer(ctx, renderer)
 	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{DryRun: true})
 	ctx = ctxutil.WithActiveContext(ctx, &config.Context{BaseURL: ts.URL, Token: "tok"})
@@ -423,9 +422,8 @@ func TestProjectsCreateDryRunRepo(t *testing.T) {
 	defer ts.Close()
 
 	var out bytes.Buffer
-	client := httpclient.NewWithTransport(ts.URL, "tok", http.DefaultTransport)
 	renderer := output.New(false, "", &out, io.Discard)
-	ctx := ctxutil.WithClient(context.Background(), client)
+	ctx := context.Background()
 	ctx = ctxutil.WithRenderer(ctx, renderer)
 	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{DryRun: true})
 	ctx = ctxutil.WithActiveContext(ctx, &config.Context{BaseURL: ts.URL, Token: "tok"})
@@ -446,6 +444,37 @@ func TestProjectsCreateDryRunRepo(t *testing.T) {
 	got := out.String()
 	if !strings.Contains(got, "dry-run") {
 		t.Errorf("expected dry-run message; got: %s", got)
+	}
+}
+
+func TestProjectsListVerbose(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":[{"type":"projects","id":"p1","attributes":{"name":"Alpha","platform_id":"pf1"}}]}`)
+	}))
+	defer ts.Close()
+
+	var out, errBuf bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+	ctx = apiclient.WithVerbose(ctx, &errBuf)
+
+	cmd := listCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("list verbose failed: %v", err)
+	}
+
+	verbose := errBuf.String()
+	if !strings.Contains(verbose, "GET") {
+		t.Errorf("expected GET in verbose output; got: %q", verbose)
+	}
+	if !strings.Contains(verbose, "/api/projects") {
+		t.Errorf("expected /api/projects in verbose output; got: %q", verbose)
+	}
+	if !strings.Contains(verbose, "200") {
+		t.Errorf("expected status 200 in verbose output; got: %q", verbose)
 	}
 }
 
