@@ -59,6 +59,7 @@ func NewCmd() *cobra.Command {
 	cmd.AddCommand(updateCmd())
 	cmd.AddCommand(commentsCmd())
 	cmd.AddCommand(watchCmd())
+	cmd.AddCommand(cancelCmd())
 	return cmd
 }
 
@@ -283,6 +284,52 @@ func commentsCmd() *cobra.Command {
 				rows[i] = []string{c.ID, c.Body, c.CreatedAt}
 			}
 			return r.Render(cols, rows, env)
+		},
+	}
+}
+
+func cancelCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "cancel <id>",
+		Short: "Cancel a task",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+
+			if ctxutil.GlobalFlagsFrom(ctx).DryRun {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(),
+					"dry-run: would POST /api/tasks/%s/cancel\n", args[0])
+				return nil
+			}
+
+			activeCtx := ctxutil.ActiveContextFrom(ctx)
+			r := ctxutil.RendererFrom(ctx)
+			out := cmd.OutOrStdout()
+
+			path := "/api/tasks/" + url.PathEscape(args[0]) + "/cancel"
+			res, err := apiclient.PostJSONAPISingle[TaskAttrs](ctx, activeCtx, path, map[string]any{})
+			if err != nil {
+				return err
+			}
+
+			if res.ID != "" {
+				t := res.Attributes
+				cols := []output.Column{
+					{Header: "ID"},
+					{Header: "KIND"},
+					{Header: "TITLE"},
+					{Header: "STAGE"},
+					{Header: "STATUS"},
+				}
+				rows := [][]string{{res.ID, t.Kind, t.Title, t.Stage, t.Status}}
+				return r.Render(cols, rows, res)
+			}
+
+			if ctxutil.GlobalFlagsFrom(ctx).JSON {
+				return output.JSONTo(out, map[string]string{"id": args[0], "status": "cancelled"})
+			}
+			_, _ = fmt.Fprintf(out, "task %s cancelled\n", args[0])
+			return nil
 		},
 	}
 }
