@@ -91,5 +91,12 @@ func loopWorkflows() []airef.Workflow {
 				`loopctl tasks watch <task-id> --json`,
 			},
 		},
+		{
+			Name:        "Cancel a task",
+			Description: "Cancel an in-progress task by its ID.",
+			Steps: []string{
+				`loopctl tasks cancel <task-id>`,
+			},
+		},
 	}
 }

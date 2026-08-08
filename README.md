@@ -260,6 +260,22 @@ loopctl tasks comments <id> --json
 
 **API:** `GET /api/tasks/:id/comments`
 
+#### tasks cancel
+
+Cancel an in-progress task by ID. On success, renders the updated task row (same columns as `get`/`update`). If the API returns no task body (e.g. 204), prints a plain confirmation instead. Attempting to cancel an already-finished task surfaces the API's human-readable error.
+
+```bash
+loopctl tasks cancel <id>
+loopctl tasks cancel <id> --json
+loopctl tasks cancel <id> --dry-run
+```
+
+**Output columns:** `ID`, `KIND`, `TITLE`, `STAGE`, `STATUS`
+
+**API:** `POST /api/tasks/:id/cancel`
+
+---
+
 #### tasks watch
 
 Follow a task to a terminal state, streaming stage and activity changes as they occur. Exits with code 0 when the task reaches `completed` or `reviewed`; exits non-zero on `rejected`, container error, or timeout.
