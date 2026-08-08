@@ -2,13 +2,16 @@
 package tasks
 
 import (
+	"context"
 	"fmt"
+	"io"
 	"net/url"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/dotdevlabs/ctlkit/pkg/clierror"
+	"github.com/dotdevlabs/ctlkit/pkg/config"
 	"github.com/dotdevlabs/ctlkit/pkg/ctxutil"
 	"github.com/dotdevlabs/ctlkit/pkg/output"
 
@@ -129,6 +132,9 @@ func createCmd() *cobra.Command {
 		kind        string
 		title       string
 		description string
+		watch       bool
+		intervalStr string
+		timeoutStr  string
 	)
 
 	cmd := &cobra.Command{
@@ -169,7 +175,22 @@ func createCmd() *cobra.Command {
 				{Header: "STATUS"},
 			}
 			rows := [][]string{{res.ID, t.Kind, t.Title, t.Stage, t.Status}}
-			return r.Render(cols, rows, res)
+			if err := r.Render(cols, rows, res); err != nil {
+				return err
+			}
+
+			if watch {
+				return watchTask(
+					ctx,
+					activeCtx,
+					cmd.OutOrStdout(),
+					ctxutil.GlobalFlagsFrom(ctx).JSON,
+					res.ID,
+					intervalStr,
+					timeoutStr,
+				)
+			}
+			return nil
 		},
 	}
 
@@ -177,6 +198,9 @@ func createCmd() *cobra.Command {
 	cmd.Flags().StringVar(&kind, "kind", "", "Task kind")
 	cmd.Flags().StringVar(&title, "title", "", "Task title")
 	cmd.Flags().StringVar(&description, "description", "", "Task description")
+	cmd.Flags().BoolVar(&watch, "watch", false, "Follow the task to a terminal state after creating it")
+	cmd.Flags().StringVar(&intervalStr, "interval", "15s", "Poll interval when --watch is set (e.g. 15s, 1m)")
+	cmd.Flags().StringVar(&timeoutStr, "timeout", "", "Give up after this duration when --watch is set (e.g. 30m); empty means no timeout")
 
 	_ = cmd.MarkFlagRequired("project-id")
 	_ = cmd.MarkFlagRequired("kind")
@@ -283,6 +307,138 @@ func cancelCmd() *cobra.Command {
 	}
 }
 
+func watchTask(
+	ctx context.Context,
+	activeCtx *config.Context,
+	out io.Writer,
+	jsonMode bool,
+	taskID string,
+	intervalStr string,
+	timeoutStr string,
+) error {
+	iv, err := time.ParseDuration(intervalStr)
+	if err != nil {
+		return clierror.New(clierror.CodeUsage, "invalid --interval: "+err.Error(), "")
+	}
+
+	var timeoutDur time.Duration
+	if timeoutStr != "" {
+		timeoutDur, err = time.ParseDuration(timeoutStr)
+		if err != nil {
+			return clierror.New(clierror.CodeUsage, "invalid --timeout: "+err.Error(), "")
+		}
+	}
+
+	taskPath := "/api/tasks/" + url.PathEscape(taskID)
+	activitiesPath := taskPath + "/activities"
+
+	var lastStage string
+	var lastPRNumber int
+	var lastActID string
+
+	poll := func() (bool, error) {
+		res, err := apiclient.GetJSONAPISingle[TaskAttrs](ctx, activeCtx, taskPath)
+		if err != nil {
+			return false, err
+		}
+		t := res.Attributes
+
+		actsColl, err := apiclient.GetJSONAPICollection[ActivityAttrs](ctx, activeCtx, activitiesPath)
+		if err != nil {
+			return false, err
+		}
+
+		var newestID string
+		var newestAction string
+		var newestDetails string
+		if len(actsColl.Data) > 0 {
+			newest := actsColl.Data[len(actsColl.Data)-1]
+			newestID = newest.ID
+			newestAction = newest.Attributes.Action
+			newestDetails = newest.Attributes.Details
+		}
+
+		stageChanged := t.Stage != lastStage
+		prChanged := t.PRNumber != lastPRNumber
+		actChanged := newestID != "" && newestID != lastActID
+
+		if stageChanged || prChanged || actChanged {
+			lastStage = t.Stage
+			lastPRNumber = t.PRNumber
+			if newestID != "" {
+				lastActID = newestID
+			}
+
+			if !jsonMode {
+				ts := time.Now().UTC().Format(time.RFC3339)
+				if actChanged && newestAction != "" {
+					_, _ = fmt.Fprintf(out, "%s stage=%s pr=%d %s\n", ts, t.Stage, t.PRNumber, newestAction)
+				} else {
+					_, _ = fmt.Fprintf(out, "%s stage=%s pr=%d\n", ts, t.Stage, t.PRNumber)
+				}
+			}
+		}
+
+		// Container error check takes priority over terminal state.
+		if actChanged && newestAction == "container.error" {
+			if !jsonMode {
+				_, _ = fmt.Fprintf(out, "container error detail: %s\n", newestDetails)
+			} else {
+				_ = output.JSONTo(out, res)
+			}
+			return true, clierror.New(clierror.CodeServerError, "container error: "+newestDetails, "")
+		}
+
+		// Terminal state check.
+		switch t.Stage {
+		case "completed", "reviewed":
+			if jsonMode {
+				_ = output.JSONTo(out, res)
+			}
+			return true, nil
+		case "rejected":
+			if jsonMode {
+				_ = output.JSONTo(out, res)
+			}
+			return true, clierror.New(clierror.CodeServerError, "task rejected", "")
+		}
+
+		return false, nil
+	}
+
+	done, err := poll()
+	if done || err != nil {
+		return err
+	}
+
+	ticker := time.NewTicker(iv)
+	defer ticker.Stop()
+
+	var timeoutCh <-chan time.Time
+	if timeoutStr != "" {
+		timer := time.NewTimer(timeoutDur)
+		defer timer.Stop()
+		timeoutCh = timer.C
+	}
+
+	for {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-timeoutCh:
+			if jsonMode {
+				_ = output.JSONTo(out, map[string]string{"error": "timeout"})
+			}
+			return clierror.New(clierror.CodeNotReady, "watch timed out", "")
+		case <-ticker.C:
+			done, err := poll()
+			if done || err != nil {
+				return err
+			}
+		}
+	}
+}
+
 func watchCmd() *cobra.Command {
 	var intervalStr string
 	var timeoutStr string
@@ -292,133 +448,15 @@ func watchCmd() *cobra.Command {
 		Short: "Follow a task to a terminal state",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := cmd.Context()
-			activeCtx := ctxutil.ActiveContextFrom(ctx)
-			out := cmd.OutOrStdout()
-			jsonMode := ctxutil.GlobalFlagsFrom(ctx).JSON
-
-			iv, err := time.ParseDuration(intervalStr)
-			if err != nil {
-				return clierror.New(clierror.CodeUsage, "invalid --interval: "+err.Error(), "")
-			}
-
-			var timeoutDur time.Duration
-			if timeoutStr != "" {
-				timeoutDur, err = time.ParseDuration(timeoutStr)
-				if err != nil {
-					return clierror.New(clierror.CodeUsage, "invalid --timeout: "+err.Error(), "")
-				}
-			}
-
-			taskID := args[0]
-			taskPath := "/api/tasks/" + url.PathEscape(taskID)
-			activitiesPath := taskPath + "/activities"
-
-			var lastStage string
-			var lastPRNumber int
-			var lastActID string
-
-			poll := func() (bool, error) {
-				res, err := apiclient.GetJSONAPISingle[TaskAttrs](ctx, activeCtx, taskPath)
-				if err != nil {
-					return false, err
-				}
-				t := res.Attributes
-
-				actsColl, err := apiclient.GetJSONAPICollection[ActivityAttrs](ctx, activeCtx, activitiesPath)
-				if err != nil {
-					return false, err
-				}
-
-				var newestID string
-				var newestAction string
-				var newestDetails string
-				if len(actsColl.Data) > 0 {
-					newest := actsColl.Data[len(actsColl.Data)-1]
-					newestID = newest.ID
-					newestAction = newest.Attributes.Action
-					newestDetails = newest.Attributes.Details
-				}
-
-				stageChanged := t.Stage != lastStage
-				prChanged := t.PRNumber != lastPRNumber
-				actChanged := newestID != "" && newestID != lastActID
-
-				if stageChanged || prChanged || actChanged {
-					lastStage = t.Stage
-					lastPRNumber = t.PRNumber
-					if newestID != "" {
-						lastActID = newestID
-					}
-
-					if !jsonMode {
-						ts := time.Now().UTC().Format(time.RFC3339)
-						if actChanged && newestAction != "" {
-							_, _ = fmt.Fprintf(out, "%s stage=%s pr=%d %s\n", ts, t.Stage, t.PRNumber, newestAction)
-						} else {
-							_, _ = fmt.Fprintf(out, "%s stage=%s pr=%d\n", ts, t.Stage, t.PRNumber)
-						}
-					}
-				}
-
-				// Container error check takes priority over terminal state.
-				if actChanged && newestAction == "container.error" {
-					if !jsonMode {
-						_, _ = fmt.Fprintf(out, "container error detail: %s\n", newestDetails)
-					} else {
-						_ = output.JSONTo(out, res)
-					}
-					return true, clierror.New(clierror.CodeServerError, "container error: "+newestDetails, "")
-				}
-
-				// Terminal state check.
-				switch t.Stage {
-				case "completed", "reviewed":
-					if jsonMode {
-						_ = output.JSONTo(out, res)
-					}
-					return true, nil
-				case "rejected":
-					if jsonMode {
-						_ = output.JSONTo(out, res)
-					}
-					return true, clierror.New(clierror.CodeServerError, "task rejected", "")
-				}
-
-				return false, nil
-			}
-
-			done, err := poll()
-			if done || err != nil {
-				return err
-			}
-
-			ticker := time.NewTicker(iv)
-			defer ticker.Stop()
-
-			var timeoutCh <-chan time.Time
-			if timeoutStr != "" {
-				timer := time.NewTimer(timeoutDur)
-				defer timer.Stop()
-				timeoutCh = timer.C
-			}
-
-			for {
-				select {
-				case <-ctx.Done():
-					return ctx.Err()
-				case <-timeoutCh:
-					if jsonMode {
-						_ = output.JSONTo(out, map[string]string{"error": "timeout"})
-					}
-					return clierror.New(clierror.CodeNotReady, "watch timed out", "")
-				case <-ticker.C:
-					done, err := poll()
-					if done || err != nil {
-						return err
-					}
-				}
-			}
+			return watchTask(
+				cmd.Context(),
+				ctxutil.ActiveContextFrom(cmd.Context()),
+				cmd.OutOrStdout(),
+				ctxutil.GlobalFlagsFrom(cmd.Context()).JSON,
+				args[0],
+				intervalStr,
+				timeoutStr,
+			)
 		},
 	}
 
