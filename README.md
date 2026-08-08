@@ -274,18 +274,39 @@ loopctl tasks create \
   --kind <kind> \
   --title "My task" \
   --description "Task details"
+
+# Create and follow to completion in one command
+loopctl tasks create \
+  --project-id <project-id> \
+  --kind <kind> \
+  --title "My task" \
+  --description "Task details" \
+  --watch
+
+# With a timeout and custom poll interval
+loopctl tasks create \
+  --project-id <project-id> \
+  --kind <kind> \
+  --title "My task" \
+  --description "Task details" \
+  --watch --interval 30s --timeout 60m
 ```
 
 **Flags:**
 
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--project-id` | yes | Project ID |
-| `--kind` | yes | Task kind |
-| `--title` | yes | Task title |
-| `--description` | yes | Task description |
+| Flag | Required | Default | Description |
+|------|----------|---------|-------------|
+| `--project-id` | yes | | Project ID |
+| `--kind` | yes | | Task kind |
+| `--title` | yes | | Task title |
+| `--description` | yes | | Task description |
+| `--watch` | no | `false` | Follow the task to a terminal state after creating it |
+| `--interval` | no | `15s` | Poll interval when `--watch` is set (e.g. `15s`, `1m`) |
+| `--timeout` | no | _(none)_ | Give up after this duration when `--watch` is set (e.g. `30m`); empty means no timeout |
 
-**API:** `POST /api/tasks`
+When `--watch` is set, the command first prints the created task row, then streams stage and activity changes until the task reaches a terminal state — identical behavior to `tasks watch`. Exit codes match those of `tasks watch`.
+
+**API:** `POST /api/tasks` (followed by `GET /api/tasks/:id` and `GET /api/tasks/:id/activities` when `--watch` is set)
 
 #### tasks update
 
@@ -415,20 +436,31 @@ loopctl version --json
 ### Create a task and follow it to completion
 
 ```bash
-# Create the task
+# Create and follow in one command (--watch)
+loopctl tasks create \
+  --project-id <project-id> \
+  --kind feature \
+  --title "My task" \
+  --description "Details" \
+  --watch
+
+# With a 60-minute safety timeout and 30-second poll interval
+loopctl tasks create \
+  --project-id <project-id> \
+  --kind feature \
+  --title "My task" \
+  --description "Details" \
+  --watch --interval 30s --timeout 60m
+
+# Two-step: create then follow separately
 loopctl tasks create \
   --project-id <project-id> \
   --kind feature \
   --title "My task" \
   --description "Details"
-
-# Stream stage transitions until the task completes (or fails)
 loopctl tasks watch <task-id>
 
-# Same with a 60-minute safety timeout and 30-second poll interval
-loopctl tasks watch <task-id> --interval 30s --timeout 60m
-
-# Emit final state as JSON (for scripting or agents)
+# Follow an existing task; emit final state as JSON (for scripting or agents)
 loopctl tasks watch <task-id> --json
 ```
 
