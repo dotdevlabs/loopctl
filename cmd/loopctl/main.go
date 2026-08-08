@@ -15,6 +15,7 @@ import (
 	"github.com/dotdevlabs/loopctl/internal/pipelines"
 	"github.com/dotdevlabs/loopctl/internal/platforms"
 	"github.com/dotdevlabs/loopctl/internal/projects"
+	"github.com/dotdevlabs/loopctl/internal/taskkinds"
 	"github.com/dotdevlabs/loopctl/internal/tasks"
 )
 
@@ -31,6 +32,7 @@ func main() {
 			pipelines.NewCmd(),
 			projects.NewCmd(),
 			tasks.NewCmd(),
+			taskkinds.NewCmd(),
 		},
 		Workflows: wfs,
 	})
