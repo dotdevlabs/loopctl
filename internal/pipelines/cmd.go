@@ -3,7 +3,6 @@ package pipelines
 
 import (
 	"fmt"
-	"net/url"
 
 	"github.com/spf13/cobra"
 
@@ -15,9 +14,9 @@ import (
 
 // PipelineAttrs holds the attributes returned by /api/pipelines.
 type PipelineAttrs struct {
-	Name        string   `json:"name"`
-	DisplayName string   `json:"display_name"`
-	Stages      []string `json:"stages"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Kind        string `json:"kind"`
 }
 
 // NewCmd returns the "pipelines" parent command.
@@ -28,7 +27,6 @@ func NewCmd() *cobra.Command {
 	}
 	cmd.AddCommand(listCmd())
 	cmd.AddCommand(createCmd())
-	cmd.AddCommand(cloneCmd())
 	return cmd
 }
 
@@ -36,7 +34,7 @@ func pipelineCols() []output.Column {
 	return []output.Column{
 		{Header: "ID"},
 		{Header: "NAME"},
-		{Header: "DISPLAY_NAME"},
+		{Header: "KIND"},
 	}
 }
 
@@ -57,7 +55,7 @@ func listCmd() *cobra.Command {
 			cols := pipelineCols()
 			rows := make([][]string, len(col.Data))
 			for i, p := range col.Data {
-				rows[i] = []string{p.ID, p.Attributes.Name, p.Attributes.DisplayName}
+				rows[i] = []string{p.ID, p.Attributes.Name, p.Attributes.Kind}
 			}
 			return r.Render(cols, rows, col)
 		},
@@ -66,8 +64,9 @@ func listCmd() *cobra.Command {
 
 func createCmd() *cobra.Command {
 	var (
-		name   string
-		stages []string
+		name        string
+		description string
+		kind        string
 	)
 
 	cmd := &cobra.Command{
@@ -78,17 +77,20 @@ func createCmd() *cobra.Command {
 
 			if ctxutil.GlobalFlagsFrom(ctx).DryRun {
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(),
-					"dry-run: would POST /api/pipelines {display_name=%q stages=%v}\n",
-					name, stages)
+					"dry-run: would POST /api/pipelines {name=%q kind=%q}\n",
+					name, kind)
 				return nil
 			}
 
 			activeCtx := ctxutil.ActiveContextFrom(ctx)
 			r := ctxutil.RendererFrom(ctx)
 
-			attrs := map[string]any{"display_name": name}
-			if len(stages) > 0 {
-				attrs["stages"] = stages
+			attrs := map[string]any{
+				"name": name,
+				"kind": kind,
+			}
+			if description != "" {
+				attrs["description"] = description
 			}
 			body := map[string]any{"pipeline": attrs}
 
@@ -98,61 +100,15 @@ func createCmd() *cobra.Command {
 			}
 
 			p := res.Attributes
-			rows := [][]string{{res.ID, p.Name, p.DisplayName}}
+			rows := [][]string{{res.ID, p.Name, p.Kind}}
 			return r.Render(pipelineCols(), rows, res)
 		},
 	}
 
-	cmd.Flags().StringVar(&name, "name", "", "Display name for the new pipeline")
-	cmd.Flags().StringArrayVar(&stages, "stage", []string{}, "Ordered stage name (repeatable)")
+	cmd.Flags().StringVar(&name, "name", "", "Name for the new pipeline")
+	cmd.Flags().StringVar(&kind, "kind", "", "Task kind name the pipeline belongs to")
+	cmd.Flags().StringVar(&description, "description", "", "Optional description for the pipeline")
 	_ = cmd.MarkFlagRequired("name")
-	return cmd
-}
-
-func cloneCmd() *cobra.Command {
-	var (
-		name   string
-		stages []string
-	)
-
-	cmd := &cobra.Command{
-		Use:   "clone <source-id>",
-		Short: "Clone an existing pipeline",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := cmd.Context()
-			sourceID := args[0]
-
-			if ctxutil.GlobalFlagsFrom(ctx).DryRun {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(),
-					"dry-run: would POST /api/pipelines/%s/clone {display_name=%q}\n",
-					sourceID, name)
-				return nil
-			}
-
-			activeCtx := ctxutil.ActiveContextFrom(ctx)
-			r := ctxutil.RendererFrom(ctx)
-
-			attrs := map[string]any{"display_name": name}
-			if len(stages) > 0 {
-				attrs["stages"] = stages
-			}
-			body := map[string]any{"pipeline": attrs}
-
-			path := "/api/pipelines/" + url.PathEscape(sourceID) + "/clone"
-			res, err := apiclient.PostJSONAPISingle[PipelineAttrs](ctx, activeCtx, path, body)
-			if err != nil {
-				return err
-			}
-
-			p := res.Attributes
-			rows := [][]string{{res.ID, p.Name, p.DisplayName}}
-			return r.Render(pipelineCols(), rows, res)
-		},
-	}
-
-	cmd.Flags().StringVar(&name, "name", "", "Display name for the cloned pipeline")
-	cmd.Flags().StringArrayVar(&stages, "stage", []string{}, "Override stage name (repeatable)")
-	_ = cmd.MarkFlagRequired("name")
+	_ = cmd.MarkFlagRequired("kind")
 	return cmd
 }

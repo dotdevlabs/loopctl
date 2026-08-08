@@ -3,6 +3,7 @@ package pipelines
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -39,7 +40,7 @@ func TestPipelinesList(t *testing.T) {
 			t.Errorf("missing/wrong auth header: %s", r.Header.Get("Authorization"))
 		}
 		w.Header().Set("Content-Type", "application/vnd.api+json")
-		_, _ = fmt.Fprint(w, `{"data":[{"type":"pipelines","id":"pipe1","attributes":{"name":"autonomous-feature","display_name":"Autonomous Feature"}}]}`)
+		_, _ = fmt.Fprint(w, `{"data":[{"type":"pipelines","id":"pipe1","attributes":{"name":"autonomous-feature","kind":"my-task-kind"}}]}`)
 	}))
 	defer ts.Close()
 
@@ -60,15 +61,15 @@ func TestPipelinesList(t *testing.T) {
 	if !strings.Contains(got, "autonomous-feature") {
 		t.Errorf("output missing pipeline name:\n%s", got)
 	}
-	if !strings.Contains(got, "Autonomous Feature") {
-		t.Errorf("output missing display name:\n%s", got)
+	if !strings.Contains(got, "my-task-kind") {
+		t.Errorf("output missing kind:\n%s", got)
 	}
 }
 
 func TestPipelinesListJSON(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/vnd.api+json")
-		_, _ = fmt.Fprint(w, `{"data":[{"type":"pipelines","id":"pipe1","attributes":{"name":"autonomous-feature","display_name":"Autonomous Feature"}}]}`)
+		_, _ = fmt.Fprint(w, `{"data":[{"type":"pipelines","id":"pipe1","attributes":{"name":"autonomous-feature","kind":"my-task-kind"}}]}`)
 	}))
 	defer ts.Close()
 
@@ -118,7 +119,7 @@ func TestPipelinesListError(t *testing.T) {
 func TestPipelinesListVerbose(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/vnd.api+json")
-		_, _ = fmt.Fprint(w, `{"data":[{"type":"pipelines","id":"pipe1","attributes":{"name":"autonomous-feature","display_name":"Autonomous Feature"}}]}`)
+		_, _ = fmt.Fprint(w, `{"data":[{"type":"pipelines","id":"pipe1","attributes":{"name":"autonomous-feature","kind":"my-task-kind"}}]}`)
 	}))
 	defer ts.Close()
 
@@ -157,7 +158,7 @@ func TestPipelinesCreate(t *testing.T) {
 		}
 		gotBody, _ = io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/vnd.api+json")
-		_, _ = fmt.Fprint(w, `{"data":{"type":"pipelines","id":"pipe-new","attributes":{"name":"custom-pipeline","display_name":"Custom Pipeline","stages":["plan","implement"]}}}`)
+		_, _ = fmt.Fprint(w, `{"data":{"type":"pipelines","id":"pipe-new","attributes":{"name":"custom-pipeline","kind":"my-task-kind"}}}`)
 	}))
 	defer ts.Close()
 
@@ -167,13 +168,10 @@ func TestPipelinesCreate(t *testing.T) {
 	cmd := createCmd()
 	cmd.SetContext(ctx)
 	cmd.SetOut(&out)
-	if err := cmd.Flags().Set("name", "Custom Pipeline"); err != nil {
+	if err := cmd.Flags().Set("name", "custom-pipeline"); err != nil {
 		t.Fatal(err)
 	}
-	if err := cmd.Flags().Set("stage", "plan"); err != nil {
-		t.Fatal(err)
-	}
-	if err := cmd.Flags().Set("stage", "implement"); err != nil {
+	if err := cmd.Flags().Set("kind", "my-task-kind"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -188,18 +186,24 @@ func TestPipelinesCreate(t *testing.T) {
 	if !strings.Contains(string(gotBody), `"pipeline"`) {
 		t.Errorf("request body missing pipeline wrapper: %s", gotBody)
 	}
-	if !strings.Contains(string(gotBody), "display_name") {
-		t.Errorf("request body missing display_name: %s", gotBody)
+	if !strings.Contains(string(gotBody), `"name"`) {
+		t.Errorf("request body missing name: %s", gotBody)
 	}
-	if !strings.Contains(string(gotBody), "stages") {
-		t.Errorf("request body missing stages: %s", gotBody)
+	if !strings.Contains(string(gotBody), `"kind"`) {
+		t.Errorf("request body missing kind: %s", gotBody)
+	}
+	if strings.Contains(string(gotBody), "display_name") {
+		t.Errorf("request body must not contain display_name: %s", gotBody)
+	}
+	if strings.Contains(string(gotBody), "stages") {
+		t.Errorf("request body must not contain stages: %s", gotBody)
 	}
 }
 
 func TestPipelinesCreateJSON(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/vnd.api+json")
-		_, _ = fmt.Fprint(w, `{"data":{"type":"pipelines","id":"pipe-new","attributes":{"name":"custom-pipeline","display_name":"Custom Pipeline"}}}`)
+		_, _ = fmt.Fprint(w, `{"data":{"type":"pipelines","id":"pipe-new","attributes":{"name":"custom-pipeline","kind":"my-task-kind"}}}`)
 	}))
 	defer ts.Close()
 
@@ -209,7 +213,10 @@ func TestPipelinesCreateJSON(t *testing.T) {
 	cmd := createCmd()
 	cmd.SetContext(ctx)
 	cmd.SetOut(&out)
-	if err := cmd.Flags().Set("name", "Custom Pipeline"); err != nil {
+	if err := cmd.Flags().Set("name", "custom-pipeline"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Flags().Set("kind", "my-task-kind"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -239,7 +246,10 @@ func TestPipelinesCreateDryRun(t *testing.T) {
 	cmd := createCmd()
 	cmd.SetContext(ctx)
 	cmd.SetOut(&out)
-	if err := cmd.Flags().Set("name", "My Pipeline"); err != nil {
+	if err := cmd.Flags().Set("name", "my-pipeline"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Flags().Set("kind", "my-task-kind"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -258,7 +268,7 @@ func TestPipelinesCreateError(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/vnd.api+json")
 		w.WriteHeader(http.StatusUnprocessableEntity)
-		_, _ = fmt.Fprint(w, `{"errors":[{"status":"422","detail":"display_name can't be blank"}]}`)
+		_, _ = fmt.Fprint(w, `{"errors":[{"status":"422","detail":"name can't be blank"}]}`)
 	}))
 	defer ts.Close()
 
@@ -268,7 +278,10 @@ func TestPipelinesCreateError(t *testing.T) {
 	cmd := createCmd()
 	cmd.SetContext(ctx)
 	cmd.SetOut(&out)
-	if err := cmd.Flags().Set("name", "Bad Pipeline"); err != nil {
+	if err := cmd.Flags().Set("name", "bad-pipeline"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Flags().Set("kind", "my-task-kind"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -276,7 +289,7 @@ func TestPipelinesCreateError(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on 422")
 	}
-	if !strings.Contains(err.Error(), "display_name can't be blank") {
+	if !strings.Contains(err.Error(), "name can't be blank") {
 		t.Errorf("expected detail in error; got: %v", err)
 	}
 }
@@ -295,7 +308,10 @@ func TestPipelinesCreateBuiltInRejected(t *testing.T) {
 	cmd := createCmd()
 	cmd.SetContext(ctx)
 	cmd.SetOut(&out)
-	if err := cmd.Flags().Set("name", "Built-in Pipeline"); err != nil {
+	if err := cmd.Flags().Set("name", "built-in-pipeline"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Flags().Set("kind", "my-task-kind"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -311,7 +327,7 @@ func TestPipelinesCreateBuiltInRejected(t *testing.T) {
 func TestPipelinesCreateVerbose(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/vnd.api+json")
-		_, _ = fmt.Fprint(w, `{"data":{"type":"pipelines","id":"pipe-new","attributes":{"name":"custom-pipeline","display_name":"Custom Pipeline"}}}`)
+		_, _ = fmt.Fprint(w, `{"data":{"type":"pipelines","id":"pipe-new","attributes":{"name":"custom-pipeline","kind":"my-task-kind"}}}`)
 	}))
 	defer ts.Close()
 
@@ -322,7 +338,10 @@ func TestPipelinesCreateVerbose(t *testing.T) {
 	cmd := createCmd()
 	cmd.SetContext(ctx)
 	cmd.SetOut(&out)
-	if err := cmd.Flags().Set("name", "Custom Pipeline"); err != nil {
+	if err := cmd.Flags().Set("name", "custom-pipeline"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Flags().Set("kind", "my-task-kind"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -342,155 +361,119 @@ func TestPipelinesCreateVerbose(t *testing.T) {
 	}
 }
 
-func TestPipelinesClone(t *testing.T) {
-	var gotBody []byte
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/pipelines/pipe1/clone" {
-			t.Errorf("unexpected path: %s", r.URL.Path)
-		}
-		if r.Method != http.MethodPost {
-			t.Errorf("unexpected method: %s", r.Method)
-		}
-		gotBody, _ = io.ReadAll(r.Body)
-		w.Header().Set("Content-Type", "application/vnd.api+json")
-		_, _ = fmt.Fprint(w, `{"data":{"type":"pipelines","id":"pipe-clone","attributes":{"name":"cloned-pipeline","display_name":"Cloned Pipeline"}}}`)
-	}))
-	defer ts.Close()
-
-	var out bytes.Buffer
-	ctx := makeCtx(t, ts.URL, "test-token", false, &out)
-
-	cmd := cloneCmd()
-	cmd.SetContext(ctx)
-	cmd.SetOut(&out)
-	if err := cmd.Flags().Set("name", "Cloned Pipeline"); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := cmd.RunE(cmd, []string{"pipe1"}); err != nil {
-		t.Fatalf("clone failed: %v", err)
-	}
-
-	got := out.String()
-	if !strings.Contains(got, "pipe-clone") {
-		t.Errorf("output missing cloned id:\n%s", got)
-	}
-	if !strings.Contains(string(gotBody), `"pipeline"`) {
-		t.Errorf("request body missing pipeline wrapper: %s", gotBody)
-	}
-	if !strings.Contains(string(gotBody), "display_name") {
-		t.Errorf("request body missing display_name: %s", gotBody)
-	}
-}
-
-func TestPipelinesCloneJSON(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/vnd.api+json")
-		_, _ = fmt.Fprint(w, `{"data":{"type":"pipelines","id":"pipe-clone","attributes":{"name":"cloned-pipeline","display_name":"Cloned Pipeline"}}}`)
-	}))
-	defer ts.Close()
-
-	var out bytes.Buffer
-	ctx := makeCtx(t, ts.URL, "tok", true, &out)
-
-	cmd := cloneCmd()
-	cmd.SetContext(ctx)
-	cmd.SetOut(&out)
-	if err := cmd.Flags().Set("name", "Cloned Pipeline"); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := cmd.RunE(cmd, []string{"pipe1"}); err != nil {
-		t.Fatalf("clone json failed: %v", err)
-	}
-	got := out.String()
-	if !strings.Contains(got, `"id"`) {
-		t.Errorf("expected id in JSON output; got:\n%s", got)
-	}
-	if !strings.Contains(got, "pipe-clone") {
-		t.Errorf("expected id value in JSON output; got:\n%s", got)
-	}
-}
-
-func TestPipelinesCloneDryRun(t *testing.T) {
-	called := false
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		called = true
-	}))
-	defer ts.Close()
-
-	var out bytes.Buffer
-	ctx := makeCtx(t, ts.URL, "tok", false, &out)
-	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{DryRun: true})
-
-	cmd := cloneCmd()
-	cmd.SetContext(ctx)
-	cmd.SetOut(&out)
-	if err := cmd.Flags().Set("name", "My Clone"); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := cmd.RunE(cmd, []string{"pipe1"}); err != nil {
-		t.Fatalf("clone dry-run failed: %v", err)
-	}
-	if called {
-		t.Error("dry-run should not make HTTP calls")
-	}
-	if !strings.Contains(out.String(), "dry-run") {
-		t.Errorf("expected dry-run in output; got:\n%s", out.String())
-	}
-}
-
-func TestPipelinesCloneError(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/vnd.api+json")
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		_, _ = fmt.Fprint(w, `{"errors":[{"status":"422","detail":"source pipeline not found"}]}`)
-	}))
-	defer ts.Close()
-
-	var out bytes.Buffer
-	ctx := makeCtx(t, ts.URL, "tok", false, &out)
-
-	cmd := cloneCmd()
-	cmd.SetContext(ctx)
-	cmd.SetOut(&out)
-	if err := cmd.Flags().Set("name", "My Clone"); err != nil {
-		t.Fatal(err)
-	}
-
-	err := cmd.RunE(cmd, []string{"bad-id"})
-	if err == nil {
-		t.Fatal("expected error on 422")
-	}
-	if !strings.Contains(err.Error(), "source pipeline not found") {
-		t.Errorf("expected detail in error; got: %v", err)
-	}
-}
-
-func TestPipelinesCloneNoStageOverride(t *testing.T) {
+// TestCreatePipelineRequestBodyShape asserts the create-pipeline request body
+// is a "pipeline" object containing "name" and "kind", and no "stages".
+func TestCreatePipelineRequestBodyShape(t *testing.T) {
 	var gotBody []byte
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotBody, _ = io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/vnd.api+json")
-		_, _ = fmt.Fprint(w, `{"data":{"type":"pipelines","id":"pipe-clone","attributes":{"name":"cloned-pipeline","display_name":"Cloned Pipeline"}}}`)
+		_, _ = fmt.Fprint(w, `{"data":{"type":"pipelines","id":"pipe-new","attributes":{"name":"my-pipeline","kind":"my-task-kind"}}}`)
 	}))
 	defer ts.Close()
 
 	var out bytes.Buffer
 	ctx := makeCtx(t, ts.URL, "tok", false, &out)
 
-	cmd := cloneCmd()
+	cmd := createCmd()
 	cmd.SetContext(ctx)
 	cmd.SetOut(&out)
-	if err := cmd.Flags().Set("name", "Cloned Pipeline"); err != nil {
+	if err := cmd.Flags().Set("name", "my-pipeline"); err != nil {
 		t.Fatal(err)
 	}
+	if err := cmd.Flags().Set("kind", "my-task-kind"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
 
-	if err := cmd.RunE(cmd, []string{"pipe1"}); err != nil {
-		t.Fatalf("clone no-stage failed: %v", err)
+	var parsed map[string]json.RawMessage
+	if err := json.Unmarshal(gotBody, &parsed); err != nil {
+		t.Fatalf("request body is not valid JSON: %v\nbody: %s", err, gotBody)
 	}
-	if strings.Contains(string(gotBody), `"stages"`) {
-		t.Errorf("expected stages to be absent when no --stage provided; got: %s", gotBody)
+
+	rawPipeline, ok := parsed["pipeline"]
+	if !ok {
+		t.Fatalf("request body missing top-level 'pipeline' key; got keys: %v\nbody: %s", mapKeys(parsed), gotBody)
 	}
+
+	var pipeObj map[string]json.RawMessage
+	if err := json.Unmarshal(rawPipeline, &pipeObj); err != nil {
+		t.Fatalf("pipeline value is not a JSON object: %v", err)
+	}
+
+	if _, ok := pipeObj["name"]; !ok {
+		t.Errorf("pipeline object missing 'name' field; got keys: %v", mapKeys(pipeObj))
+	}
+	if _, ok := pipeObj["kind"]; !ok {
+		t.Errorf("pipeline object missing 'kind' field; got keys: %v", mapKeys(pipeObj))
+	}
+	if _, ok := pipeObj["stages"]; ok {
+		t.Errorf("pipeline object must not contain 'stages' field")
+	}
+	if _, ok := pipeObj["display_name"]; ok {
+		t.Errorf("pipeline object must not contain 'display_name' field")
+	}
+}
+
+// TestCreatePipelineRequestBodyWithDescription asserts the optional description
+// field is included in the request body when provided.
+func TestCreatePipelineRequestBodyWithDescription(t *testing.T) {
+	var gotBody []byte
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"pipelines","id":"pipe-new","attributes":{"name":"my-pipeline","kind":"my-task-kind","description":"Some text"}}}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := createCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	if err := cmd.Flags().Set("name", "my-pipeline"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Flags().Set("kind", "my-task-kind"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Flags().Set("description", "Some text"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("create failed: %v", err)
+	}
+
+	var parsed map[string]json.RawMessage
+	if err := json.Unmarshal(gotBody, &parsed); err != nil {
+		t.Fatalf("request body is not valid JSON: %v\nbody: %s", err, gotBody)
+	}
+
+	rawPipeline, ok := parsed["pipeline"]
+	if !ok {
+		t.Fatalf("request body missing top-level 'pipeline' key; body: %s", gotBody)
+	}
+
+	var pipeObj map[string]json.RawMessage
+	if err := json.Unmarshal(rawPipeline, &pipeObj); err != nil {
+		t.Fatalf("pipeline value is not a JSON object: %v", err)
+	}
+
+	if _, ok := pipeObj["description"]; !ok {
+		t.Errorf("pipeline object missing 'description' field when --description provided; got keys: %v", mapKeys(pipeObj))
+	}
+	if _, ok := pipeObj["stages"]; ok {
+		t.Errorf("pipeline object must not contain 'stages' field")
+	}
+}
+
+func mapKeys[V any](m map[string]V) []string {
+	keys := make([]string, 0, len(m))
+	for k := range m {
+		keys = append(keys, k)
+	}
+	return keys
 }
