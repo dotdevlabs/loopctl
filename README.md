@@ -354,18 +354,16 @@ loopctl tasks watch <id> --json
 
 Inspect the API's published contract.
 
-#### schema fetch
+#### schema show
 
-Fetch the full API contract from the schema endpoint and display each endpoint's method, path, and description.
+Display the API's published contract. Reads from the committed contract document in the API's repository.
 
 ```bash
-loopctl schema fetch
-loopctl schema fetch --json
+loopctl schema show
+loopctl schema show --json
 ```
 
 Output columns: `METHOD`, `PATH`, `DESCRIPTION`.
-
-**API:** `GET /api/schema`
 
 ---
 
