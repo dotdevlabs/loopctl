@@ -94,7 +94,7 @@ loopctl projects get <id> --json
 
 #### projects create
 
-Create a new project. By default, bootstraps a brand-new GitHub repository under the configured organization. Pass `--repo` to link an existing repository instead.
+Create a new project. By default, bootstraps a brand-new GitHub repository. Pass `--repo` to link an existing repository instead.
 
 Select the platform and pipeline by **name** (recommended) or by numeric **ID**. Use `loopctl platforms list` and `loopctl pipelines list` to discover available values.
 
@@ -125,8 +125,6 @@ loopctl projects create --name "Daybreak" --platform rails \
 | `--pipeline` | no | | Pipeline name (resolved to ID automatically; alternative to `--pipeline-id`) |
 | `--pipeline-id` | no | | Pipeline numeric ID (alternative to `--pipeline`) |
 | `--slug` | no | derived from `--name` | Repo slug override (lowercase letters/digits/hyphens, must start with a letter) |
-| `--organization` | no | `dotdevlabs` | GitHub organization for the new repo |
-| `--organization-type` | no | `Organization` | Organization type (`Organization` or `User`) |
 | `--repo` | no | | Existing repository URL; triggers existing-repo path instead of bootstrap |
 
 \* Exactly one of `--platform` or `--platform-id` is required. Specifying both is an error.
@@ -173,12 +171,13 @@ Output columns: `ID`, `NAME`, `KIND`.
 
 #### pipelines create
 
-Create a new pipeline for your account, linked to a task kind.
+Create a new pipeline for your account, optionally linked to a task kind.
 
 ```bash
+loopctl pipelines create --name "My Pipeline"
 loopctl pipelines create --name "My Pipeline" --kind my-task-kind
 loopctl pipelines create --name "My Pipeline" --kind my-task-kind --description "Optional description"
-loopctl pipelines create --name "My Pipeline" --kind my-task-kind --dry-run
+loopctl pipelines create --name "My Pipeline" --dry-run
 ```
 
 **Flags:**
@@ -186,7 +185,7 @@ loopctl pipelines create --name "My Pipeline" --kind my-task-kind --dry-run
 | Flag | Required | Description |
 |------|----------|-------------|
 | `--name` | yes | Name for the new pipeline |
-| `--kind` | yes | Task-kind name the pipeline belongs to |
+| `--kind` | no | Task-kind name the pipeline belongs to |
 | `--description` | no | Optional description for the pipeline |
 
 Output columns on success: `ID`, `NAME`, `KIND`. Use `--json` for the full resource.
@@ -290,39 +289,30 @@ loopctl tasks create \
 
 #### tasks update
 
-Update an existing task. Only the flags you provide are changed. Output columns: `ID`, `KIND`, `TITLE`, `STAGE`, `STATUS`.
+Update an existing task's criteria fields. Only the flags you provide are changed. Output columns: `ID`, `KIND`, `TITLE`, `STAGE`, `STATUS`.
 
 ```bash
-loopctl tasks update <id> --title "New title"
-loopctl tasks update <id> --kind feature --description "Updated details"
+loopctl tasks update <id> --implementation-criteria "Step-by-step plan..."
+loopctl tasks update <id> --verification-criteria "Run these checks..."
+loopctl tasks update <id> \
+  --implementation-criteria "Step-by-step plan..." \
+  --verification-criteria "Run these checks..."
 ```
 
 **Flags:**
 
 | Flag | Required | Description |
 |------|----------|-------------|
-| `--kind` | no | Task kind |
-| `--title` | no | Task title |
-| `--description` | no | Task description |
+| `--implementation-criteria` | no | Implementation plan written by the planning agent |
+| `--verification-criteria` | no | Verification steps for the implementing agent |
 
 At least one flag must be provided.
 
 **API:** `PATCH /api/tasks/:id`
 
-#### tasks comments
-
-List comments on a task.
-
-```bash
-loopctl tasks comments <id>
-loopctl tasks comments <id> --json
-```
-
-**API:** `GET /api/tasks/:id/comments`
-
 #### tasks cancel
 
-Cancel an in-progress task by ID. On success, renders the updated task row (same columns as `get`/`update`). If the API returns no task body (e.g. 204), prints a plain confirmation instead. Attempting to cancel an already-finished task surfaces the API's human-readable error.
+Cancel an in-progress task by ID. On success, prints a confirmation. With `--json`, emits `{"id":"...","status":"cancelled","stage":"..."}`. Attempting to cancel an already-finished task surfaces the API's human-readable error.
 
 ```bash
 loopctl tasks cancel <id>
@@ -330,9 +320,7 @@ loopctl tasks cancel <id> --json
 loopctl tasks cancel <id> --dry-run
 ```
 
-**Output columns:** `ID`, `KIND`, `TITLE`, `STAGE`, `STATUS`
-
-**API:** `POST /api/tasks/:id/cancel`
+**API:** `POST /api/tasks/:task_id/cancellation`
 
 ---
 
@@ -359,6 +347,25 @@ loopctl tasks watch <id> --json
 - non-zero — task `rejected`, `container.error` activity received, timeout exceeded, or network error
 
 **APIs:** `GET /api/tasks/:id`, `GET /api/tasks/:id/activities`
+
+---
+
+### schema
+
+Inspect the API's published contract.
+
+#### schema fetch
+
+Fetch the full API contract from the schema endpoint and display each endpoint's method, path, and description.
+
+```bash
+loopctl schema fetch
+loopctl schema fetch --json
+```
+
+Output columns: `METHOD`, `PATH`, `DESCRIPTION`.
+
+**API:** `GET /api/schema`
 
 ---
 
@@ -442,10 +449,11 @@ loopctl task-kinds list
 ### Create a custom pipeline and use it for a project
 
 ```bash
-# First create a task kind to associate the pipeline with
-loopctl task-kinds create --name my-workflow-kind
+# Create a pipeline (kind is optional)
+loopctl pipelines create --name "My Workflow"
 
-# Create a pipeline linked to that task kind
+# Or link it to a specific task kind
+loopctl task-kinds create --name my-workflow-kind
 loopctl pipelines create --name "My Workflow" --kind my-workflow-kind
 
 # Use the new pipeline when creating a project
@@ -464,7 +472,7 @@ loopctl task-kinds create --name my-kind
 loopctl projects create --name "Daybreak" --platform rails --dry-run
 loopctl projects create --name "Daybreak" --platform-id "pf1" --dry-run
 loopctl tasks create --project-id p1 --kind bug --title "Fix it" --description "..." --dry-run
-loopctl pipelines create --name "My Workflow" --kind my-task-kind --dry-run
+loopctl pipelines create --name "My Workflow" --dry-run
 loopctl task-kinds create --name my-kind --dry-run
 ```
 

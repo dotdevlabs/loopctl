@@ -85,7 +85,7 @@ func createCmd() *cobra.Command {
 					"name": name,
 				},
 			}
-			res, err := apiclient.PostJSONAPISingle[TaskKindAttrs](ctx, activeCtx, "/api/task_kinds", body)
+			res, err := apiclient.PostJSONBodyJSONAPIResponse[TaskKindAttrs](ctx, activeCtx, "/api/task_kinds", body)
 			if err != nil {
 				return err
 			}

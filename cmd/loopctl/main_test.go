@@ -20,6 +20,7 @@ import (
 	"github.com/dotdevlabs/loopctl/internal/pipelines"
 	"github.com/dotdevlabs/loopctl/internal/platforms"
 	"github.com/dotdevlabs/loopctl/internal/projects"
+	"github.com/dotdevlabs/loopctl/internal/schema"
 	"github.com/dotdevlabs/loopctl/internal/taskkinds"
 	"github.com/dotdevlabs/loopctl/internal/tasks"
 )
@@ -35,6 +36,7 @@ func buildRoot() *cobra.Command {
 			platforms.NewCmd(),
 			pipelines.NewCmd(),
 			projects.NewCmd(),
+			schema.NewCmd(),
 			tasks.NewCmd(),
 			taskkinds.NewCmd(),
 		},
@@ -66,7 +68,7 @@ func TestRootHasResourceCommands(t *testing.T) {
 	for _, sub := range cmd.Commands() {
 		names[sub.Name()] = true
 	}
-	for _, want := range []string{"projects", "tasks", "task-kinds", "pipelines", "platforms"} {
+	for _, want := range []string{"projects", "tasks", "task-kinds", "pipelines", "platforms", "schema"} {
 		if !names[want] {
 			t.Errorf("missing subcommand %q", want)
 		}

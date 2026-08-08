@@ -479,6 +479,111 @@ func TestVerboseLogging(t *testing.T) {
 	}
 }
 
+func TestPostJSONSuccess(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST; got: %s", r.Method)
+		}
+		if r.Header.Get("Accept") != "application/json" {
+			t.Errorf("expected Accept application/json; got: %s", r.Header.Get("Accept"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"value":"flat"}`)
+	}))
+	defer ts.Close()
+
+	result, err := apiclient.PostJSON[testData](context.Background(), activeCtx(t, ts.URL), "/api/test", nil)
+	if err != nil {
+		t.Fatalf("expected no error; got: %v", err)
+	}
+	if result.Value != "flat" {
+		t.Errorf("expected value=flat; got: %q", result.Value)
+	}
+}
+
+func TestPostJSONNoBody(t *testing.T) {
+	var gotContentLength string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotContentLength = r.Header.Get("Content-Length")
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer ts.Close()
+
+	var zero testData
+	result, err := apiclient.PostJSON[testData](context.Background(), activeCtx(t, ts.URL), "/api/test", nil)
+	if err != nil {
+		t.Fatalf("expected no error for no-content; got: %v", err)
+	}
+	if result != zero {
+		t.Errorf("expected zero value for empty response; got: %+v", result)
+	}
+	if gotContentLength != "" && gotContentLength != "0" {
+		t.Errorf("expected no Content-Length or 0 for nil body; got: %s", gotContentLength)
+	}
+}
+
+func TestPostJSONError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = fmt.Fprint(w, `{"errors":[{"status":"422","detail":"task already cancelled"}]}`)
+	}))
+	defer ts.Close()
+
+	_, err := apiclient.PostJSON[testData](context.Background(), activeCtx(t, ts.URL), "/api/test", nil)
+	if err == nil {
+		t.Fatal("expected error on 422")
+	}
+	if !strings.Contains(err.Error(), "task already cancelled") {
+		t.Errorf("expected 'task already cancelled' in error; got: %v", err)
+	}
+}
+
+func TestPostJSONBodyJSONAPIResponseSuccess(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Errorf("expected POST; got: %s", r.Method)
+		}
+		if r.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("expected Content-Type application/json; got: %s", r.Header.Get("Content-Type"))
+		}
+		if r.Header.Get("Accept") != "application/vnd.api+json" {
+			t.Errorf("expected Accept application/vnd.api+json; got: %s", r.Header.Get("Accept"))
+		}
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = fmt.Fprint(w, `{"data":{"type":"items","id":"x1","attributes":{"value":"created"}}}`)
+	}))
+	defer ts.Close()
+
+	res, err := apiclient.PostJSONBodyJSONAPIResponse[testData](context.Background(), activeCtx(t, ts.URL), "/api/test", map[string]string{"k": "v"})
+	if err != nil {
+		t.Fatalf("expected no error; got: %v", err)
+	}
+	if res.ID != "x1" {
+		t.Errorf("expected ID=x1; got: %q", res.ID)
+	}
+	if res.Attributes.Value != "created" {
+		t.Errorf("expected value=created; got: %q", res.Attributes.Value)
+	}
+}
+
+func TestPostJSONBodyJSONAPIResponseError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = fmt.Fprint(w, `{"errors":[{"status":"422","detail":"name is taken"}]}`)
+	}))
+	defer ts.Close()
+
+	_, err := apiclient.PostJSONBodyJSONAPIResponse[testData](context.Background(), activeCtx(t, ts.URL), "/api/test", nil)
+	if err == nil {
+		t.Fatal("expected error on 422")
+	}
+	if !strings.Contains(err.Error(), "name is taken") {
+		t.Errorf("expected 'name is taken' in error; got: %v", err)
+	}
+}
+
 func TestVerboseLoggingGetJSONAPISingle(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/vnd.api+json")

@@ -94,7 +94,7 @@ func createCmd() *cobra.Command {
 			}
 			body := map[string]any{"pipeline": attrs}
 
-			res, err := apiclient.PostJSONAPISingle[PipelineAttrs](ctx, activeCtx, "/api/pipelines", body)
+			res, err := apiclient.PostJSONBodyJSONAPIResponse[PipelineAttrs](ctx, activeCtx, "/api/pipelines", body)
 			if err != nil {
 				return err
 			}
@@ -109,6 +109,5 @@ func createCmd() *cobra.Command {
 	cmd.Flags().StringVar(&kind, "kind", "", "Task kind name the pipeline belongs to")
 	cmd.Flags().StringVar(&description, "description", "", "Optional description for the pipeline")
 	_ = cmd.MarkFlagRequired("name")
-	_ = cmd.MarkFlagRequired("kind")
 	return cmd
 }
