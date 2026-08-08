@@ -14,9 +14,8 @@ import (
 
 // TaskKindAttrs holds the attributes returned by /api/task_kinds.
 type TaskKindAttrs struct {
-	Name        string `json:"name"`
-	DisplayName string `json:"display_name"`
-	BuiltIn     bool   `json:"built_in"`
+	Name    string `json:"name"`
+	BuiltIn bool   `json:"built_in"`
 }
 
 // NewCmd returns the "task-kinds" parent command.
@@ -47,7 +46,6 @@ func listCmd() *cobra.Command {
 			cols := []output.Column{
 				{Header: "ID"},
 				{Header: "NAME"},
-				{Header: "DISPLAY_NAME"},
 				{Header: "BUILT_IN"},
 			}
 			rows := make([][]string, len(col.Data))
@@ -56,7 +54,7 @@ func listCmd() *cobra.Command {
 				if k.Attributes.BuiltIn {
 					builtIn = "true"
 				}
-				rows[i] = []string{k.ID, k.Attributes.Name, k.Attributes.DisplayName, builtIn}
+				rows[i] = []string{k.ID, k.Attributes.Name, builtIn}
 			}
 			return r.Render(cols, rows, col)
 		},
@@ -64,10 +62,7 @@ func listCmd() *cobra.Command {
 }
 
 func createCmd() *cobra.Command {
-	var (
-		name        string
-		displayName string
-	)
+	var name string
 
 	cmd := &cobra.Command{
 		Use:   "create",
@@ -77,8 +72,8 @@ func createCmd() *cobra.Command {
 
 			if ctxutil.GlobalFlagsFrom(ctx).DryRun {
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(),
-					"dry-run: would POST /api/task_kinds {name=%q display_name=%q}\n",
-					name, displayName)
+					"dry-run: would POST /api/task_kinds {name=%q}\n",
+					name)
 				return nil
 			}
 
@@ -87,8 +82,7 @@ func createCmd() *cobra.Command {
 
 			body := map[string]any{
 				"task_kind": map[string]any{
-					"name":         name,
-					"display_name": displayName,
+					"name": name,
 				},
 			}
 			res, err := apiclient.PostJSONAPISingle[TaskKindAttrs](ctx, activeCtx, "/api/task_kinds", body)
@@ -100,16 +94,13 @@ func createCmd() *cobra.Command {
 			cols := []output.Column{
 				{Header: "ID"},
 				{Header: "NAME"},
-				{Header: "DISPLAY_NAME"},
 			}
-			rows := [][]string{{res.ID, k.Name, k.DisplayName}}
+			rows := [][]string{{res.ID, k.Name}}
 			return r.Render(cols, rows, res)
 		},
 	}
 
 	cmd.Flags().StringVar(&name, "name", "", "Identifier/slug for the task kind")
-	cmd.Flags().StringVar(&displayName, "display-name", "", "Human-readable label for the task kind")
 	_ = cmd.MarkFlagRequired("name")
-	_ = cmd.MarkFlagRequired("display-name")
 	return cmd
 }
