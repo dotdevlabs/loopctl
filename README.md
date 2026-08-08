@@ -96,16 +96,22 @@ loopctl projects get <id> --json
 
 Create a new project. By default, bootstraps a brand-new GitHub repository under the configured organization. Pass `--repo` to link an existing repository instead.
 
-```bash
-# Bootstrap a new repo (default path)
-loopctl projects create --name "Daybreak" --platform-id <platform-id>
+Select the platform and pipeline by **name** (recommended) or by numeric **ID**. Use `loopctl platforms list` and `loopctl pipelines list` to discover available values.
 
-# Bootstrap with explicit pipeline and slug override
+```bash
+# Bootstrap a new repo by platform name
+loopctl projects create --name "Daybreak" --platform rails
+
+# Bootstrap with explicit pipeline name and slug override
+loopctl projects create --name "Daybreak" --platform rails \
+  --pipeline "Autonomous Feature" --slug daybreak-v2
+
+# Use numeric IDs directly (backward-compatible)
 loopctl projects create --name "Daybreak" --platform-id <platform-id> \
-  --pipeline-id <pipeline-id> --slug daybreak-v2
+  --pipeline-id <pipeline-id>
 
 # Link to an existing repository
-loopctl projects create --name "Daybreak" --platform-id <platform-id> \
+loopctl projects create --name "Daybreak" --platform rails \
   --repo https://github.com/org/repo
 ```
 
@@ -114,16 +120,56 @@ loopctl projects create --name "Daybreak" --platform-id <platform-id> \
 | Flag | Required | Default | Description |
 |------|----------|---------|-------------|
 | `--name` | yes | | Human/display name for the project |
-| `--platform-id` | yes | | Platform ID |
-| `--pipeline-id` | no | | Pipeline ID (sets the project's default pipeline) |
+| `--platform` | yes* | | Platform name or slug (resolved to ID automatically) |
+| `--platform-id` | yes* | | Platform numeric ID (alternative to `--platform`) |
+| `--pipeline` | no | | Pipeline name (resolved to ID automatically; alternative to `--pipeline-id`) |
+| `--pipeline-id` | no | | Pipeline numeric ID (alternative to `--pipeline`) |
 | `--slug` | no | derived from `--name` | Repo slug override (lowercase letters/digits/hyphens, must start with a letter) |
 | `--organization` | no | `dotdevlabs` | GitHub organization for the new repo |
 | `--organization-type` | no | `Organization` | Organization type (`Organization` or `User`) |
 | `--repo` | no | | Existing repository URL; triggers existing-repo path instead of bootstrap |
 
+\* Exactly one of `--platform` or `--platform-id` is required. Specifying both is an error.
+
 The slug is automatically derived from `--name`: lowercased, spaces/underscores converted to hyphens, non-alphanumeric characters stripped, leading digits/hyphens removed. Use `--slug` to override.
 
-**API:** `POST /api/projects`
+If a named platform or pipeline is not found, the command fails with a clear error and creates nothing.
+
+**API:** `POST /api/projects` (preceded by `GET /api/platforms` and/or `GET /api/pipelines` when resolving by name)
+
+---
+
+### platforms
+
+List available platforms. Use this to discover the platform names and IDs accepted by `projects create`.
+
+#### platforms list
+
+```bash
+loopctl platforms list
+loopctl platforms list --json
+```
+
+Output columns: `ID`, `NAME`, `DISPLAY_NAME`.
+
+**API:** `GET /api/platforms`
+
+---
+
+### pipelines
+
+List available pipelines. Use this to discover the pipeline names and IDs accepted by `projects create`.
+
+#### pipelines list
+
+```bash
+loopctl pipelines list
+loopctl pipelines list --json
+```
+
+Output columns: `ID`, `NAME`, `DISPLAY_NAME`.
+
+**API:** `GET /api/pipelines`
 
 ---
 
@@ -325,9 +371,17 @@ loopctl tasks watch <task-id> --json
 loopctl tasks list --project-id <project-id> --json
 ```
 
+### Discover available platforms and pipelines
+
+```bash
+loopctl platforms list
+loopctl pipelines list
+```
+
 ### Preview a write without making API calls
 
 ```bash
+loopctl projects create --name "Daybreak" --platform rails --dry-run
 loopctl projects create --name "Daybreak" --platform-id "pf1" --dry-run
 loopctl tasks create --project-id p1 --kind bug --title "Fix it" --description "..." --dry-run
 ```
