@@ -169,6 +169,33 @@ func TestConformance_TasksWatch(t *testing.T) {
 	}
 }
 
+func TestConformance_TasksCreate_WithDependsOn(t *testing.T) {
+	endpoints := loadSchemaOrSkip(t)
+	var violations []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		violations = schema.CheckRequest(r, endpoints)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{}}}`)
+	}))
+	defer ts.Close()
+
+	ctx := makeCtx(t, ts.URL, "tok", false, io.Discard)
+	cmd := createCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(io.Discard)
+	_ = cmd.Flags().Set("project-id", "proj1")
+	_ = cmd.Flags().Set("kind", "feature")
+	_ = cmd.Flags().Set("title", "T")
+	_ = cmd.Flags().Set("description", "D")
+	_ = cmd.Flags().Set("depends-on", "dep1")
+	_ = cmd.RunE(cmd, nil)
+
+	if len(violations) != 0 {
+		t.Errorf("conformance violations for tasks create with depends_on: %v", violations)
+	}
+}
+
 func TestConformance_ViolationDetection(t *testing.T) {
 	endpoints := loadSchemaOrSkip(t)
 	// Verify that CheckRequest detects a forbidden field in tasks create.
