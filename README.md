@@ -167,53 +167,31 @@ loopctl pipelines list
 loopctl pipelines list --json
 ```
 
-Output columns: `ID`, `NAME`, `DISPLAY_NAME`.
+Output columns: `ID`, `NAME`, `KIND`.
 
 **API:** `GET /api/pipelines`
 
 #### pipelines create
 
-Create a new pipeline for your account, optionally defining its ordered stages.
+Create a new pipeline for your account, linked to a task kind.
 
 ```bash
-loopctl pipelines create --name "My Pipeline"
-loopctl pipelines create --name "My Pipeline" --stage plan --stage implement --stage review
-loopctl pipelines create --name "My Pipeline" --stage plan --stage review --dry-run
+loopctl pipelines create --name "My Pipeline" --kind my-task-kind
+loopctl pipelines create --name "My Pipeline" --kind my-task-kind --description "Optional description"
+loopctl pipelines create --name "My Pipeline" --kind my-task-kind --dry-run
 ```
 
 **Flags:**
 
 | Flag | Required | Description |
 |------|----------|-------------|
-| `--name` | yes | Display name for the new pipeline |
-| `--stage` | no | Ordered stage name (repeatable; e.g. `--stage plan --stage review`) |
+| `--name` | yes | Name for the new pipeline |
+| `--kind` | yes | Task-kind name the pipeline belongs to |
+| `--description` | no | Optional description for the pipeline |
 
-Output columns on success: `ID`, `NAME`, `DISPLAY_NAME`. Use `--json` for the full resource including stages.
+Output columns on success: `ID`, `NAME`, `KIND`. Use `--json` for the full resource.
 
 **API:** `POST /api/pipelines`
-
-#### pipelines clone
-
-Clone an existing pipeline into a new one for your account. Stages are copied from the source unless overridden with `--stage`.
-
-```bash
-loopctl pipelines clone <source-id> --name "My Fork"
-loopctl pipelines clone <source-id> --name "My Fork" --stage plan --stage review
-loopctl pipelines clone <source-id> --name "My Fork" --dry-run
-```
-
-**Flags:**
-
-| Flag | Required | Description |
-|------|----------|-------------|
-| `--name` | yes | Display name for the cloned pipeline |
-| `--stage` | no | Override stage names (repeatable); omit to inherit source stages |
-
-Output columns on success: `ID`, `NAME`, `DISPLAY_NAME`.
-
-Attempting to clone a built-in (read-only) pipeline surfaces the API's human-readable error.
-
-**API:** `POST /api/pipelines/:id/clone`
 
 ---
 
@@ -228,7 +206,7 @@ loopctl task-kinds list
 loopctl task-kinds list --json
 ```
 
-Output columns: `ID`, `NAME`, `DISPLAY_NAME`, `BUILT_IN`.
+Output columns: `ID`, `NAME`, `BUILT_IN`.
 
 **API:** `GET /api/task_kinds`
 
@@ -237,18 +215,17 @@ Output columns: `ID`, `NAME`, `DISPLAY_NAME`, `BUILT_IN`.
 Create a new custom task kind for your account.
 
 ```bash
-loopctl task-kinds create --name my-kind --display-name "My Kind"
-loopctl task-kinds create --name my-kind --display-name "My Kind" --dry-run
+loopctl task-kinds create --name my-kind
+loopctl task-kinds create --name my-kind --dry-run
 ```
 
 **Flags:**
 
 | Flag | Required | Description |
 |------|----------|-------------|
-| `--name` | yes | Identifier/slug for the task kind |
-| `--display-name` | yes | Human-readable label for the task kind |
+| `--name` | yes | Slug/identifier for the task kind |
 
-Output columns on success: `ID`, `NAME`, `DISPLAY_NAME`.
+Output columns on success: `ID`, `NAME`.
 
 Attempting to create a built-in task kind surfaces the API's human-readable error.
 
@@ -465,11 +442,11 @@ loopctl task-kinds list
 ### Create a custom pipeline and use it for a project
 
 ```bash
-# Create a custom pipeline with ordered stages
-loopctl pipelines create --name "My Workflow" --stage plan --stage implement --stage review
+# First create a task kind to associate the pipeline with
+loopctl task-kinds create --name my-workflow-kind
 
-# Or clone an existing pipeline and override its stages
-loopctl pipelines clone <source-id> --name "My Fork" --stage plan --stage review
+# Create a pipeline linked to that task kind
+loopctl pipelines create --name "My Workflow" --kind my-workflow-kind
 
 # Use the new pipeline when creating a project
 loopctl projects create --name "Daybreak" --platform rails --pipeline "My Workflow"
@@ -478,7 +455,7 @@ loopctl projects create --name "Daybreak" --platform rails --pipeline "My Workfl
 ### Create a custom task kind
 
 ```bash
-loopctl task-kinds create --name my-kind --display-name "My Kind"
+loopctl task-kinds create --name my-kind
 ```
 
 ### Preview a write without making API calls
@@ -487,8 +464,8 @@ loopctl task-kinds create --name my-kind --display-name "My Kind"
 loopctl projects create --name "Daybreak" --platform rails --dry-run
 loopctl projects create --name "Daybreak" --platform-id "pf1" --dry-run
 loopctl tasks create --project-id p1 --kind bug --title "Fix it" --description "..." --dry-run
-loopctl pipelines create --name "My Workflow" --stage plan --stage review --dry-run
-loopctl task-kinds create --name my-kind --display-name "My Kind" --dry-run
+loopctl pipelines create --name "My Workflow" --kind my-task-kind --dry-run
+loopctl task-kinds create --name my-kind --dry-run
 ```
 
 ---
