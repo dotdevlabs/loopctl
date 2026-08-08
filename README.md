@@ -290,6 +290,15 @@ loopctl tasks create \
   --title "My task" \
   --description "Task details" \
   --watch --interval 30s --timeout 60m
+
+# Create a task that depends on one or more existing tasks
+loopctl tasks create \
+  --project-id <project-id> \
+  --kind <kind> \
+  --title "Dependent task" \
+  --description "Runs after t1 and t2 complete" \
+  --depends-on <task-id-1> \
+  --depends-on <task-id-2>
 ```
 
 **Flags:**
@@ -300,6 +309,7 @@ loopctl tasks create \
 | `--kind` | yes | | Task kind |
 | `--title` | yes | | Task title |
 | `--description` | yes | | Task description |
+| `--depends-on` | no | | Task ID this task depends on; repeat to add multiple |
 | `--watch` | no | `false` | Follow the task to a terminal state after creating it |
 | `--interval` | no | `15s` | Poll interval when `--watch` is set (e.g. `15s`, `1m`) |
 | `--timeout` | no | _(none)_ | Give up after this duration when `--watch` is set (e.g. `30m`); empty means no timeout |
@@ -495,6 +505,30 @@ loopctl projects create --name "Daybreak" --platform rails --pipeline "My Workfl
 ```bash
 loopctl task-kinds create --name my-kind
 ```
+
+### Dispatch a dependency graph at once
+
+```bash
+# Create the first task and capture its ID
+TASK_A=$(loopctl tasks create \
+  --project-id <project-id> --kind feature \
+  --title "Task A" --description "..." --json | jq -r '.data.id')
+
+# Create a second task that only starts after Task A completes
+TASK_B=$(loopctl tasks create \
+  --project-id <project-id> --kind feature \
+  --title "Task B" --description "..." \
+  --depends-on "$TASK_A" --json | jq -r '.data.id')
+
+# Create a third task that depends on both A and B
+loopctl tasks create \
+  --project-id <project-id> --kind feature \
+  --title "Task C" --description "..." \
+  --depends-on "$TASK_A" \
+  --depends-on "$TASK_B"
+```
+
+A dependent task is held until every dependency reaches a completed state. Repeat `--depends-on` for each dependency; the flag cannot be comma-separated.
 
 ### Preview a write without making API calls
 

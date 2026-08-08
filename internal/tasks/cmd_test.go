@@ -1031,6 +1031,102 @@ func TestTasksCreateWatch_JSONMode(t *testing.T) {
 	}
 }
 
+func TestTasksCreateWithDependsOn(t *testing.T) {
+	var gotBody string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t99","attributes":{"project_id":"proj1","kind":"feature","title":"Dep Task","stage":"planning","status":"open"}}}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := createCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("project-id", "proj1")
+	_ = cmd.Flags().Set("kind", "feature")
+	_ = cmd.Flags().Set("title", "Dep Task")
+	_ = cmd.Flags().Set("description", "Details")
+	_ = cmd.Flags().Set("depends-on", "t2")
+
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("create with depends-on failed: %v", err)
+	}
+	if !strings.Contains(gotBody, `"depends_on"`) {
+		t.Errorf("expected depends_on in body; got: %s", gotBody)
+	}
+	if !strings.Contains(gotBody, `"t2"`) {
+		t.Errorf("expected dependency id t2 in body; got: %s", gotBody)
+	}
+}
+
+func TestTasksCreateWithMultipleDependsOn(t *testing.T) {
+	var gotBody string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t99","attributes":{"project_id":"proj1","kind":"feature","title":"Multi Dep Task","stage":"planning","status":"open"}}}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := createCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("project-id", "proj1")
+	_ = cmd.Flags().Set("kind", "feature")
+	_ = cmd.Flags().Set("title", "Multi Dep Task")
+	_ = cmd.Flags().Set("description", "Details")
+	_ = cmd.Flags().Set("depends-on", "t2")
+	_ = cmd.Flags().Set("depends-on", "t3")
+
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("create with multiple depends-on failed: %v", err)
+	}
+	if !strings.Contains(gotBody, `"t2"`) {
+		t.Errorf("expected dependency id t2 in body; got: %s", gotBody)
+	}
+	if !strings.Contains(gotBody, `"t3"`) {
+		t.Errorf("expected dependency id t3 in body; got: %s", gotBody)
+	}
+}
+
+func TestTasksCreateNoDependsOnOmitted(t *testing.T) {
+	var gotBody string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t99","attributes":{"project_id":"proj1","kind":"feature","title":"No Dep Task","stage":"planning","status":"open"}}}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := createCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("project-id", "proj1")
+	_ = cmd.Flags().Set("kind", "feature")
+	_ = cmd.Flags().Set("title", "No Dep Task")
+	_ = cmd.Flags().Set("description", "Details")
+
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("create without depends-on failed: %v", err)
+	}
+	if strings.Contains(gotBody, `"depends_on"`) {
+		t.Errorf("expected no depends_on in body when flag not set; got: %s", gotBody)
+	}
+}
+
 func TestTasksCreateWatch_Timeout(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/vnd.api+json")

@@ -132,6 +132,7 @@ func createCmd() *cobra.Command {
 		kind        string
 		title       string
 		description string
+		dependsOn   []string
 		watch       bool
 		intervalStr string
 		timeoutStr  string
@@ -145,21 +146,25 @@ func createCmd() *cobra.Command {
 
 			if ctxutil.GlobalFlagsFrom(ctx).DryRun {
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(),
-					"dry-run: would POST /api/tasks {project_id=%q kind=%q title=%q}\n",
-					projectID, kind, title)
+					"dry-run: would POST /api/tasks {project_id=%q kind=%q title=%q depends_on=%v}\n",
+					projectID, kind, title, dependsOn)
 				return nil
 			}
 
 			activeCtx := ctxutil.ActiveContextFrom(ctx)
 			r := ctxutil.RendererFrom(ctx)
 
+			taskBody := map[string]any{
+				"project_id":  projectID,
+				"kind":        kind,
+				"title":       title,
+				"description": description,
+			}
+			if len(dependsOn) > 0 {
+				taskBody["depends_on"] = dependsOn
+			}
 			body := map[string]any{
-				"task": map[string]any{
-					"project_id":  projectID,
-					"kind":        kind,
-					"title":       title,
-					"description": description,
-				},
+				"task": taskBody,
 			}
 			res, err := apiclient.PostJSONBodyJSONAPIResponse[TaskAttrs](ctx, activeCtx, "/api/tasks", body)
 			if err != nil {
@@ -198,6 +203,7 @@ func createCmd() *cobra.Command {
 	cmd.Flags().StringVar(&kind, "kind", "", "Task kind")
 	cmd.Flags().StringVar(&title, "title", "", "Task title")
 	cmd.Flags().StringVar(&description, "description", "", "Task description")
+	cmd.Flags().StringArrayVar(&dependsOn, "depends-on", nil, "Task ID this task depends on; repeat to add multiple")
 	cmd.Flags().BoolVar(&watch, "watch", false, "Follow the task to a terminal state after creating it")
 	cmd.Flags().StringVar(&intervalStr, "interval", "15s", "Poll interval when --watch is set (e.g. 15s, 1m)")
 	cmd.Flags().StringVar(&timeoutStr, "timeout", "", "Give up after this duration when --watch is set (e.g. 30m); empty means no timeout")
