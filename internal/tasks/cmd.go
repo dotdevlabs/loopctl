@@ -27,24 +27,18 @@ type TaskAttrs struct {
 	CreatedAt   string `json:"created_at"`
 }
 
-// Activity is a single task activity event returned by the activities endpoint.
-type Activity struct {
-	ID        string `json:"id"`
-	Action    string `json:"action"`
-	Details   string `json:"details"`
-	CreatedAt string `json:"created_at"`
+// ActivityAttrs holds the attributes nested under JSON:API data.attributes for task activities.
+type ActivityAttrs struct {
+	Action      string `json:"action"`
+	Details     string `json:"details"`
+	ContainerID string `json:"container_id"`
+	CreatedAt   string `json:"created_at"`
 }
 
-type activitiesResponse struct {
-	Activities []Activity `json:"activities"`
-}
-
-// Comment is the JSON representation of a task comment.
-type Comment struct {
-	ID        string `json:"id"`
-	TaskID    string `json:"task_id"`
-	Body      string `json:"body"`
-	CreatedAt string `json:"created_at"`
+// CancellationResult is the flat JSON response from the cancellation endpoint.
+type CancellationResult struct {
+	Status string `json:"status"`
+	Stage  string `json:"stage"`
 }
 
 // NewCmd returns the "tasks" parent command with all verb subcommands.
@@ -57,7 +51,6 @@ func NewCmd() *cobra.Command {
 	cmd.AddCommand(getCmd())
 	cmd.AddCommand(createCmd())
 	cmd.AddCommand(updateCmd())
-	cmd.AddCommand(commentsCmd())
 	cmd.AddCommand(watchCmd())
 	cmd.AddCommand(cancelCmd())
 	return cmd
@@ -162,7 +155,7 @@ func createCmd() *cobra.Command {
 					"description": description,
 				},
 			}
-			res, err := apiclient.PostJSONAPISingle[TaskAttrs](ctx, activeCtx, "/api/tasks", body)
+			res, err := apiclient.PostJSONBodyJSONAPIResponse[TaskAttrs](ctx, activeCtx, "/api/tasks", body)
 			if err != nil {
 				return err
 			}
@@ -195,9 +188,8 @@ func createCmd() *cobra.Command {
 
 func updateCmd() *cobra.Command {
 	var (
-		kind        string
-		title       string
-		description string
+		implementationCriteria string
+		verificationCriteria   string
 	)
 
 	cmd := &cobra.Command{
@@ -208,18 +200,15 @@ func updateCmd() *cobra.Command {
 			ctx := cmd.Context()
 
 			patch := map[string]any{}
-			if cmd.Flags().Changed("kind") {
-				patch["kind"] = kind
+			if cmd.Flags().Changed("implementation-criteria") {
+				patch["implementation_criteria"] = implementationCriteria
 			}
-			if cmd.Flags().Changed("title") {
-				patch["title"] = title
-			}
-			if cmd.Flags().Changed("description") {
-				patch["description"] = description
+			if cmd.Flags().Changed("verification-criteria") {
+				patch["verification_criteria"] = verificationCriteria
 			}
 
 			if len(patch) == 0 {
-				return clierror.New(clierror.CodeUsage, "no fields to update", "provide at least one of --kind, --title, --description")
+				return clierror.New(clierror.CodeUsage, "no fields to update", "provide at least one of --implementation-criteria, --verification-criteria")
 			}
 
 			if ctxutil.GlobalFlagsFrom(ctx).DryRun {
@@ -251,41 +240,10 @@ func updateCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&kind, "kind", "", "Task kind")
-	cmd.Flags().StringVar(&title, "title", "", "Task title")
-	cmd.Flags().StringVar(&description, "description", "", "Task description")
+	cmd.Flags().StringVar(&implementationCriteria, "implementation-criteria", "", "Implementation plan written by the planning agent")
+	cmd.Flags().StringVar(&verificationCriteria, "verification-criteria", "", "Verification steps for the implementing agent")
 
 	return cmd
-}
-
-func commentsCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "comments <id>",
-		Short: "List comments on a task",
-		Args:  cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := cmd.Context()
-			activeCtx := ctxutil.ActiveContextFrom(ctx)
-			r := ctxutil.RendererFrom(ctx)
-
-			path := "/api/tasks/" + url.PathEscape(args[0]) + "/comments"
-			env, err := apiclient.GetEnvelope[[]Comment](ctx, activeCtx, path)
-			if err != nil {
-				return err
-			}
-
-			cols := []output.Column{
-				{Header: "ID"},
-				{Header: "BODY"},
-				{Header: "CREATED_AT"},
-			}
-			rows := make([][]string, len(env.Data))
-			for i, c := range env.Data {
-				rows[i] = []string{c.ID, c.Body, c.CreatedAt}
-			}
-			return r.Render(cols, rows, env)
-		},
-	}
 }
 
 func cancelCmd() *cobra.Command {
@@ -298,35 +256,26 @@ func cancelCmd() *cobra.Command {
 
 			if ctxutil.GlobalFlagsFrom(ctx).DryRun {
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(),
-					"dry-run: would POST /api/tasks/%s/cancel\n", args[0])
+					"dry-run: would POST /api/tasks/%s/cancellation\n", args[0])
 				return nil
 			}
 
 			activeCtx := ctxutil.ActiveContextFrom(ctx)
-			r := ctxutil.RendererFrom(ctx)
 			out := cmd.OutOrStdout()
 
-			path := "/api/tasks/" + url.PathEscape(args[0]) + "/cancel"
-			res, err := apiclient.PostJSONAPISingle[TaskAttrs](ctx, activeCtx, path, map[string]any{})
+			path := "/api/tasks/" + url.PathEscape(args[0]) + "/cancellation"
+			result, err := apiclient.PostJSON[CancellationResult](ctx, activeCtx, path, nil)
 			if err != nil {
 				return err
 			}
 
-			if res.ID != "" {
-				t := res.Attributes
-				cols := []output.Column{
-					{Header: "ID"},
-					{Header: "KIND"},
-					{Header: "TITLE"},
-					{Header: "STAGE"},
-					{Header: "STATUS"},
-				}
-				rows := [][]string{{res.ID, t.Kind, t.Title, t.Stage, t.Status}}
-				return r.Render(cols, rows, res)
+			status := result.Status
+			if status == "" {
+				status = "cancelled"
 			}
 
 			if ctxutil.GlobalFlagsFrom(ctx).JSON {
-				return output.JSONTo(out, map[string]string{"id": args[0], "status": "cancelled"})
+				return output.JSONTo(out, map[string]string{"id": args[0], "status": status, "stage": result.Stage})
 			}
 			_, _ = fmt.Fprintf(out, "task %s cancelled\n", args[0])
 			return nil
@@ -376,32 +325,36 @@ func watchCmd() *cobra.Command {
 				}
 				t := res.Attributes
 
-				actsResp, err := apiclient.GetJSON[activitiesResponse](ctx, activeCtx, activitiesPath)
+				actsColl, err := apiclient.GetJSONAPICollection[ActivityAttrs](ctx, activeCtx, activitiesPath)
 				if err != nil {
 					return false, err
 				}
 
-				var newest *Activity
-				if len(actsResp.Activities) > 0 {
-					a := actsResp.Activities[len(actsResp.Activities)-1]
-					newest = &a
+				var newestID string
+				var newestAction string
+				var newestDetails string
+				if len(actsColl.Data) > 0 {
+					newest := actsColl.Data[len(actsColl.Data)-1]
+					newestID = newest.ID
+					newestAction = newest.Attributes.Action
+					newestDetails = newest.Attributes.Details
 				}
 
 				stageChanged := t.Stage != lastStage
 				prChanged := t.PRNumber != lastPRNumber
-				actChanged := newest != nil && newest.ID != lastActID
+				actChanged := newestID != "" && newestID != lastActID
 
 				if stageChanged || prChanged || actChanged {
 					lastStage = t.Stage
 					lastPRNumber = t.PRNumber
-					if newest != nil {
-						lastActID = newest.ID
+					if newestID != "" {
+						lastActID = newestID
 					}
 
 					if !jsonMode {
 						ts := time.Now().UTC().Format(time.RFC3339)
-						if actChanged && newest != nil {
-							_, _ = fmt.Fprintf(out, "%s stage=%s pr=%d %s\n", ts, t.Stage, t.PRNumber, newest.Action)
+						if actChanged && newestAction != "" {
+							_, _ = fmt.Fprintf(out, "%s stage=%s pr=%d %s\n", ts, t.Stage, t.PRNumber, newestAction)
 						} else {
 							_, _ = fmt.Fprintf(out, "%s stage=%s pr=%d\n", ts, t.Stage, t.PRNumber)
 						}
@@ -409,13 +362,13 @@ func watchCmd() *cobra.Command {
 				}
 
 				// Container error check takes priority over terminal state.
-				if actChanged && newest != nil && newest.Action == "container.error" {
+				if actChanged && newestAction == "container.error" {
 					if !jsonMode {
-						_, _ = fmt.Fprintf(out, "container error detail: %s\n", newest.Details)
+						_, _ = fmt.Fprintf(out, "container error detail: %s\n", newestDetails)
 					} else {
 						_ = output.JSONTo(out, res)
 					}
-					return true, clierror.New(clierror.CodeServerError, "container error: "+newest.Details, "")
+					return true, clierror.New(clierror.CodeServerError, "container error: "+newestDetails, "")
 				}
 
 				// Terminal state check.

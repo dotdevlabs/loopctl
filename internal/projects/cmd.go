@@ -135,15 +135,13 @@ type pipelineLookup struct {
 
 func createCmd() *cobra.Command {
 	var (
-		name             string
-		platformID       string
-		platform         string
-		pipelineID       string
-		pipeline         string
-		slug             string
-		organization     string
-		organizationType string
-		repo             string
+		name       string
+		platformID string
+		platform   string
+		pipelineID string
+		pipeline   string
+		slug       string
+		repo       string
 	)
 
 	cmd := &cobra.Command{
@@ -225,12 +223,12 @@ func createCmd() *cobra.Command {
 			if ctxutil.GlobalFlagsFrom(ctx).DryRun {
 				if repo != "" {
 					_, _ = fmt.Fprintf(cmd.OutOrStdout(),
-						"dry-run: would POST /api/projects {display_name=%q platform_id=%q repo=%q}\n",
+						"dry-run: would POST /api/projects {display_name=%q platform_id=%q git_repo_url=%q}\n",
 						name, effectivePlatformID, repo)
 				} else {
 					_, _ = fmt.Fprintf(cmd.OutOrStdout(),
-						"dry-run: would POST /api/projects {display_name=%q slug=%q platform_id=%q pipeline_id=%q organization=%q}\n",
-						name, effectiveSlug, effectivePlatformID, effectivePipelineID, organization)
+						"dry-run: would POST /api/projects {display_name=%q name=%q platform_id=%q pipeline_id=%q}\n",
+						name, effectiveSlug, effectivePlatformID, effectivePipelineID)
 				}
 				return nil
 			}
@@ -244,28 +242,25 @@ func createCmd() *cobra.Command {
 					"project": map[string]any{
 						"display_name": name,
 						"platform_id":  effectivePlatformID,
-						"repo":         repo,
+						"git_repo_url": repo,
 					},
 				}
 			} else {
-				// Bootstrap/new-repo path.
+				// New-project path: slug goes into project.name.
 				proj := map[string]any{
 					"display_name": name,
+					"name":         effectiveSlug,
 					"platform_id":  effectivePlatformID,
 				}
 				if effectivePipelineID != "" {
 					proj["pipeline_id"] = effectivePipelineID
 				}
 				body = map[string]any{
-					"create_new_repo":   "true",
-					"new_repo_name":     effectiveSlug,
-					"organization":      organization,
-					"organization_type": organizationType,
-					"project":           proj,
+					"project": proj,
 				}
 			}
 
-			res, err := apiclient.PostJSONAPISingle[ProjectAttrs](ctx, activeCtx, "/api/projects", body)
+			res, err := apiclient.PostJSONBodyJSONAPIResponse[ProjectAttrs](ctx, activeCtx, "/api/projects", body)
 			if err != nil {
 				return err
 			}
@@ -290,10 +285,8 @@ func createCmd() *cobra.Command {
 	cmd.Flags().StringVar(&platform, "platform", "", "Platform name or slug (resolved to ID; alternative to --platform-id)")
 	cmd.Flags().StringVar(&pipelineID, "pipeline-id", "", "Pipeline ID (sets the project's default pipeline)")
 	cmd.Flags().StringVar(&pipeline, "pipeline", "", "Pipeline name or slug (resolved to ID; alternative to --pipeline-id)")
-	cmd.Flags().StringVar(&slug, "slug", "", "Override derived repo slug (lowercase letters/digits/hyphens, must start with a letter)")
-	cmd.Flags().StringVar(&organization, "organization", "dotdevlabs", "GitHub organization for the new repo")
-	cmd.Flags().StringVar(&organizationType, "organization-type", "Organization", "Organization type (Organization or User)")
-	cmd.Flags().StringVar(&repo, "repo", "", "Existing repository URL; triggers existing-repo path instead of bootstrap")
+	cmd.Flags().StringVar(&slug, "slug", "", "Override derived slug (lowercase letters/digits/hyphens, must start with a letter)")
+	cmd.Flags().StringVar(&repo, "repo", "", "Existing repository URL; triggers existing-repo path instead of new project")
 
 	_ = cmd.MarkFlagRequired("name")
 

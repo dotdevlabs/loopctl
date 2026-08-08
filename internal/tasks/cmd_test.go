@@ -155,6 +155,9 @@ func TestTasksCreate(t *testing.T) {
 		if r.URL.Path != "/api/tasks" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
+		if ct := r.Header.Get("Content-Type"); ct != "application/json" {
+			t.Errorf("expected Content-Type application/json; got: %s", ct)
+		}
 		b, _ := io.ReadAll(r.Body)
 		gotBody = string(b)
 		w.Header().Set("Content-Type", "application/vnd.api+json")
@@ -234,7 +237,7 @@ func TestTasksUpdate(t *testing.T) {
 		b, _ := io.ReadAll(r.Body)
 		gotBody = string(b)
 		w.Header().Set("Content-Type", "application/vnd.api+json")
-		_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{"kind":"bug","title":"Updated Title","stage":"planning","status":"open"}}}`)
+		_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{"kind":"bug","title":"Original Title","stage":"planning","status":"open"}}}`)
 	}))
 	defer ts.Close()
 
@@ -244,7 +247,7 @@ func TestTasksUpdate(t *testing.T) {
 	cmd := updateCmd()
 	cmd.SetContext(ctx)
 	cmd.SetOut(&out)
-	_ = cmd.Flags().Set("title", "Updated Title")
+	_ = cmd.Flags().Set("implementation-criteria", "Do the thing")
 
 	if err := cmd.RunE(cmd, []string{"t1"}); err != nil {
 		t.Fatalf("update failed: %v", err)
@@ -252,11 +255,17 @@ func TestTasksUpdate(t *testing.T) {
 	if !strings.Contains(gotBody, `"task"`) {
 		t.Errorf("expected task wrapper in patch body; got: %s", gotBody)
 	}
-	if !strings.Contains(gotBody, "Updated Title") {
-		t.Errorf("expected updated title in body; got: %s", gotBody)
+	if !strings.Contains(gotBody, "implementation_criteria") {
+		t.Errorf("expected implementation_criteria in body; got: %s", gotBody)
+	}
+	if !strings.Contains(gotBody, "Do the thing") {
+		t.Errorf("expected implementation criteria value in body; got: %s", gotBody)
+	}
+	if strings.Contains(gotBody, "title") {
+		t.Errorf("should not include title field; got: %s", gotBody)
 	}
 	if strings.Contains(gotBody, "kind") {
-		t.Errorf("should not include unchanged kind field; got: %s", gotBody)
+		t.Errorf("should not include kind field; got: %s", gotBody)
 	}
 	if !strings.Contains(out.String(), "t1") {
 		t.Errorf("expected task id in output; got: %s", out.String())
@@ -283,28 +292,32 @@ func TestTasksUpdateNoFields(t *testing.T) {
 	}
 }
 
-func TestTasksComments(t *testing.T) {
+func TestTasksUpdateVerificationCriteria(t *testing.T) {
+	var gotBody string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/tasks/t1/comments" {
-			t.Errorf("unexpected path: %s", r.URL.Path)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"data":[{"id":"c1","task_id":"t1","body":"A comment","created_at":"2026-01-01"}]}`)
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{"stage":"planning","status":"open"}}}`)
 	}))
 	defer ts.Close()
 
 	var out bytes.Buffer
 	ctx := makeCtx(t, ts.URL, "tok", false, &out)
 
-	cmd := commentsCmd()
+	cmd := updateCmd()
 	cmd.SetContext(ctx)
 	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("verification-criteria", "Check that tests pass")
 
 	if err := cmd.RunE(cmd, []string{"t1"}); err != nil {
-		t.Fatalf("comments failed: %v", err)
+		t.Fatalf("update verification failed: %v", err)
 	}
-	if !strings.Contains(out.String(), "A comment") {
-		t.Errorf("output missing comment body:\n%s", out.String())
+	if !strings.Contains(gotBody, "verification_criteria") {
+		t.Errorf("expected verification_criteria in body; got: %s", gotBody)
+	}
+	if !strings.Contains(gotBody, "Check that tests pass") {
+		t.Errorf("expected criteria value in body; got: %s", gotBody)
 	}
 }
 
@@ -322,7 +335,7 @@ func TestTasksWatch_Completion(t *testing.T) {
 			}
 			_, _ = fmt.Fprintf(w, `{"data":{"type":"tasks","id":"t1","attributes":{"stage":%q,"pr_number":0}}}`, stages[idx])
 		case "/api/tasks/t1/activities":
-			_, _ = fmt.Fprint(w, `{"activities":[]}`)
+			_, _ = fmt.Fprint(w, `{"data":[]}`)
 		}
 	}))
 	defer ts.Close()
@@ -354,7 +367,7 @@ func TestTasksWatch_AlreadyTerminal(t *testing.T) {
 		case "/api/tasks/t1":
 			_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{"stage":"completed","pr_number":0}}}`)
 		case "/api/tasks/t1/activities":
-			_, _ = fmt.Fprint(w, `{"activities":[]}`)
+			_, _ = fmt.Fprint(w, `{"data":[]}`)
 		}
 	}))
 	defer ts.Close()
@@ -389,7 +402,7 @@ func TestTasksWatch_Rejected(t *testing.T) {
 			}
 			_, _ = fmt.Fprintf(w, `{"data":{"type":"tasks","id":"t1","attributes":{"stage":%q,"pr_number":0}}}`, stages[idx])
 		case "/api/tasks/t1/activities":
-			_, _ = fmt.Fprint(w, `{"activities":[]}`)
+			_, _ = fmt.Fprint(w, `{"data":[]}`)
 		}
 	}))
 	defer ts.Close()
@@ -418,7 +431,7 @@ func TestTasksWatch_ContainerError(t *testing.T) {
 		case "/api/tasks/t1":
 			_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{"stage":"implementing","pr_number":0}}}`)
 		case "/api/tasks/t1/activities":
-			_, _ = fmt.Fprint(w, `{"activities":[{"id":"a1","action":"container.error","details":"OOM killed","created_at":"2026-01-01T00:00:00Z"}]}`)
+			_, _ = fmt.Fprint(w, `{"data":[{"type":"task_activities","id":"a1","attributes":{"action":"container.error","details":"OOM killed","created_at":"2026-01-01T00:00:00Z"}}]}`)
 		}
 	}))
 	defer ts.Close()
@@ -450,7 +463,7 @@ func TestTasksWatch_Timeout(t *testing.T) {
 		case "/api/tasks/t1":
 			_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{"stage":"planning","pr_number":0}}}`)
 		case "/api/tasks/t1/activities":
-			_, _ = fmt.Fprint(w, `{"activities":[]}`)
+			_, _ = fmt.Fprint(w, `{"data":[]}`)
 		}
 	}))
 	defer ts.Close()
@@ -480,7 +493,7 @@ func TestTasksWatch_JSONMode(t *testing.T) {
 		case "/api/tasks/t1":
 			_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{"stage":"completed","pr_number":0}}}`)
 		case "/api/tasks/t1/activities":
-			_, _ = fmt.Fprint(w, `{"activities":[]}`)
+			_, _ = fmt.Fprint(w, `{"data":[]}`)
 		}
 	}))
 	defer ts.Close()
@@ -497,7 +510,6 @@ func TestTasksWatch_JSONMode(t *testing.T) {
 		t.Fatalf("watch json mode failed: %v", err)
 	}
 	got := out.String()
-	// Resource[TaskAttrs] serializes as {"id":"...","type":"...","attributes":{...}} — no "data" wrapper.
 	if !strings.Contains(got, `"id"`) {
 		t.Errorf("expected 'id' field in JSON output:\n%s", got)
 	}
@@ -516,9 +528,9 @@ func TestTasksWatch_ActivityLine(t *testing.T) {
 		case "/api/tasks/t1/activities":
 			n := atomic.AddInt32(&actCallIdx, 1)
 			if n == 1 {
-				_, _ = fmt.Fprint(w, `{"activities":[]}`)
+				_, _ = fmt.Fprint(w, `{"data":[]}`)
 			} else {
-				_, _ = fmt.Fprint(w, `{"activities":[{"id":"a1","action":"container.provisioned","details":"","created_at":"2026-01-01T00:00:00Z"}]}`)
+				_, _ = fmt.Fprint(w, `{"data":[{"type":"task_activities","id":"a1","attributes":{"action":"container.provisioned","details":"","created_at":"2026-01-01T00:00:00Z"}}]}`)
 			}
 		}
 	}))
@@ -550,8 +562,8 @@ func TestTasksCancel(t *testing.T) {
 		if r.Header.Get("Authorization") != "Bearer test-token" {
 			t.Errorf("missing/wrong auth: %s", r.Header.Get("Authorization"))
 		}
-		w.Header().Set("Content-Type", "application/vnd.api+json")
-		_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{"kind":"feature","title":"My Task","stage":"rejected","status":"cancelled"}}}`)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"status":"cancelled","stage":"rejected"}`)
 	}))
 	defer ts.Close()
 
@@ -568,8 +580,8 @@ func TestTasksCancel(t *testing.T) {
 	if gotMethod != http.MethodPost {
 		t.Errorf("expected POST; got %s", gotMethod)
 	}
-	if gotPath != "/api/tasks/t1/cancel" {
-		t.Errorf("expected /api/tasks/t1/cancel; got %s", gotPath)
+	if gotPath != "/api/tasks/t1/cancellation" {
+		t.Errorf("expected /api/tasks/t1/cancellation; got %s", gotPath)
 	}
 	if !strings.Contains(out.String(), "t1") {
 		t.Errorf("output missing task id:\n%s", out.String())
@@ -603,8 +615,8 @@ func TestTasksCancelEmptyBody(t *testing.T) {
 
 func TestTasksCancelJSON(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/vnd.api+json")
-		_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{"kind":"feature","title":"My Task","stage":"rejected","status":"cancelled"}}}`)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"status":"cancelled","stage":"rejected"}`)
 	}))
 	defer ts.Close()
 
@@ -647,8 +659,8 @@ func TestTasksCancelJSONEmptyBody(t *testing.T) {
 	if !strings.Contains(got, `"id"`) {
 		t.Errorf("expected 'id' field in JSON output:\n%s", got)
 	}
-	if !strings.Contains(got, "cancelled") {
-		t.Errorf("expected 'cancelled' in JSON output:\n%s", got)
+	if !strings.Contains(got, `"t1"`) {
+		t.Errorf("expected task id in JSON output:\n%s", got)
 	}
 }
 
@@ -731,8 +743,6 @@ func TestTasksCancelDryRun(t *testing.T) {
 // TestGetJSONAPISingle_ContentNegotiation_AttributesPopulated verifies that
 // apiclient.GetJSONAPISingle sends Accept: application/vnd.api+json and that
 // the decoded resource has its non-id attributes fully populated.
-// The test server only returns a full JSON:API document when the correct
-// Accept header is present; otherwise it returns a flat body with no attributes.
 func TestGetJSONAPISingle_ContentNegotiation_AttributesPopulated(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Accept") == "application/vnd.api+json" {
@@ -757,7 +767,7 @@ func TestGetJSONAPISingle_ContentNegotiation_AttributesPopulated(t *testing.T) {
 	}
 
 	if !strings.Contains(out.String(), "My Feature Task") {
-		t.Errorf("Attributes.Title not decoded — content negotiation broken (Accept header not set to application/vnd.api+json). Output:\n%s", out.String())
+		t.Errorf("Attributes.Title not decoded — content negotiation broken. Output:\n%s", out.String())
 	}
 	if !strings.Contains(out.String(), "feature") {
 		t.Errorf("Attributes.Kind not decoded. Output:\n%s", out.String())

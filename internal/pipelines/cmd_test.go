@@ -149,6 +149,7 @@ func TestPipelinesListVerbose(t *testing.T) {
 
 func TestPipelinesCreate(t *testing.T) {
 	var gotBody []byte
+	var gotContentType string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/pipelines" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
@@ -156,6 +157,7 @@ func TestPipelinesCreate(t *testing.T) {
 		if r.Method != http.MethodPost {
 			t.Errorf("unexpected method: %s", r.Method)
 		}
+		gotContentType = r.Header.Get("Content-Type")
 		gotBody, _ = io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/vnd.api+json")
 		_, _ = fmt.Fprint(w, `{"data":{"type":"pipelines","id":"pipe-new","attributes":{"name":"custom-pipeline","kind":"my-task-kind"}}}`)
@@ -197,6 +199,34 @@ func TestPipelinesCreate(t *testing.T) {
 	}
 	if strings.Contains(string(gotBody), "stages") {
 		t.Errorf("request body must not contain stages: %s", gotBody)
+	}
+	if gotContentType != "application/json" {
+		t.Errorf("expected Content-Type application/json; got: %s", gotContentType)
+	}
+}
+
+func TestPipelinesCreateWithoutKind(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"pipelines","id":"pipe-nokind","attributes":{"name":"no-kind-pipeline","kind":""}}}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := createCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	if err := cmd.Flags().Set("name", "no-kind-pipeline"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("create without kind failed: %v", err)
+	}
+	if !strings.Contains(out.String(), "pipe-nokind") {
+		t.Errorf("expected created id in output; got: %s", out.String())
 	}
 }
 

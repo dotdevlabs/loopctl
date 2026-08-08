@@ -150,6 +150,9 @@ func TestProjectsCreateNewRepo(t *testing.T) {
 		if r.URL.Path != "/api/projects" {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
+		if ct := r.Header.Get("Content-Type"); ct != "application/json" {
+			t.Errorf("expected Content-Type application/json; got: %s", ct)
+		}
 		b, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(b, &gotBody)
 		w.Header().Set("Content-Type", "application/vnd.api+json")
@@ -170,17 +173,18 @@ func TestProjectsCreateNewRepo(t *testing.T) {
 		t.Fatalf("create failed: %v", err)
 	}
 
-	if gotBody["create_new_repo"] != "true" {
-		t.Errorf("expected create_new_repo=true; got: %v", gotBody["create_new_repo"])
+	// Top-level must only contain "project" — no create_new_repo, new_repo_name, organization, etc.
+	if _, ok := gotBody["create_new_repo"]; ok {
+		t.Error("body must not contain create_new_repo")
 	}
-	if gotBody["new_repo_name"] != "newproj" {
-		t.Errorf("expected new_repo_name=newproj; got: %v", gotBody["new_repo_name"])
+	if _, ok := gotBody["new_repo_name"]; ok {
+		t.Error("body must not contain new_repo_name")
 	}
-	if gotBody["organization"] != "dotdevlabs" {
-		t.Errorf("expected organization=dotdevlabs; got: %v", gotBody["organization"])
+	if _, ok := gotBody["organization"]; ok {
+		t.Error("body must not contain organization")
 	}
-	if gotBody["organization_type"] != "Organization" {
-		t.Errorf("expected organization_type=Organization; got: %v", gotBody["organization_type"])
+	if _, ok := gotBody["organization_type"]; ok {
+		t.Error("body must not contain organization_type")
 	}
 	proj, _ := gotBody["project"].(map[string]any)
 	if proj == nil {
@@ -188,6 +192,9 @@ func TestProjectsCreateNewRepo(t *testing.T) {
 	}
 	if proj["display_name"] != "NewProj" {
 		t.Errorf("expected display_name=NewProj; got: %v", proj["display_name"])
+	}
+	if proj["name"] != "newproj" {
+		t.Errorf("expected project.name=newproj; got: %v", proj["name"])
 	}
 	if proj["platform_id"] != "pf2" {
 		t.Errorf("expected platform_id=pf2; got: %v", proj["platform_id"])
@@ -265,8 +272,11 @@ func TestProjectsCreateExistingRepo(t *testing.T) {
 	if proj["display_name"] != "Existing" {
 		t.Errorf("expected display_name=Existing; got: %v", proj["display_name"])
 	}
-	if proj["repo"] != "https://github.com/dotdevlabs/existing" {
-		t.Errorf("expected repo url; got: %v", proj["repo"])
+	if proj["git_repo_url"] != "https://github.com/dotdevlabs/existing" {
+		t.Errorf("expected git_repo_url; got: %v", proj["git_repo_url"])
+	}
+	if _, ok := proj["repo"]; ok {
+		t.Error("body must not contain project.repo; use git_repo_url")
 	}
 }
 
@@ -294,8 +304,12 @@ func TestProjectsCreateSlugOverride(t *testing.T) {
 		t.Fatalf("create slug-override failed: %v", err)
 	}
 
-	if gotBody["new_repo_name"] != "daybreak-v2" {
-		t.Errorf("expected new_repo_name=daybreak-v2; got: %v", gotBody["new_repo_name"])
+	proj, _ := gotBody["project"].(map[string]any)
+	if proj == nil {
+		t.Fatal("expected project key in body")
+	}
+	if proj["name"] != "daybreak-v2" {
+		t.Errorf("expected project.name=daybreak-v2; got: %v", proj["name"])
 	}
 }
 
@@ -322,8 +336,12 @@ func TestProjectsCreateSlugDerivation(t *testing.T) {
 		t.Fatalf("create slug-derivation failed: %v", err)
 	}
 
-	if gotBody["new_repo_name"] != "hello-world" {
-		t.Errorf("expected new_repo_name=hello-world; got: %v", gotBody["new_repo_name"])
+	proj, _ := gotBody["project"].(map[string]any)
+	if proj == nil {
+		t.Fatal("expected project key in body")
+	}
+	if proj["name"] != "hello-world" {
+		t.Errorf("expected project.name=hello-world; got: %v", proj["name"])
 	}
 }
 
