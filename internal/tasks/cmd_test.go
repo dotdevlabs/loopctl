@@ -542,6 +542,192 @@ func TestTasksWatch_ActivityLine(t *testing.T) {
 	}
 }
 
+func TestTasksCancel(t *testing.T) {
+	var gotMethod, gotPath string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		if r.Header.Get("Authorization") != "Bearer test-token" {
+			t.Errorf("missing/wrong auth: %s", r.Header.Get("Authorization"))
+		}
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{"kind":"feature","title":"My Task","stage":"rejected","status":"cancelled"}}}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "test-token", false, &out)
+
+	cmd := cancelCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	if err := cmd.RunE(cmd, []string{"t1"}); err != nil {
+		t.Fatalf("cancel failed: %v", err)
+	}
+	if gotMethod != http.MethodPost {
+		t.Errorf("expected POST; got %s", gotMethod)
+	}
+	if gotPath != "/api/tasks/t1/cancel" {
+		t.Errorf("expected /api/tasks/t1/cancel; got %s", gotPath)
+	}
+	if !strings.Contains(out.String(), "t1") {
+		t.Errorf("output missing task id:\n%s", out.String())
+	}
+}
+
+func TestTasksCancelEmptyBody(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := cancelCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	if err := cmd.RunE(cmd, []string{"t1"}); err != nil {
+		t.Fatalf("cancel empty body failed: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "t1") {
+		t.Errorf("output missing task id:\n%s", got)
+	}
+	if !strings.Contains(got, "cancelled") {
+		t.Errorf("output missing 'cancelled':\n%s", got)
+	}
+}
+
+func TestTasksCancelJSON(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{"kind":"feature","title":"My Task","stage":"rejected","status":"cancelled"}}}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", true, &out)
+
+	cmd := cancelCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	if err := cmd.RunE(cmd, []string{"t1"}); err != nil {
+		t.Fatalf("cancel JSON failed: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, `"id"`) {
+		t.Errorf("expected 'id' field in JSON output:\n%s", got)
+	}
+	if !strings.Contains(got, `"t1"`) {
+		t.Errorf("expected task id in JSON output:\n%s", got)
+	}
+}
+
+func TestTasksCancelJSONEmptyBody(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", true, &out)
+
+	cmd := cancelCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	if err := cmd.RunE(cmd, []string{"t1"}); err != nil {
+		t.Fatalf("cancel JSON empty body failed: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, `"id"`) {
+		t.Errorf("expected 'id' field in JSON output:\n%s", got)
+	}
+	if !strings.Contains(got, "cancelled") {
+		t.Errorf("expected 'cancelled' in JSON output:\n%s", got)
+	}
+}
+
+func TestTasksCancelAlreadyFinished(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = fmt.Fprint(w, `{"errors":[{"status":"422","detail":"Task is already in a terminal state"}]}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := cancelCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	err := cmd.RunE(cmd, []string{"t1"})
+	if err == nil {
+		t.Fatal("expected error for already-finished task")
+	}
+	if !strings.Contains(err.Error(), "terminal state") {
+		t.Errorf("expected terminal-state message; got: %v", err)
+	}
+}
+
+func TestTasksCancelNotFound(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = fmt.Fprint(w, `{"errors":[{"status":"404","detail":"task not found"}]}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := cancelCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	err := cmd.RunE(cmd, []string{"missing"})
+	if err == nil {
+		t.Fatal("expected error for 404")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("expected not-found message; got: %v", err)
+	}
+}
+
+func TestTasksCancelDryRun(t *testing.T) {
+	called := false
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	renderer := output.New(false, "", &out, io.Discard)
+	ctx := context.Background()
+	ctx = ctxutil.WithRenderer(ctx, renderer)
+	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{DryRun: true})
+
+	cmd := cancelCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	if err := cmd.RunE(cmd, []string{"t1"}); err != nil {
+		t.Fatalf("cancel dry-run failed: %v", err)
+	}
+	if called {
+		t.Error("dry-run should not make HTTP request")
+	}
+	if !strings.Contains(out.String(), "dry-run") {
+		t.Errorf("expected dry-run message; got: %s", out.String())
+	}
+}
+
 // TestGetJSONAPISingle_ContentNegotiation_AttributesPopulated verifies that
 // apiclient.GetJSONAPISingle sends Accept: application/vnd.api+json and that
 // the decoded resource has its non-id attributes fully populated.
