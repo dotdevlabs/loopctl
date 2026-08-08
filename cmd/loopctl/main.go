@@ -12,6 +12,8 @@ import (
 	"github.com/dotdevlabs/ctlkit/pkg/version"
 
 	"github.com/dotdevlabs/loopctl/internal/apiclient"
+	"github.com/dotdevlabs/loopctl/internal/pipelines"
+	"github.com/dotdevlabs/loopctl/internal/platforms"
 	"github.com/dotdevlabs/loopctl/internal/projects"
 	"github.com/dotdevlabs/loopctl/internal/tasks"
 )
@@ -25,6 +27,8 @@ func main() {
 		Short:   "CLI for managing LoopControl",
 		Version: ver,
 		Commands: []*cobra.Command{
+			platforms.NewCmd(),
+			pipelines.NewCmd(),
 			projects.NewCmd(),
 			tasks.NewCmd(),
 		},

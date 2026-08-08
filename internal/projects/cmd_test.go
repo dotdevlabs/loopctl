@@ -510,3 +510,243 @@ func TestSlugFromName(t *testing.T) {
 		}
 	}
 }
+
+func TestProjectsCreateByPlatformName(t *testing.T) {
+	var gotBody map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		switch r.URL.Path {
+		case "/api/platforms":
+			if r.Method != http.MethodGet {
+				t.Errorf("unexpected method for platforms: %s", r.Method)
+			}
+			_, _ = fmt.Fprint(w, `{"data":[{"type":"platforms","id":"pf-rails","attributes":{"name":"rails","display_name":"Ruby on Rails"}}]}`)
+		case "/api/projects":
+			if r.Method != http.MethodPost {
+				t.Errorf("unexpected method for projects: %s", r.Method)
+			}
+			b, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(b, &gotBody)
+			_, _ = fmt.Fprint(w, `{"data":{"type":"projects","id":"p200","attributes":{"name":"myapp","platform_id":"pf-rails"}}}`)
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := createCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("name", "MyApp")
+	_ = cmd.Flags().Set("platform", "rails")
+
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("create by platform name failed: %v", err)
+	}
+
+	proj, _ := gotBody["project"].(map[string]any)
+	if proj == nil {
+		t.Fatal("expected project key in body")
+	}
+	if proj["platform_id"] != "pf-rails" {
+		t.Errorf("expected resolved platform_id=pf-rails; got: %v", proj["platform_id"])
+	}
+	if !strings.Contains(out.String(), "p200") {
+		t.Errorf("expected created id in output; got: %s", out.String())
+	}
+}
+
+func TestProjectsCreateByPlatformNameNotFound(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		if r.URL.Path == "/api/platforms" {
+			_, _ = fmt.Fprint(w, `{"data":[{"type":"platforms","id":"pf1","attributes":{"name":"rails","display_name":"Ruby on Rails"}}]}`)
+			return
+		}
+		t.Errorf("unexpected path called: %s", r.URL.Path)
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := createCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("name", "MyApp")
+	_ = cmd.Flags().Set("platform", "django")
+
+	err := cmd.RunE(cmd, nil)
+	if err == nil {
+		t.Fatal("expected error for unknown platform name")
+	}
+	if !strings.Contains(err.Error(), "django") {
+		t.Errorf("expected platform name in error; got: %v", err)
+	}
+}
+
+func TestProjectsCreateByPipelineName(t *testing.T) {
+	var gotBody map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		switch r.URL.Path {
+		case "/api/platforms":
+			_, _ = fmt.Fprint(w, `{"data":[{"type":"platforms","id":"pf1","attributes":{"name":"rails","display_name":"Ruby on Rails"}}]}`)
+		case "/api/pipelines":
+			if r.Method != http.MethodGet {
+				t.Errorf("unexpected method for pipelines: %s", r.Method)
+			}
+			_, _ = fmt.Fprint(w, `{"data":[{"type":"pipelines","id":"pipe-auto","attributes":{"name":"Autonomous Feature","display_name":"Autonomous Feature"}}]}`)
+		case "/api/projects":
+			b, _ := io.ReadAll(r.Body)
+			_ = json.Unmarshal(b, &gotBody)
+			_, _ = fmt.Fprint(w, `{"data":{"type":"projects","id":"p300","attributes":{"name":"myapp","platform_id":"pf1"}}}`)
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := createCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("name", "MyApp")
+	_ = cmd.Flags().Set("platform", "rails")
+	_ = cmd.Flags().Set("pipeline", "Autonomous Feature")
+
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("create by pipeline name failed: %v", err)
+	}
+
+	proj, _ := gotBody["project"].(map[string]any)
+	if proj == nil {
+		t.Fatal("expected project key in body")
+	}
+	if proj["pipeline_id"] != "pipe-auto" {
+		t.Errorf("expected resolved pipeline_id=pipe-auto; got: %v", proj["pipeline_id"])
+	}
+}
+
+func TestProjectsCreateByPipelineNameNotFound(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		switch r.URL.Path {
+		case "/api/platforms":
+			_, _ = fmt.Fprint(w, `{"data":[{"type":"platforms","id":"pf1","attributes":{"name":"rails","display_name":"Ruby on Rails"}}]}`)
+		case "/api/pipelines":
+			_, _ = fmt.Fprint(w, `{"data":[{"type":"pipelines","id":"pipe1","attributes":{"name":"autonomous-feature","display_name":"Autonomous Feature"}}]}`)
+		default:
+			t.Errorf("unexpected path: %s", r.URL.Path)
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := createCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("name", "MyApp")
+	_ = cmd.Flags().Set("platform", "rails")
+	_ = cmd.Flags().Set("pipeline", "unknown-pipeline")
+
+	err := cmd.RunE(cmd, nil)
+	if err == nil {
+		t.Fatal("expected error for unknown pipeline name")
+	}
+	if !strings.Contains(err.Error(), "unknown-pipeline") {
+		t.Errorf("expected pipeline name in error; got: %v", err)
+	}
+}
+
+func TestProjectsCreateNoPlatformError(t *testing.T) {
+	var out bytes.Buffer
+	ctx := makeCtx(t, "http://localhost", "tok", false, &out)
+
+	cmd := createCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("name", "MyApp")
+
+	err := cmd.RunE(cmd, nil)
+	if err == nil {
+		t.Fatal("expected error when no platform selector given")
+	}
+	if !strings.Contains(err.Error(), "--platform") {
+		t.Errorf("expected --platform mention in error; got: %v", err)
+	}
+}
+
+func TestProjectsCreateBothPlatformFlagsError(t *testing.T) {
+	var out bytes.Buffer
+	ctx := makeCtx(t, "http://localhost", "tok", false, &out)
+
+	cmd := createCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("name", "MyApp")
+	_ = cmd.Flags().Set("platform", "rails")
+	_ = cmd.Flags().Set("platform-id", "pf1")
+
+	err := cmd.RunE(cmd, nil)
+	if err == nil {
+		t.Fatal("expected error when both --platform and --platform-id given")
+	}
+	if !strings.Contains(err.Error(), "--platform") {
+		t.Errorf("expected --platform mention in error; got: %v", err)
+	}
+}
+
+func TestProjectsCreateDryRunByPlatformName(t *testing.T) {
+	postCalled := false
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		if r.URL.Path == "/api/platforms" && r.Method == http.MethodGet {
+			_, _ = fmt.Fprint(w, `{"data":[{"type":"platforms","id":"pf-rails","attributes":{"name":"rails","display_name":"Ruby on Rails"}}]}`)
+			return
+		}
+		if r.URL.Path == "/api/projects" {
+			postCalled = true
+		}
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	renderer := output.New(false, "", &out, io.Discard)
+	ctx := context.Background()
+	ctx = ctxutil.WithRenderer(ctx, renderer)
+	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{DryRun: true})
+	ctx = ctxutil.WithActiveContext(ctx, &config.Context{BaseURL: ts.URL, Token: "tok"})
+
+	cmd := createCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("name", "DryProj")
+	_ = cmd.Flags().Set("platform", "rails")
+
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("create dry-run by platform name failed: %v", err)
+	}
+	if postCalled {
+		t.Error("dry-run should not POST to /api/projects")
+	}
+	got := out.String()
+	if !strings.Contains(got, "dry-run") {
+		t.Errorf("expected dry-run message; got: %s", got)
+	}
+	if !strings.Contains(got, "pf-rails") {
+		t.Errorf("expected resolved platform_id in dry-run message; got: %s", got)
+	}
+}

@@ -123,11 +123,23 @@ func slugFromName(name string) (string, error) {
 	return s, nil
 }
 
+// platformLookup is used only for resolving platform names to IDs.
+type platformLookup struct {
+	Name string `json:"name"`
+}
+
+// pipelineLookup is used only for resolving pipeline names to IDs.
+type pipelineLookup struct {
+	Name string `json:"name"`
+}
+
 func createCmd() *cobra.Command {
 	var (
 		name             string
 		platformID       string
+		platform         string
 		pipelineID       string
+		pipeline         string
 		slug             string
 		organization     string
 		organizationType string
@@ -139,6 +151,66 @@ func createCmd() *cobra.Command {
 		Short: "Create a new project",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
+
+			// Validate platform selector.
+			if platformID == "" && platform == "" {
+				return clierror.New(clierror.CodeUsage,
+					"one of --platform or --platform-id is required", "")
+			}
+			if platformID != "" && platform != "" {
+				return clierror.New(clierror.CodeUsage,
+					"cannot specify both --platform and --platform-id", "")
+			}
+
+			// Validate pipeline selector (both optional, but mutually exclusive).
+			if pipelineID != "" && pipeline != "" {
+				return clierror.New(clierror.CodeUsage,
+					"cannot specify both --pipeline and --pipeline-id", "")
+			}
+
+			activeCtx := ctxutil.ActiveContextFrom(ctx)
+
+			// Resolve platform name to ID if needed.
+			effectivePlatformID := platformID
+			if platform != "" {
+				col, err := apiclient.GetJSONAPICollection[platformLookup](ctx, activeCtx, "/api/platforms")
+				if err != nil {
+					return err
+				}
+				lower := strings.ToLower(platform)
+				for _, p := range col.Data {
+					if strings.ToLower(p.Attributes.Name) == lower {
+						effectivePlatformID = p.ID
+						break
+					}
+				}
+				if effectivePlatformID == "" {
+					return clierror.New(clierror.CodeNotFound,
+						fmt.Sprintf("platform %q not found", platform),
+						"run 'loopctl platforms list' to see available platforms")
+				}
+			}
+
+			// Resolve pipeline name to ID if needed.
+			effectivePipelineID := pipelineID
+			if pipeline != "" {
+				col, err := apiclient.GetJSONAPICollection[pipelineLookup](ctx, activeCtx, "/api/pipelines")
+				if err != nil {
+					return err
+				}
+				lower := strings.ToLower(pipeline)
+				for _, p := range col.Data {
+					if strings.ToLower(p.Attributes.Name) == lower {
+						effectivePipelineID = p.ID
+						break
+					}
+				}
+				if effectivePipelineID == "" {
+					return clierror.New(clierror.CodeNotFound,
+						fmt.Sprintf("pipeline %q not found", pipeline),
+						"run 'loopctl pipelines list' to see available pipelines")
+				}
+			}
 
 			// Determine effective slug for new-repo path.
 			effectiveSlug := slug
@@ -154,16 +226,15 @@ func createCmd() *cobra.Command {
 				if repo != "" {
 					_, _ = fmt.Fprintf(cmd.OutOrStdout(),
 						"dry-run: would POST /api/projects {display_name=%q platform_id=%q repo=%q}\n",
-						name, platformID, repo)
+						name, effectivePlatformID, repo)
 				} else {
 					_, _ = fmt.Fprintf(cmd.OutOrStdout(),
 						"dry-run: would POST /api/projects {display_name=%q slug=%q platform_id=%q pipeline_id=%q organization=%q}\n",
-						name, effectiveSlug, platformID, pipelineID, organization)
+						name, effectiveSlug, effectivePlatformID, effectivePipelineID, organization)
 				}
 				return nil
 			}
 
-			activeCtx := ctxutil.ActiveContextFrom(ctx)
 			r := ctxutil.RendererFrom(ctx)
 
 			var body map[string]any
@@ -172,7 +243,7 @@ func createCmd() *cobra.Command {
 				body = map[string]any{
 					"project": map[string]any{
 						"display_name": name,
-						"platform_id":  platformID,
+						"platform_id":  effectivePlatformID,
 						"repo":         repo,
 					},
 				}
@@ -180,10 +251,10 @@ func createCmd() *cobra.Command {
 				// Bootstrap/new-repo path.
 				proj := map[string]any{
 					"display_name": name,
-					"platform_id":  platformID,
+					"platform_id":  effectivePlatformID,
 				}
-				if pipelineID != "" {
-					proj["pipeline_id"] = pipelineID
+				if effectivePipelineID != "" {
+					proj["pipeline_id"] = effectivePipelineID
 				}
 				body = map[string]any{
 					"create_new_repo":   "true",
@@ -215,15 +286,16 @@ func createCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&name, "name", "", "Human/display name for the project")
-	cmd.Flags().StringVar(&platformID, "platform-id", "", "Platform ID")
+	cmd.Flags().StringVar(&platformID, "platform-id", "", "Platform ID (alternative to --platform)")
+	cmd.Flags().StringVar(&platform, "platform", "", "Platform name or slug (resolved to ID; alternative to --platform-id)")
 	cmd.Flags().StringVar(&pipelineID, "pipeline-id", "", "Pipeline ID (sets the project's default pipeline)")
+	cmd.Flags().StringVar(&pipeline, "pipeline", "", "Pipeline name or slug (resolved to ID; alternative to --pipeline-id)")
 	cmd.Flags().StringVar(&slug, "slug", "", "Override derived repo slug (lowercase letters/digits/hyphens, must start with a letter)")
 	cmd.Flags().StringVar(&organization, "organization", "dotdevlabs", "GitHub organization for the new repo")
 	cmd.Flags().StringVar(&organizationType, "organization-type", "Organization", "Organization type (Organization or User)")
 	cmd.Flags().StringVar(&repo, "repo", "", "Existing repository URL; triggers existing-repo path instead of bootstrap")
 
 	_ = cmd.MarkFlagRequired("name")
-	_ = cmd.MarkFlagRequired("platform-id")
 
 	return cmd
 }
