@@ -11,6 +11,9 @@ import (
 	"strings"
 )
 
+// SourceURL is the canonical location of the API contract document.
+const SourceURL = "https://raw.githubusercontent.com/dotdevlabs/loopcontrol/main/docs/api_contract.json"
+
 //go:embed testdata/schema.json
 var fixtureData []byte
 

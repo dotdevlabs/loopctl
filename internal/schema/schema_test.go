@@ -2,9 +2,14 @@ package schema
 
 import (
 	"bytes"
+	"context"
+	"encoding/json"
+	"io"
 	"net/http"
+	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoad(t *testing.T) {
@@ -30,7 +35,6 @@ func TestLoad(t *testing.T) {
 		"POST /api/projects",
 		"POST /api/pipelines",
 		"POST /api/task_kinds",
-		"GET /api/schema",
 	} {
 		if !found[want] {
 			t.Errorf("Load() missing endpoint %q", want)
@@ -171,5 +175,50 @@ func TestCheckRequest_UpdateTask_ForbiddenOldFields(t *testing.T) {
 	violations := CheckRequest(req, endpoints)
 	if len(violations) == 0 {
 		t.Fatal("expected violations for forbidden task update fields (kind, title, description); got none")
+	}
+}
+
+func TestSchemaSourceSync(t *testing.T) {
+	token := os.Getenv("GITHUB_TOKEN")
+	if token == "" {
+		t.Skip("GITHUB_TOKEN not set; skipping source sync check")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, SourceURL, nil)
+	if err != nil {
+		t.Fatalf("building request: %v", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatalf("fetching source contract: %v", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("source contract responded %d", resp.StatusCode)
+	}
+
+	source, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatalf("reading source contract: %v", err)
+	}
+
+	var sourceParsed, localParsed any
+	if err := json.Unmarshal(source, &sourceParsed); err != nil {
+		t.Fatalf("parsing source: %v", err)
+	}
+	if err := json.Unmarshal(fixtureData, &localParsed); err != nil {
+		t.Fatalf("parsing local copy: %v", err)
+	}
+	sourceNorm, _ := json.Marshal(sourceParsed)
+	localNorm, _ := json.Marshal(localParsed)
+
+	if !bytes.Equal(sourceNorm, localNorm) {
+		t.Fatal("testdata/schema.json diverges from the published source document; update the file to match")
 	}
 }
