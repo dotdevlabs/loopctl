@@ -839,3 +839,231 @@ func TestTasksGetVerbose(t *testing.T) {
 		t.Errorf("expected status 200 in verbose output; got: %q", verbose)
 	}
 }
+
+func makeCreateWatchServer(t *testing.T, taskStages []string) (*httptest.Server, *int32) {
+	t.Helper()
+	var taskCallIdx int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/tasks":
+			w.WriteHeader(http.StatusCreated)
+			_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"tnew","attributes":{"project_id":"proj1","kind":"feature","title":"Watch Task","stage":"planning","status":"open"}}}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/tasks/tnew":
+			n := atomic.AddInt32(&taskCallIdx, 1)
+			idx := int(n) - 1
+			if idx >= len(taskStages) {
+				idx = len(taskStages) - 1
+			}
+			_, _ = fmt.Fprintf(w, `{"data":{"type":"tasks","id":"tnew","attributes":{"stage":%q,"pr_number":0}}}`, taskStages[idx])
+		case r.Method == http.MethodGet && r.URL.Path == "/api/tasks/tnew/activities":
+			_, _ = fmt.Fprint(w, `{"data":[]}`)
+		}
+	}))
+	return ts, &taskCallIdx
+}
+
+func TestTasksCreateWatch_Completion(t *testing.T) {
+	ts, _ := makeCreateWatchServer(t, []string{"planning", "implementing", "completed"})
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := createCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("project-id", "proj1")
+	_ = cmd.Flags().Set("kind", "feature")
+	_ = cmd.Flags().Set("title", "Watch Task")
+	_ = cmd.Flags().Set("description", "Details")
+	_ = cmd.Flags().Set("watch", "true")
+	_ = cmd.Flags().Set("interval", "10ms")
+
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("create --watch completion failed: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "tnew") {
+		t.Errorf("expected created task id 'tnew' in output:\n%s", got)
+	}
+	if !strings.Contains(got, "stage=completed") {
+		t.Errorf("expected stage=completed in watch output:\n%s", got)
+	}
+}
+
+func TestTasksCreateWatch_WithoutFlag(t *testing.T) {
+	var watchCalled bool
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/tasks":
+			_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"tnew","attributes":{"project_id":"proj1","kind":"feature","title":"No Watch","stage":"planning","status":"open"}}}`)
+		default:
+			watchCalled = true
+		}
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := createCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("project-id", "proj1")
+	_ = cmd.Flags().Set("kind", "feature")
+	_ = cmd.Flags().Set("title", "No Watch")
+	_ = cmd.Flags().Set("description", "Details")
+
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("create without --watch failed: %v", err)
+	}
+	if watchCalled {
+		t.Error("create without --watch should not poll the task endpoint")
+	}
+	if !strings.Contains(out.String(), "tnew") {
+		t.Errorf("expected task id in output:\n%s", out.String())
+	}
+}
+
+func TestTasksCreateWatch_Rejected(t *testing.T) {
+	ts, _ := makeCreateWatchServer(t, []string{"planning", "rejected"})
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := createCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("project-id", "proj1")
+	_ = cmd.Flags().Set("kind", "feature")
+	_ = cmd.Flags().Set("title", "Watch Task")
+	_ = cmd.Flags().Set("description", "Details")
+	_ = cmd.Flags().Set("watch", "true")
+	_ = cmd.Flags().Set("interval", "10ms")
+
+	err := cmd.RunE(cmd, nil)
+	if err == nil {
+		t.Fatal("expected non-nil error for rejected task")
+	}
+	if !strings.Contains(err.Error(), "task rejected") {
+		t.Errorf("expected 'task rejected' in error; got: %v", err)
+	}
+}
+
+func TestTasksCreateWatch_ContainerError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/tasks":
+			_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"tnew","attributes":{"project_id":"proj1","kind":"feature","title":"Watch Task","stage":"planning","status":"open"}}}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/tasks/tnew":
+			_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"tnew","attributes":{"stage":"implementing","pr_number":0}}}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/tasks/tnew/activities":
+			_, _ = fmt.Fprint(w, `{"data":[{"type":"task_activities","id":"a1","attributes":{"action":"container.error","details":"OOM killed","created_at":"2026-01-01T00:00:00Z"}}]}`)
+		}
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := createCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("project-id", "proj1")
+	_ = cmd.Flags().Set("kind", "feature")
+	_ = cmd.Flags().Set("title", "Watch Task")
+	_ = cmd.Flags().Set("description", "Details")
+	_ = cmd.Flags().Set("watch", "true")
+	_ = cmd.Flags().Set("interval", "10ms")
+
+	err := cmd.RunE(cmd, nil)
+	if err == nil {
+		t.Fatal("expected non-nil error for container.error")
+	}
+	if !strings.Contains(err.Error(), "container error") {
+		t.Errorf("expected 'container error' in error; got: %v", err)
+	}
+	if !strings.Contains(out.String(), "OOM killed") {
+		t.Errorf("expected 'OOM killed' detail in output:\n%s", out.String())
+	}
+}
+
+func TestTasksCreateWatch_JSONMode(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/tasks":
+			_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"tnew","attributes":{"project_id":"proj1","kind":"feature","title":"Watch Task","stage":"planning","status":"open"}}}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/tasks/tnew":
+			_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"tnew","attributes":{"stage":"completed","pr_number":0}}}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/tasks/tnew/activities":
+			_, _ = fmt.Fprint(w, `{"data":[]}`)
+		}
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", true, &out)
+
+	cmd := createCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("project-id", "proj1")
+	_ = cmd.Flags().Set("kind", "feature")
+	_ = cmd.Flags().Set("title", "Watch Task")
+	_ = cmd.Flags().Set("description", "Details")
+	_ = cmd.Flags().Set("watch", "true")
+	_ = cmd.Flags().Set("interval", "10ms")
+
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("create --watch JSON mode failed: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, `"id"`) {
+		t.Errorf("expected 'id' field in JSON output:\n%s", got)
+	}
+	if !strings.Contains(got, `"tnew"`) {
+		t.Errorf("expected task id in JSON output:\n%s", got)
+	}
+}
+
+func TestTasksCreateWatch_Timeout(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		switch {
+		case r.Method == http.MethodPost && r.URL.Path == "/api/tasks":
+			_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"tnew","attributes":{"project_id":"proj1","kind":"feature","title":"Watch Task","stage":"planning","status":"open"}}}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/tasks/tnew":
+			_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"tnew","attributes":{"stage":"planning","pr_number":0}}}`)
+		case r.Method == http.MethodGet && r.URL.Path == "/api/tasks/tnew/activities":
+			_, _ = fmt.Fprint(w, `{"data":[]}`)
+		}
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := createCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("project-id", "proj1")
+	_ = cmd.Flags().Set("kind", "feature")
+	_ = cmd.Flags().Set("title", "Watch Task")
+	_ = cmd.Flags().Set("description", "Details")
+	_ = cmd.Flags().Set("watch", "true")
+	_ = cmd.Flags().Set("interval", "10s")
+	_ = cmd.Flags().Set("timeout", "50ms")
+
+	err := cmd.RunE(cmd, nil)
+	if err == nil {
+		t.Fatal("expected non-nil error for timeout")
+	}
+	if !strings.Contains(err.Error(), "timed out") {
+		t.Errorf("expected 'timed out' in error; got: %v", err)
+	}
+}
