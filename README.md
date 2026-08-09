@@ -273,6 +273,40 @@ Attempting to create a built-in task kind surfaces the API's human-readable erro
 
 **API:** `POST /api/task_kinds`
 
+#### task-kinds set-default-pipeline
+
+Set the default pipeline for a task kind. Tasks of this kind will use the specified pipeline unless overridden at task creation time.
+
+```bash
+loopctl task-kinds set-default-pipeline <kind-id> --pipeline-id <pipeline-id>
+loopctl task-kinds set-default-pipeline <kind-id> --pipeline-id <pipeline-id> --json
+loopctl task-kinds set-default-pipeline <kind-id> --pipeline-id <pipeline-id> --dry-run
+```
+
+**Flags:**
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--pipeline-id` | yes | ID of the pipeline to set as default for this kind |
+
+Output columns on success: `ID`, `NAME`, `DEFAULT_PIPELINE_ID`.
+
+**API:** `PATCH /api/task_kinds/:id`
+
+#### task-kinds clear-default-pipeline
+
+Clear the default pipeline for a task kind, returning it to unset.
+
+```bash
+loopctl task-kinds clear-default-pipeline <kind-id>
+loopctl task-kinds clear-default-pipeline <kind-id> --json
+loopctl task-kinds clear-default-pipeline <kind-id> --dry-run
+```
+
+Output columns on success: `ID`, `NAME`, `DEFAULT_PIPELINE_ID`.
+
+**API:** `PATCH /api/task_kinds/:id`
+
 ---
 
 ### tasks
@@ -551,10 +585,16 @@ loopctl pipelines update <pipeline-id> \
 loopctl projects create --name "Daybreak" --platform rails --pipeline "My Workflow"
 ```
 
-### Create a custom task kind
+### Create a custom task kind and set its default pipeline
 
 ```bash
 loopctl task-kinds create --name my-kind
+
+# Set a pipeline as the default for the kind
+loopctl task-kinds set-default-pipeline <kind-id> --pipeline-id <pipeline-id>
+
+# Clear the default pipeline for the kind
+loopctl task-kinds clear-default-pipeline <kind-id>
 ```
 
 ### Dispatch a dependency graph at once
@@ -590,6 +630,8 @@ loopctl tasks create --project-id p1 --kind bug --title "Fix it" --description "
 loopctl pipelines create --name "My Workflow" --dry-run
 loopctl pipelines update <id> --name "Renamed" --dry-run
 loopctl task-kinds create --name my-kind --dry-run
+loopctl task-kinds set-default-pipeline <kind-id> --pipeline-id <pipeline-id> --dry-run
+loopctl task-kinds clear-default-pipeline <kind-id> --dry-run
 ```
 
 ---
