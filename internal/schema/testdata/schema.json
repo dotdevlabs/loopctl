@@ -431,21 +431,9 @@
               "type": "array",
               "description": "Ordered list of pipeline stages",
               "item_fields": [
-                {
-                  "name": "name",
-                  "type": "string",
-                  "description": "Stage name"
-                },
-                {
-                  "name": "role",
-                  "type": "string",
-                  "description": "Lifecycle role"
-                },
-                {
-                  "name": "instructions",
-                  "type": "string",
-                  "description": "Agent instructions for this stage"
-                }
+                {"name": "name", "type": "string", "description": "Stage name"},
+                {"name": "role", "type": "string", "description": "Lifecycle role"},
+                {"name": "instructions", "type": "string", "description": "Agent instructions for this stage"}
               ]
             }
           ]
@@ -610,21 +598,9 @@
               "type": "array",
               "description": "Ordered list of pipeline stages",
               "item_fields": [
-                {
-                  "name": "name",
-                  "type": "string",
-                  "description": "Stage name"
-                },
-                {
-                  "name": "role",
-                  "type": "string",
-                  "description": "Lifecycle role"
-                },
-                {
-                  "name": "instructions",
-                  "type": "string",
-                  "description": "Agent instructions for this stage"
-                }
+                {"name": "name", "type": "string", "description": "Stage name"},
+                {"name": "role", "type": "string", "description": "Lifecycle role"},
+                {"name": "instructions", "type": "string", "description": "Agent instructions for this stage"}
               ]
             }
           ]
@@ -636,22 +612,10 @@
             "collection": false,
             "paginated": false,
             "attributes": [
-              {
-                "name": "name",
-                "type": "string"
-              },
-              {
-                "name": "description",
-                "type": "string"
-              },
-              {
-                "name": "kind",
-                "type": "string"
-              },
-              {
-                "name": "stage_count",
-                "type": "integer"
-              }
+              {"name": "name", "type": "string"},
+              {"name": "description", "type": "string"},
+              {"name": "kind", "type": "string"},
+              {"name": "stage_count", "type": "integer"}
             ],
             "relationships": []
           },

@@ -34,6 +34,7 @@ func TestLoad(t *testing.T) {
 		"GET /api/tasks/:task_id/activities",
 		"POST /api/projects",
 		"POST /api/pipelines",
+		"PATCH /api/pipelines/:id",
 		"POST /api/task_kinds",
 	} {
 		if !found[want] {
@@ -175,6 +176,76 @@ func TestCheckRequest_UpdateTask_ForbiddenOldFields(t *testing.T) {
 	violations := CheckRequest(req, endpoints)
 	if len(violations) == 0 {
 		t.Fatal("expected violations for forbidden task update fields (kind, title, description); got none")
+	}
+}
+
+func TestCheckRequest_StageItemFields_NoViolation(t *testing.T) {
+	endpoints, _ := Load()
+	body := `{"pipeline":{"name":"x","stages":[{"name":"plan","role":"planning","instructions":"i"}]}}`
+	req, _ := http.NewRequest(http.MethodPost, "http://x/api/pipelines", strings.NewReader(body))
+	violations := CheckRequest(req, endpoints)
+	if len(violations) != 0 {
+		t.Errorf("expected no violations for valid stages; got: %v", violations)
+	}
+}
+
+func TestCheckRequest_StageItemFields_ForbiddenField(t *testing.T) {
+	endpoints, _ := Load()
+	body := `{"pipeline":{"name":"x","stages":[{"name":"plan","role":"planning","instructions":"i","bad_field":"x"}]}}`
+	req, _ := http.NewRequest(http.MethodPost, "http://x/api/pipelines", strings.NewReader(body))
+	violations := CheckRequest(req, endpoints)
+	if len(violations) == 0 {
+		t.Fatal("expected violation for forbidden stage field 'bad_field'; got none")
+	}
+	found := false
+	for _, v := range violations {
+		if strings.Contains(v, "bad_field") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected 'bad_field' in violations; got: %v", violations)
+	}
+}
+
+func TestCheckRequest_StageItemFields_MultipleStages(t *testing.T) {
+	endpoints, _ := Load()
+	body := `{"pipeline":{"name":"x","stages":[{"name":"plan","role":"planning","instructions":"p"},{"name":"impl","role":"implementing","instructions":"i"}]}}`
+	req, _ := http.NewRequest(http.MethodPost, "http://x/api/pipelines", strings.NewReader(body))
+	violations := CheckRequest(req, endpoints)
+	if len(violations) != 0 {
+		t.Errorf("expected no violations for multiple valid stages; got: %v", violations)
+	}
+}
+
+func TestCheckRequest_PipelineUpdate_StageItemFields_NoViolation(t *testing.T) {
+	endpoints, _ := Load()
+	body := `{"pipeline":{"stages":[{"name":"plan","role":"planning","instructions":"Plan."}]}}`
+	req, _ := http.NewRequest(http.MethodPatch, "http://x/api/pipelines/p1", strings.NewReader(body))
+	violations := CheckRequest(req, endpoints)
+	if len(violations) != 0 {
+		t.Errorf("expected no violations for valid pipeline update with stages; got: %v", violations)
+	}
+}
+
+func TestCheckRequest_PipelineUpdate_StageItemFields_ForbiddenField(t *testing.T) {
+	endpoints, _ := Load()
+	body := `{"pipeline":{"stages":[{"name":"plan","role":"planning","instructions":"i","extra":"x"}]}}`
+	req, _ := http.NewRequest(http.MethodPatch, "http://x/api/pipelines/p1", strings.NewReader(body))
+	violations := CheckRequest(req, endpoints)
+	if len(violations) == 0 {
+		t.Fatal("expected violation for forbidden stage field in pipeline update; got none")
+	}
+	found := false
+	for _, v := range violations {
+		if strings.Contains(v, "extra") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected 'extra' in violations; got: %v", violations)
 	}
 }
 
