@@ -3,6 +3,7 @@ package taskkinds
 
 import (
 	"fmt"
+	"net/url"
 
 	"github.com/spf13/cobra"
 
@@ -14,8 +15,9 @@ import (
 
 // TaskKindAttrs holds the attributes returned by /api/task_kinds.
 type TaskKindAttrs struct {
-	Name    string `json:"name"`
-	BuiltIn bool   `json:"built_in"`
+	Name              string `json:"name"`
+	BuiltIn           bool   `json:"built_in"`
+	DefaultPipelineID string `json:"default_pipeline_id"`
 }
 
 // NewCmd returns the "task-kinds" parent command.
@@ -26,6 +28,8 @@ func NewCmd() *cobra.Command {
 	}
 	cmd.AddCommand(listCmd())
 	cmd.AddCommand(createCmd())
+	cmd.AddCommand(setDefaultPipelineCmd())
+	cmd.AddCommand(clearDefaultPipelineCmd())
 	return cmd
 }
 
@@ -103,4 +107,92 @@ func createCmd() *cobra.Command {
 	cmd.Flags().StringVar(&name, "name", "", "Identifier/slug for the task kind")
 	_ = cmd.MarkFlagRequired("name")
 	return cmd
+}
+
+func setDefaultPipelineCmd() *cobra.Command {
+	var pipelineID string
+
+	cmd := &cobra.Command{
+		Use:   "set-default-pipeline <kind-id>",
+		Short: "Set the default pipeline for a task kind",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			kindID := args[0]
+
+			if ctxutil.GlobalFlagsFrom(ctx).DryRun {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(),
+					"dry-run: would PATCH /api/task_kinds/%s {default_pipeline_id=%q}\n",
+					kindID, pipelineID)
+				return nil
+			}
+
+			activeCtx := ctxutil.ActiveContextFrom(ctx)
+			r := ctxutil.RendererFrom(ctx)
+
+			body := map[string]any{
+				"task_kind": map[string]any{
+					"default_pipeline_id": pipelineID,
+				},
+			}
+			path := "/api/task_kinds/" + url.PathEscape(kindID)
+			res, err := apiclient.PatchJSONBodyJSONAPIResponse[TaskKindAttrs](ctx, activeCtx, path, body)
+			if err != nil {
+				return err
+			}
+
+			cols := []output.Column{
+				{Header: "ID"},
+				{Header: "NAME"},
+				{Header: "DEFAULT_PIPELINE_ID"},
+			}
+			rows := [][]string{{res.ID, res.Attributes.Name, res.Attributes.DefaultPipelineID}}
+			return r.Render(cols, rows, res)
+		},
+	}
+
+	cmd.Flags().StringVar(&pipelineID, "pipeline-id", "", "ID of the pipeline to set as default for this kind")
+	_ = cmd.MarkFlagRequired("pipeline-id")
+	return cmd
+}
+
+func clearDefaultPipelineCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "clear-default-pipeline <kind-id>",
+		Short: "Clear the default pipeline for a task kind",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			kindID := args[0]
+
+			if ctxutil.GlobalFlagsFrom(ctx).DryRun {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(),
+					"dry-run: would PATCH /api/task_kinds/%s {default_pipeline_id=null}\n",
+					kindID)
+				return nil
+			}
+
+			activeCtx := ctxutil.ActiveContextFrom(ctx)
+			r := ctxutil.RendererFrom(ctx)
+
+			body := map[string]any{
+				"task_kind": map[string]any{
+					"default_pipeline_id": nil,
+				},
+			}
+			path := "/api/task_kinds/" + url.PathEscape(kindID)
+			res, err := apiclient.PatchJSONBodyJSONAPIResponse[TaskKindAttrs](ctx, activeCtx, path, body)
+			if err != nil {
+				return err
+			}
+
+			cols := []output.Column{
+				{Header: "ID"},
+				{Header: "NAME"},
+				{Header: "DEFAULT_PIPELINE_ID"},
+			}
+			rows := [][]string{{res.ID, res.Attributes.Name, res.Attributes.DefaultPipelineID}}
+			return r.Render(cols, rows, res)
+		},
+	}
 }

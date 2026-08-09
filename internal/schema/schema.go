@@ -11,8 +11,9 @@ import (
 	"strings"
 )
 
-// SourceURL is the canonical location of the API contract document.
-const SourceURL = "https://raw.githubusercontent.com/dotdevlabs/loopcontrol/main/docs/api_contract.json"
+// SourceURL is the canonical location of the API contract document via the GitHub Contents API.
+// Fetching with Accept: application/vnd.github.raw+json returns the raw file content without CDN caching.
+const SourceURL = "https://api.github.com/repos/dotdevlabs/loopcontrol/contents/docs/api_contract.json"
 
 //go:embed testdata/schema.json
 var fixtureData []byte

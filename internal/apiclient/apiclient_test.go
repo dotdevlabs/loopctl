@@ -584,6 +584,66 @@ func TestPostJSONBodyJSONAPIResponseError(t *testing.T) {
 	}
 }
 
+func TestPatchJSONBodyJSONAPIResponseSuccess(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch {
+			t.Errorf("expected PATCH; got: %s", r.Method)
+		}
+		if r.Header.Get("Content-Type") != "application/json" {
+			t.Errorf("expected Content-Type application/json; got: %s", r.Header.Get("Content-Type"))
+		}
+		if r.Header.Get("Accept") != "application/vnd.api+json" {
+			t.Errorf("expected Accept application/vnd.api+json; got: %s", r.Header.Get("Accept"))
+		}
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"items","id":"p1","attributes":{"value":"patched"}}}`)
+	}))
+	defer ts.Close()
+
+	res, err := apiclient.PatchJSONBodyJSONAPIResponse[testData](context.Background(), activeCtx(t, ts.URL), "/api/test/p1", map[string]string{"k": "v"})
+	if err != nil {
+		t.Fatalf("expected no error; got: %v", err)
+	}
+	if res.ID != "p1" {
+		t.Errorf("expected ID=p1; got: %q", res.ID)
+	}
+	if res.Attributes.Value != "patched" {
+		t.Errorf("expected value=patched; got: %q", res.Attributes.Value)
+	}
+}
+
+func TestPatchJSONBodyJSONAPIResponseError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = fmt.Fprint(w, `{"errors":[{"status":"422","detail":"pipeline not found"}]}`)
+	}))
+	defer ts.Close()
+
+	_, err := apiclient.PatchJSONBodyJSONAPIResponse[testData](context.Background(), activeCtx(t, ts.URL), "/api/test/p1", nil)
+	if err == nil {
+		t.Fatal("expected error on 422")
+	}
+	if !strings.Contains(err.Error(), "pipeline not found") {
+		t.Errorf("expected 'pipeline not found' in error; got: %v", err)
+	}
+}
+
+func TestPatchJSONBodyJSONAPIResponseContextCancelled(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"items","id":"p1","attributes":{"value":"ok"}}}`)
+	}))
+	defer ts.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err := apiclient.PatchJSONBodyJSONAPIResponse[testData](ctx, activeCtx(t, ts.URL), "/api/test/p1", nil)
+	if err == nil {
+		t.Fatal("expected error on cancelled context")
+	}
+}
+
 func TestVerboseLoggingGetJSONAPISingle(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/vnd.api+json")

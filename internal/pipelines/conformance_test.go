@@ -71,11 +71,11 @@ func TestConformance_PipelinesCreate(t *testing.T) {
 
 func TestConformance_ViolationDetection_ForbiddenPipelineField(t *testing.T) {
 	endpoints := loadSchemaOrSkip(t)
-	// "stages" is not in the schema for POST /api/pipelines.
-	body := `{"pipeline":{"name":"my-pipeline","stages":["plan","implement"]}}`
+	// "built_in" is not a writable field in POST /api/pipelines.
+	body := `{"pipeline":{"name":"my-pipeline","built_in":true}}`
 	req, _ := http.NewRequest(http.MethodPost, "http://x/api/pipelines", strings.NewReader(body))
 	violations := schema.CheckRequest(req, endpoints)
 	if len(violations) == 0 {
-		t.Fatal("expected violation for forbidden 'stages' field in pipelines create; got none")
+		t.Fatal("expected violation for forbidden 'built_in' field in pipelines create; got none")
 	}
 }

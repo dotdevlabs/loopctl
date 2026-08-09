@@ -249,6 +249,77 @@
     },
     {
       "type": "api_endpoints",
+      "id": "patch-api-task-kind",
+      "attributes": {
+        "http_method": "PATCH",
+        "path": "/api/task_kinds/:id",
+        "description": "Updates a task kind. Use to set or clear the default pipeline for the kind.",
+        "authentication": "bearer_token",
+        "parameters": {
+          "path": [
+            {
+              "name": "id",
+              "type": "string",
+              "required": true,
+              "description": "Task kind ID"
+            }
+          ]
+        },
+        "request_body": {
+          "content_type": "application/json",
+          "nesting": "task_kind",
+          "required": [],
+          "optional": [
+            {
+              "name": "default_pipeline_id",
+              "type": "string",
+              "description": "Pipeline ID to use as default for this kind; null clears the default"
+            }
+          ]
+        },
+        "responses": {
+          "200": {
+            "description": "Updated task kind",
+            "resource_type": "task_kinds",
+            "collection": false,
+            "paginated": false,
+            "attributes": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "built_in",
+                "type": "boolean"
+              },
+              {
+                "name": "default_pipeline_id",
+                "type": "string"
+              }
+            ],
+            "relationships": []
+          },
+          "404": {
+            "description": "Task kind not found",
+            "resource_type": null,
+            "collection": false,
+            "paginated": false,
+            "attributes": [],
+            "relationships": []
+          },
+          "422": {
+            "description": "Validation failed",
+            "resource_type": null,
+            "collection": false,
+            "paginated": false,
+            "attributes": [],
+            "relationships": []
+          }
+        }
+      }
+    },
+    {
+      "type": "api_endpoints",
       "id": "get-api-pipelines",
       "attributes": {
         "http_method": "GET",
@@ -354,6 +425,28 @@
               "name": "kind",
               "type": "string",
               "description": "Task kind name to associate with the pipeline"
+            },
+            {
+              "name": "stages",
+              "type": "array",
+              "description": "Ordered list of pipeline stages",
+              "item_fields": [
+                {
+                  "name": "name",
+                  "type": "string",
+                  "description": "Stage name"
+                },
+                {
+                  "name": "role",
+                  "type": "string",
+                  "description": "Lifecycle role"
+                },
+                {
+                  "name": "instructions",
+                  "type": "string",
+                  "description": "Agent instructions for this stage"
+                }
+              ]
             }
           ]
         },
@@ -465,6 +558,113 @@
           },
           "422": {
             "description": "Clone failed",
+            "resource_type": null,
+            "collection": false,
+            "paginated": false,
+            "attributes": [],
+            "relationships": []
+          }
+        }
+      }
+    },
+    {
+      "type": "api_endpoints",
+      "id": "patch-api-pipeline",
+      "attributes": {
+        "http_method": "PATCH",
+        "path": "/api/pipelines/:id",
+        "description": "Updates a custom pipeline's attributes and stages.",
+        "authentication": "bearer_token",
+        "parameters": {
+          "path": [
+            {
+              "name": "id",
+              "type": "string",
+              "required": true,
+              "description": "Pipeline ID"
+            }
+          ]
+        },
+        "request_body": {
+          "content_type": "application/json",
+          "nesting": "pipeline",
+          "required": [],
+          "optional": [
+            {
+              "name": "name",
+              "type": "string",
+              "description": "Pipeline name"
+            },
+            {
+              "name": "description",
+              "type": "string",
+              "description": "Human-readable description"
+            },
+            {
+              "name": "kind",
+              "type": "string",
+              "description": "Task kind name"
+            },
+            {
+              "name": "stages",
+              "type": "array",
+              "description": "Ordered list of pipeline stages",
+              "item_fields": [
+                {
+                  "name": "name",
+                  "type": "string",
+                  "description": "Stage name"
+                },
+                {
+                  "name": "role",
+                  "type": "string",
+                  "description": "Lifecycle role"
+                },
+                {
+                  "name": "instructions",
+                  "type": "string",
+                  "description": "Agent instructions for this stage"
+                }
+              ]
+            }
+          ]
+        },
+        "responses": {
+          "200": {
+            "description": "Updated pipeline",
+            "resource_type": "pipelines",
+            "collection": false,
+            "paginated": false,
+            "attributes": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "description",
+                "type": "string"
+              },
+              {
+                "name": "kind",
+                "type": "string"
+              },
+              {
+                "name": "stage_count",
+                "type": "integer"
+              }
+            ],
+            "relationships": []
+          },
+          "404": {
+            "description": "Pipeline not found",
+            "resource_type": null,
+            "collection": false,
+            "paginated": false,
+            "attributes": [],
+            "relationships": []
+          },
+          "422": {
+            "description": "Validation failed",
             "resource_type": null,
             "collection": false,
             "paginated": false,

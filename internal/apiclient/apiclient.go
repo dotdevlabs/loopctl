@@ -468,6 +468,73 @@ func PostJSONBodyJSONAPIResponse[T any](ctx context.Context, activeCtx *config.C
 	)
 }
 
+// PatchJSONBodyJSONAPIResponse PATCHes a JSON body to path and decodes the JSON:API single-resource response.
+// Unlike PatchJSONAPISingle, it sets Content-Type: application/json (not application/vnd.api+json).
+// On non-2xx it extracts JSON:API errors[].detail/title and returns a CLIError.
+func PatchJSONBodyJSONAPIResponse[T any](ctx context.Context, activeCtx *config.Context, path string, body any) (httpclient.Resource[T], error) {
+	b, err := json.Marshal(body)
+	if err != nil {
+		return httpclient.Resource[T]{}, fmt.Errorf("encoding request body: %w", err)
+	}
+
+	url := strings.TrimRight(activeCtx.BaseURL, "/") + path
+	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, url, bytes.NewReader(b))
+	if err != nil {
+		return httpclient.Resource[T]{}, fmt.Errorf("building request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/vnd.api+json")
+	req.Header.Set("Authorization", "Bearer "+activeCtx.Token)
+	req.Header.Set("User-Agent", browserUserAgent)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		if ctx.Err() != nil {
+			return httpclient.Resource[T]{}, ctx.Err()
+		}
+		return httpclient.Resource[T]{}, fmt.Errorf("request failed: %w", err)
+	}
+
+	respBody, readErr := io.ReadAll(resp.Body)
+	if closeErr := resp.Body.Close(); closeErr != nil {
+		return httpclient.Resource[T]{}, fmt.Errorf("closing response body: %w", closeErr)
+	}
+	if readErr != nil {
+		return httpclient.Resource[T]{}, fmt.Errorf("reading response: %w", readErr)
+	}
+
+	logVerbose(verboseFrom(ctx), http.MethodPatch, url, resp.StatusCode, respBody)
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		type rawDoc struct {
+			Data   rawResource       `json:"data"`
+			Errors []jsonAPIErrEntry `json:"errors"`
+		}
+		var doc rawDoc
+		if len(respBody) > 0 {
+			if err := json.Unmarshal(respBody, &doc); err != nil {
+				return httpclient.Resource[T]{}, fmt.Errorf("decoding response: %w", err)
+			}
+		}
+		if len(doc.Errors) > 0 {
+			return httpclient.Resource[T]{}, extractJSONAPIError(doc.Errors)
+		}
+		res := httpclient.Resource[T]{ID: doc.Data.ID, Type: doc.Data.Type}
+		if len(doc.Data.Attributes) > 0 {
+			if err := json.Unmarshal(doc.Data.Attributes, &res.Attributes); err != nil {
+				return httpclient.Resource[T]{}, fmt.Errorf("decoding attributes: %w", err)
+			}
+		}
+		return res, nil
+	}
+
+	return httpclient.Resource[T]{}, clierror.New(
+		statusToCode(resp.StatusCode),
+		extractJSONAPIOrFlatError(respBody, resp.StatusCode),
+		"",
+	)
+}
+
 // PostEnvelope POSTs a JSON body to path and decodes a successful response into
 // an Envelope[T]. On non-2xx it extracts errors[]/message/error from the body
 // and returns a CLIError with a human-readable message.
