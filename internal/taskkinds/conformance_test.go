@@ -79,3 +79,67 @@ func TestConformance_ViolationDetection_ForbiddenTaskKindField(t *testing.T) {
 		t.Fatal("expected violation for 'built_in' field in task_kinds create; got none")
 	}
 }
+
+func TestConformance_TaskKindsSetDefaultPipeline(t *testing.T) {
+	endpoints := loadSchemaOrSkip(t)
+	var violations []string
+	var gotContentType string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotContentType = r.Header.Get("Content-Type")
+		violations = schema.CheckRequest(r, endpoints)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"task_kinds","id":"kind1","attributes":{"name":"feature","built_in":false,"default_pipeline_id":"pipe-abc"}}}`)
+	}))
+	defer ts.Close()
+
+	ctx := makeCtx(t, ts.URL, "tok", false, io.Discard)
+	cmd := setDefaultPipelineCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(io.Discard)
+	_ = cmd.Flags().Set("pipeline-id", "pipe-abc")
+	_ = cmd.RunE(cmd, []string{"kind1"})
+
+	if len(violations) != 0 {
+		t.Errorf("conformance violations for task-kinds set-default-pipeline: %v", violations)
+	}
+	if gotContentType != "application/json" {
+		t.Errorf("set-default-pipeline Content-Type = %q; want application/json", gotContentType)
+	}
+}
+
+func TestConformance_TaskKindsClearDefaultPipeline(t *testing.T) {
+	endpoints := loadSchemaOrSkip(t)
+	var violations []string
+	var gotContentType string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotContentType = r.Header.Get("Content-Type")
+		violations = schema.CheckRequest(r, endpoints)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"task_kinds","id":"kind1","attributes":{"name":"feature","built_in":false,"default_pipeline_id":""}}}`)
+	}))
+	defer ts.Close()
+
+	ctx := makeCtx(t, ts.URL, "tok", false, io.Discard)
+	cmd := clearDefaultPipelineCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(io.Discard)
+	_ = cmd.RunE(cmd, []string{"kind1"})
+
+	if len(violations) != 0 {
+		t.Errorf("conformance violations for task-kinds clear-default-pipeline: %v", violations)
+	}
+	if gotContentType != "application/json" {
+		t.Errorf("clear-default-pipeline Content-Type = %q; want application/json", gotContentType)
+	}
+}
+
+func TestConformance_ViolationDetection_ForbiddenTaskKindPatchField(t *testing.T) {
+	endpoints := loadSchemaOrSkip(t)
+	// "built_in" is not a writable field in PATCH /api/task_kinds/:id.
+	body := `{"task_kind":{"built_in":true}}`
+	req, _ := http.NewRequest(http.MethodPatch, "http://x/api/task_kinds/kind1", strings.NewReader(body))
+	violations := schema.CheckRequest(req, endpoints)
+	if len(violations) == 0 {
+		t.Fatal("expected violation for 'built_in' field in task_kinds PATCH; got none")
+	}
+}

@@ -263,7 +263,7 @@ func TestSchemaSourceSync(t *testing.T) {
 		t.Fatalf("building request: %v", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", "application/vnd.github.raw+json")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {

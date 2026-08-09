@@ -249,6 +249,77 @@
     },
     {
       "type": "api_endpoints",
+      "id": "patch-api-task-kind",
+      "attributes": {
+        "http_method": "PATCH",
+        "path": "/api/task_kinds/:id",
+        "description": "Updates a task kind. Use to set or clear the default pipeline for the kind.",
+        "authentication": "bearer_token",
+        "parameters": {
+          "path": [
+            {
+              "name": "id",
+              "type": "string",
+              "required": true,
+              "description": "Task kind ID"
+            }
+          ]
+        },
+        "request_body": {
+          "content_type": "application/json",
+          "nesting": "task_kind",
+          "required": [],
+          "optional": [
+            {
+              "name": "default_pipeline_id",
+              "type": "string",
+              "description": "Pipeline ID to use as default for this kind; null clears the default"
+            }
+          ]
+        },
+        "responses": {
+          "200": {
+            "description": "Updated task kind",
+            "resource_type": "task_kinds",
+            "collection": false,
+            "paginated": false,
+            "attributes": [
+              {
+                "name": "name",
+                "type": "string"
+              },
+              {
+                "name": "built_in",
+                "type": "boolean"
+              },
+              {
+                "name": "default_pipeline_id",
+                "type": "string"
+              }
+            ],
+            "relationships": []
+          },
+          "404": {
+            "description": "Task kind not found",
+            "resource_type": null,
+            "collection": false,
+            "paginated": false,
+            "attributes": [],
+            "relationships": []
+          },
+          "422": {
+            "description": "Validation failed",
+            "resource_type": null,
+            "collection": false,
+            "paginated": false,
+            "attributes": [],
+            "relationships": []
+          }
+        }
+      }
+    },
+    {
+      "type": "api_endpoints",
       "id": "get-api-pipelines",
       "attributes": {
         "http_method": "GET",
