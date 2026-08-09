@@ -171,13 +171,17 @@ Output columns: `ID`, `NAME`, `KIND`.
 
 #### pipelines create
 
-Create a new pipeline for your account, optionally linked to a task kind.
+Create a new pipeline for your account, optionally linked to a task kind. Pass `--stages` to author the pipeline's ordered stages at creation time.
 
 ```bash
 loopctl pipelines create --name "My Pipeline"
 loopctl pipelines create --name "My Pipeline" --kind my-task-kind
 loopctl pipelines create --name "My Pipeline" --kind my-task-kind --description "Optional description"
 loopctl pipelines create --name "My Pipeline" --dry-run
+
+# Create a pipeline with stages
+loopctl pipelines create --name "My Pipeline" \
+  --stages '[{"name":"plan","role":"planning","instructions":"Plan the work."},{"name":"implement","role":"implementing","instructions":"Implement the plan."}]'
 ```
 
 **Flags:**
@@ -187,10 +191,49 @@ loopctl pipelines create --name "My Pipeline" --dry-run
 | `--name` | yes | Name for the new pipeline |
 | `--kind` | no | Task-kind name the pipeline belongs to |
 | `--description` | no | Optional description for the pipeline |
+| `--stages` | no | JSON array of ordered stages (see stage shape below) |
+
+**Stage shape** (each element of the `--stages` array):
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `name` | string | Unique stage identifier within the pipeline |
+| `role` | string | Lifecycle role (e.g. `"planning"`, `"implementing"`) |
+| `instructions` | string | Full agent prompt text for this stage |
 
 Output columns on success: `ID`, `NAME`, `KIND`. Use `--json` for the full resource.
 
 **API:** `POST /api/pipelines`
+
+#### pipelines update
+
+Update an existing pipeline's attributes and stages. Only the flags you provide are changed.
+
+```bash
+loopctl pipelines update <id> --name "Renamed Pipeline"
+loopctl pipelines update <id> --description "New description"
+loopctl pipelines update <id> --kind my-task-kind
+
+# Replace all stages
+loopctl pipelines update <id> \
+  --stages '[{"name":"plan","role":"planning","instructions":"Plan the work."},{"name":"implement","role":"implementing","instructions":"Implement the plan."}]'
+
+# Preview without making API calls
+loopctl pipelines update <id> --name "Renamed" --dry-run
+```
+
+**Flags:**
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--name` | no | New name for the pipeline |
+| `--description` | no | Human-readable description |
+| `--kind` | no | Task kind name the pipeline belongs to |
+| `--stages` | no | JSON array of ordered stages (replaces all existing stages; see stage shape above) |
+
+At least one flag must be provided. Output columns on success: `ID`, `NAME`, `KIND`. Use `--json` for the full resource.
+
+**API:** `PATCH /api/pipelines/:id`
 
 ---
 
@@ -496,6 +539,14 @@ loopctl pipelines create --name "My Workflow"
 loopctl task-kinds create --name my-workflow-kind
 loopctl pipelines create --name "My Workflow" --kind my-workflow-kind
 
+# Create a pipeline with stages authored at creation time
+loopctl pipelines create --name "My Workflow" \
+  --stages '[{"name":"plan","role":"planning","instructions":"Plan the work."},{"name":"implement","role":"implementing","instructions":"Implement the plan."}]'
+
+# Add or replace stages on an existing pipeline
+loopctl pipelines update <pipeline-id> \
+  --stages '[{"name":"plan","role":"planning","instructions":"Plan the work."},{"name":"implement","role":"implementing","instructions":"Implement the plan."}]'
+
 # Use the new pipeline when creating a project
 loopctl projects create --name "Daybreak" --platform rails --pipeline "My Workflow"
 ```
@@ -537,6 +588,7 @@ loopctl projects create --name "Daybreak" --platform rails --dry-run
 loopctl projects create --name "Daybreak" --platform-id "pf1" --dry-run
 loopctl tasks create --project-id p1 --kind bug --title "Fix it" --description "..." --dry-run
 loopctl pipelines create --name "My Workflow" --dry-run
+loopctl pipelines update <id> --name "Renamed" --dry-run
 loopctl task-kinds create --name my-kind --dry-run
 ```
 

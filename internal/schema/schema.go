@@ -19,9 +19,10 @@ var fixtureData []byte
 
 // Field describes a single field in a request body.
 type Field struct {
-	Name        string `json:"name"`
-	Type        string `json:"type"`
-	Description string `json:"description"`
+	Name        string  `json:"name"`
+	Type        string  `json:"type"`
+	Description string  `json:"description"`
+	ItemFields  []Field `json:"item_fields,omitempty"`
 }
 
 // RequestBody describes the expected request body for an endpoint.
@@ -183,18 +184,44 @@ func CheckRequest(r *http.Request, endpoints []EndpointAttrs) []string {
 		toCheck = topLevel
 	}
 
-	allowed := make(map[string]bool)
+	fieldMeta := make(map[string]Field)
 	for _, f := range ep.RequestBody.Required {
-		allowed[f.Name] = true
+		fieldMeta[f.Name] = f
 	}
 	for _, f := range ep.RequestBody.Optional {
-		allowed[f.Name] = true
+		fieldMeta[f.Name] = f
 	}
 
 	var violations []string
-	for field := range toCheck {
-		if !allowed[field] {
+	for field, rawVal := range toCheck {
+		meta, ok := fieldMeta[field]
+		if !ok {
 			violations = append(violations, fmt.Sprintf("field %q not in schema for %s %s", field, r.Method, path))
+			continue
+		}
+		// For array fields with item_fields defined, validate each item's keys.
+		if meta.Type == "array" && len(meta.ItemFields) > 0 {
+			var items []json.RawMessage
+			if err := json.Unmarshal(rawVal, &items); err != nil {
+				violations = append(violations, fmt.Sprintf("field %q is not a valid JSON array: %v", field, err))
+				continue
+			}
+			allowedItemFields := make(map[string]bool, len(meta.ItemFields))
+			for _, itemField := range meta.ItemFields {
+				allowedItemFields[itemField.Name] = true
+			}
+			for i, item := range items {
+				var itemObj map[string]json.RawMessage
+				if err := json.Unmarshal(item, &itemObj); err != nil {
+					violations = append(violations, fmt.Sprintf("field %q item[%d] is not a JSON object: %v", field, i, err))
+					continue
+				}
+				for key := range itemObj {
+					if !allowedItemFields[key] {
+						violations = append(violations, fmt.Sprintf("field %q item[%d] has unknown key %q", field, i, key))
+					}
+				}
+			}
 		}
 	}
 	return violations
