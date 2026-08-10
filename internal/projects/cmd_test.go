@@ -726,6 +726,328 @@ func TestProjectsCreateBothPlatformFlagsError(t *testing.T) {
 	}
 }
 
+func TestProjectsUpdatePipelineID(t *testing.T) {
+	var gotBody map[string]any
+	var gotMethod, gotPath string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &gotBody)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"projects","id":"19","attributes":{"name":"myproj","platform_id":"pf1"}}}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "test-token", false, &out)
+
+	cmd := updateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("pipeline-id", "9")
+
+	if err := cmd.RunE(cmd, []string{"19"}); err != nil {
+		t.Fatalf("update failed: %v", err)
+	}
+	if gotMethod != http.MethodPatch {
+		t.Errorf("expected PATCH; got %s", gotMethod)
+	}
+	if gotPath != "/api/projects/19" {
+		t.Errorf("expected /api/projects/19; got %s", gotPath)
+	}
+	proj, _ := gotBody["project"].(map[string]any)
+	if proj == nil {
+		t.Fatal("expected project key in body")
+	}
+	if proj["pipeline_id"] != float64(9) {
+		t.Errorf("expected pipeline_id=9; got %v", proj["pipeline_id"])
+	}
+	if !strings.Contains(out.String(), "19") {
+		t.Errorf("expected project id in output; got: %s", out.String())
+	}
+}
+
+func TestProjectsUpdateDisplayName(t *testing.T) {
+	var gotBody map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &gotBody)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"projects","id":"19","attributes":{"name":"myproj","display_name":"New Name","platform_id":"pf1"}}}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := updateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("display-name", "New Name")
+
+	if err := cmd.RunE(cmd, []string{"19"}); err != nil {
+		t.Fatalf("update failed: %v", err)
+	}
+	proj, _ := gotBody["project"].(map[string]any)
+	if proj == nil {
+		t.Fatal("expected project key in body")
+	}
+	if proj["display_name"] != "New Name" {
+		t.Errorf("expected display_name=New Name; got %v", proj["display_name"])
+	}
+	if len(proj) != 1 {
+		t.Errorf("expected exactly 1 field in project; got %d: %v", len(proj), proj)
+	}
+}
+
+func TestProjectsUpdateMultipleFlags(t *testing.T) {
+	var gotBody map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &gotBody)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"projects","id":"19","attributes":{"name":"myproj","platform_id":"pf1"}}}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := updateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("git-branch", "main")
+	_ = cmd.Flags().Set("display-name", "Foo")
+
+	if err := cmd.RunE(cmd, []string{"19"}); err != nil {
+		t.Fatalf("update failed: %v", err)
+	}
+	proj, _ := gotBody["project"].(map[string]any)
+	if proj == nil {
+		t.Fatal("expected project key in body")
+	}
+	if proj["git_branch"] != "main" {
+		t.Errorf("expected git_branch=main; got %v", proj["git_branch"])
+	}
+	if proj["display_name"] != "Foo" {
+		t.Errorf("expected display_name=Foo; got %v", proj["display_name"])
+	}
+	if len(proj) != 2 {
+		t.Errorf("expected exactly 2 fields in project; got %d: %v", len(proj), proj)
+	}
+}
+
+func TestProjectsUpdateUnsetFlagsOmitted(t *testing.T) {
+	var gotBody map[string]any
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		_ = json.Unmarshal(b, &gotBody)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"projects","id":"19","attributes":{"name":"myproj","platform_id":"pf1"}}}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := updateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("pipeline-id", "9")
+
+	if err := cmd.RunE(cmd, []string{"19"}); err != nil {
+		t.Fatalf("update failed: %v", err)
+	}
+	proj, _ := gotBody["project"].(map[string]any)
+	if proj == nil {
+		t.Fatal("expected project key in body")
+	}
+	if len(proj) != 1 {
+		t.Errorf("expected exactly 1 field in project; got %d: %v", len(proj), proj)
+	}
+	for _, unwanted := range []string{"git_branch", "display_name", "environment_id", "container_image", "platform_id", "failure_policy", "fallback_agent_id"} {
+		if _, ok := proj[unwanted]; ok {
+			t.Errorf("unexpected field %q in project patch body", unwanted)
+		}
+	}
+}
+
+func TestProjectsUpdateNoFlags(t *testing.T) {
+	var out bytes.Buffer
+	ctx := makeCtx(t, "http://localhost", "tok", false, &out)
+
+	cmd := updateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	err := cmd.RunE(cmd, []string{"19"})
+	if err == nil {
+		t.Fatal("expected error when no flags set")
+	}
+	if !strings.Contains(err.Error(), "no fields to update") {
+		t.Errorf("expected 'no fields to update' in error; got: %v", err)
+	}
+}
+
+func TestProjectsUpdate404(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = fmt.Fprint(w, `{"errors":[{"status":"404","detail":"Not Found"}]}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := updateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("pipeline-id", "9")
+
+	err := cmd.RunE(cmd, []string{"nonexistent"})
+	if err == nil {
+		t.Fatal("expected error for 404")
+	}
+	if !strings.Contains(strings.ToLower(err.Error()), "not found") {
+		t.Errorf("expected 'not found' in error; got: %v", err)
+	}
+}
+
+func TestProjectsUpdate422(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = fmt.Fprint(w, `{"errors":[{"status":"422","detail":"pipeline not found"}]}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := updateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("pipeline-id", "999")
+
+	err := cmd.RunE(cmd, []string{"19"})
+	if err == nil {
+		t.Fatal("expected error for 422")
+	}
+	if !strings.Contains(err.Error(), "pipeline not found") {
+		t.Errorf("expected 'pipeline not found' in error; got: %v", err)
+	}
+}
+
+func TestProjectsUpdateJSON(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"projects","id":"19","attributes":{"name":"myproj","platform_id":"pf1"}}}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", true, &out)
+
+	cmd := updateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("pipeline-id", "9")
+
+	if err := cmd.RunE(cmd, []string{"19"}); err != nil {
+		t.Fatalf("update json failed: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, `"attributes"`) {
+		t.Errorf("expected JSON output with 'attributes' key; got:\n%s", got)
+	}
+	if !strings.Contains(got, "19") {
+		t.Errorf("expected project id in JSON output; got:\n%s", got)
+	}
+}
+
+func TestProjectsUpdateAuth(t *testing.T) {
+	var gotAuth string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"projects","id":"19","attributes":{}}}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "test-token", false, &out)
+
+	cmd := updateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("pipeline-id", "9")
+
+	if err := cmd.RunE(cmd, []string{"19"}); err != nil {
+		t.Fatalf("update failed: %v", err)
+	}
+	if gotAuth != "Bearer test-token" {
+		t.Errorf("expected Authorization: Bearer test-token; got: %s", gotAuth)
+	}
+}
+
+func TestProjectsUpdateContentType(t *testing.T) {
+	var gotCT string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotCT = r.Header.Get("Content-Type")
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"projects","id":"19","attributes":{}}}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := updateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("pipeline-id", "9")
+
+	if err := cmd.RunE(cmd, []string{"19"}); err != nil {
+		t.Fatalf("update failed: %v", err)
+	}
+	if gotCT != "application/json" {
+		t.Errorf("expected Content-Type: application/json; got: %s", gotCT)
+	}
+}
+
+func TestProjectsUpdateDryRun(t *testing.T) {
+	called := false
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	renderer := output.New(false, "", &out, io.Discard)
+	ctx := context.Background()
+	ctx = ctxutil.WithRenderer(ctx, renderer)
+	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{DryRun: true})
+	ctx = ctxutil.WithActiveContext(ctx, &config.Context{BaseURL: ts.URL, Token: "tok"})
+
+	cmd := updateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("pipeline-id", "9")
+
+	if err := cmd.RunE(cmd, []string{"19"}); err != nil {
+		t.Fatalf("update dry-run failed: %v", err)
+	}
+	if called {
+		t.Error("dry-run should not make HTTP request")
+	}
+	got := out.String()
+	if !strings.Contains(got, "dry-run") {
+		t.Errorf("expected dry-run message; got: %s", got)
+	}
+}
+
 func TestProjectsCreateDryRunByPlatformName(t *testing.T) {
 	postCalled := false
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

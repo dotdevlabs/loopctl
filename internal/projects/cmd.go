@@ -21,6 +21,7 @@ type ProjectAttrs struct {
 	DisplayName string `json:"display_name"`
 	PlatformID  string `json:"platform_id"`
 	GitRepoURL  string `json:"git_repo_url"`
+	GitBranch   string `json:"git_branch"`
 	CreatedAt   string `json:"created_at"`
 }
 
@@ -33,6 +34,7 @@ func NewCmd() *cobra.Command {
 	cmd.AddCommand(listCmd())
 	cmd.AddCommand(getCmd())
 	cmd.AddCommand(createCmd())
+	cmd.AddCommand(updateCmd())
 	return cmd
 }
 
@@ -289,6 +291,95 @@ func createCmd() *cobra.Command {
 	cmd.Flags().StringVar(&repo, "repo", "", "Existing repository URL; triggers existing-repo path instead of new project")
 
 	_ = cmd.MarkFlagRequired("name")
+
+	return cmd
+}
+
+func updateCmd() *cobra.Command {
+	var (
+		displayName     string
+		gitBranch       string
+		environmentID   int
+		containerImage  string
+		platformID      int
+		pipelineID      int
+		failurePolicy   string
+		fallbackAgentID int
+	)
+
+	cmd := &cobra.Command{
+		Use:   "update <id>",
+		Short: "Update a project",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+
+			patch := map[string]any{}
+			if cmd.Flags().Changed("display-name") {
+				patch["display_name"] = displayName
+			}
+			if cmd.Flags().Changed("git-branch") {
+				patch["git_branch"] = gitBranch
+			}
+			if cmd.Flags().Changed("environment-id") {
+				patch["environment_id"] = environmentID
+			}
+			if cmd.Flags().Changed("container-image") {
+				patch["container_image"] = containerImage
+			}
+			if cmd.Flags().Changed("platform-id") {
+				patch["platform_id"] = platformID
+			}
+			if cmd.Flags().Changed("pipeline-id") {
+				patch["pipeline_id"] = pipelineID
+			}
+			if cmd.Flags().Changed("failure-policy") {
+				patch["failure_policy"] = failurePolicy
+			}
+			if cmd.Flags().Changed("fallback-agent-id") {
+				patch["fallback_agent_id"] = fallbackAgentID
+			}
+
+			if len(patch) == 0 {
+				return clierror.New(clierror.CodeUsage, "no fields to update",
+					"provide at least one flag such as --pipeline-id or --display-name")
+			}
+
+			if ctxutil.GlobalFlagsFrom(ctx).DryRun {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would PATCH /api/projects/%s %v\n", args[0], patch)
+				return nil
+			}
+
+			activeCtx := ctxutil.ActiveContextFrom(ctx)
+			r := ctxutil.RendererFrom(ctx)
+
+			body := map[string]any{"project": patch}
+			path := "/api/projects/" + url.PathEscape(args[0])
+
+			res, err := apiclient.PatchJSONBodyJSONAPIResponse[ProjectAttrs](ctx, activeCtx, path, body)
+			if err != nil {
+				return err
+			}
+
+			cols := []output.Column{
+				{Header: "ID"},
+				{Header: "NAME"},
+				{Header: "PLATFORM"},
+				{Header: "REPO"},
+			}
+			rows := [][]string{{res.ID, res.Attributes.Name, res.Attributes.PlatformID, res.Attributes.GitRepoURL}}
+			return r.Render(cols, rows, res)
+		},
+	}
+
+	cmd.Flags().StringVar(&displayName, "display-name", "", "Human display name for the project")
+	cmd.Flags().StringVar(&gitBranch, "git-branch", "", "Default git branch")
+	cmd.Flags().IntVar(&environmentID, "environment-id", 0, "Environment ID")
+	cmd.Flags().StringVar(&containerImage, "container-image", "", "Container image")
+	cmd.Flags().IntVar(&platformID, "platform-id", 0, "Platform ID")
+	cmd.Flags().IntVar(&pipelineID, "pipeline-id", 0, "Pipeline ID (sets the project's default pipeline)")
+	cmd.Flags().StringVar(&failurePolicy, "failure-policy", "", "Failure policy")
+	cmd.Flags().IntVar(&fallbackAgentID, "fallback-agent-id", 0, "Fallback agent ID")
 
 	return cmd
 }

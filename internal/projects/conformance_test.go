@@ -119,6 +119,33 @@ func TestConformance_ProjectsCreateExistingRepo(t *testing.T) {
 	}
 }
 
+func TestConformance_ProjectsUpdate(t *testing.T) {
+	endpoints := loadSchemaOrSkip(t)
+	var violations []string
+	var gotContentType string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotContentType = r.Header.Get("Content-Type")
+		violations = schema.CheckRequest(r, endpoints)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"projects","id":"19","attributes":{}}}`)
+	}))
+	defer ts.Close()
+
+	ctx := makeCtx(t, ts.URL, "tok", false, io.Discard)
+	cmd := updateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(io.Discard)
+	_ = cmd.Flags().Set("pipeline-id", "9")
+	_ = cmd.RunE(cmd, []string{"19"})
+
+	if len(violations) != 0 {
+		t.Errorf("conformance violations for projects update: %v", violations)
+	}
+	if gotContentType != "application/json" {
+		t.Errorf("projects update Content-Type = %q; want application/json", gotContentType)
+	}
+}
+
 func TestConformance_ViolationDetection_ForbiddenTopLevelKeys(t *testing.T) {
 	endpoints := loadSchemaOrSkip(t)
 	// Old-style body with forbidden top-level keys.
