@@ -339,7 +339,44 @@ components:
         hours: { type: integer }
         price_cents: { type: integer }
 
+    StatusAttributes:
+      type: object
+      properties:
+        version:
+          type: string
+          nullable: true
+          description: Application version injected at build time via ARG; null when unset.
+        sha:
+          type: string
+          nullable: true
+          description: Git SHA injected at build time via ARG; null when unset.
+        db_version:
+          type: string
+          description: Latest applied migration version from schema_migrations.
+
 paths:
+  /api/status:
+    get:
+      operationId: get-api-status
+      summary: Returns application version and database migration state. No authentication required.
+      security: []
+      responses:
+        '200':
+          description: Application status
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/JsonApiResource'
+                      - type: object
+                        properties:
+                          attributes:
+                            $ref: '#/components/schemas/StatusAttributes'
+
   /api/agents:
     get:
       operationId: get-api-agents
