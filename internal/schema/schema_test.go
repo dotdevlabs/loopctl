@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
-	"gopkg.in/yaml.v3"
 	"encoding/json"
+	"gopkg.in/yaml.v3"
 )
 
 func TestLoad(t *testing.T) {
