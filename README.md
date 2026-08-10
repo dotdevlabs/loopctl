@@ -135,6 +135,41 @@ If a named platform or pipeline is not found, the command fails with a clear err
 
 **API:** `POST /api/projects` (preceded by `GET /api/platforms` and/or `GET /api/pipelines` when resolving by name)
 
+#### projects update
+
+Update an existing project's attributes. Only the flags you provide are changed — unset flags are not sent to the API and will not clobber server state.
+
+```bash
+# Bind a pipeline to a project
+loopctl projects update <id> --pipeline-id <pipeline-id>
+
+# Rename a project
+loopctl projects update <id> --display-name "New Name"
+
+# Change the tracked branch and pipeline together
+loopctl projects update <id> --git-branch main --pipeline-id 9
+
+# Preview without making API calls
+loopctl projects update <id> --pipeline-id 9 --dry-run
+```
+
+**Flags:**
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--display-name` | string | Human-readable display name |
+| `--git-branch` | string | Git branch to track |
+| `--environment-id` | int | Environment numeric ID |
+| `--container-image` | string | Container image reference |
+| `--platform-id` | int | Platform numeric ID |
+| `--pipeline-id` | int | Pipeline numeric ID |
+| `--failure-policy` | string | Failure policy for tasks |
+| `--fallback-agent-id` | int | Fallback agent numeric ID |
+
+At least one flag must be provided. Output columns on success: `ID`, `NAME`, `PLATFORM`, `REPO`. Use `--json` for the full resource.
+
+**API:** `PATCH /api/projects/:id`
+
 ---
 
 ### platforms
