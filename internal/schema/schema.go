@@ -8,14 +8,17 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
-// SourceURL is the canonical location of the API contract document via the GitHub Contents API.
+// SourceURL is the canonical location of the published OpenAPI spec via the GitHub Contents API.
 // Fetching with Accept: application/vnd.github.raw+json returns the raw file content without CDN caching.
-const SourceURL = "https://api.github.com/repos/dotdevlabs/loopcontrol/contents/docs/api_contract.json"
+const SourceURL = "https://api.github.com/repos/dotdevlabs/loopcontrol/contents/docs/api_spec.yaml"
 
-//go:embed testdata/schema.json
+//go:embed testdata/api_spec.yaml
 var fixtureData []byte
 
 // Field describes a single field in a request body.
@@ -42,49 +45,147 @@ type EndpointAttrs struct {
 	RequestBody *RequestBody `json:"-"`
 }
 
-type rawEndpointAttrs struct {
-	Method      string          `json:"http_method"`
-	Path        string          `json:"path"`
-	Description string          `json:"description"`
-	RequestBody json.RawMessage `json:"request_body"`
+// OpenAPI YAML structure types (unexported).
+
+type oaSpec struct {
+	Paths map[string]oaPathItem `yaml:"paths"`
 }
 
-type rawEndpoint struct {
-	ID    string           `json:"id"`
-	Attrs rawEndpointAttrs `json:"attributes"`
+type oaPathItem struct {
+	Get    *oaOperation `yaml:"get"`
+	Post   *oaOperation `yaml:"post"`
+	Patch  *oaOperation `yaml:"patch"`
+	Put    *oaOperation `yaml:"put"`
+	Delete *oaOperation `yaml:"delete"`
 }
 
-type schemaDoc struct {
-	Data []rawEndpoint `json:"data"`
+type oaOperation struct {
+	OperationID string         `yaml:"operationId"`
+	Summary     string         `yaml:"summary"`
+	RequestBody *oaRequestBody `yaml:"requestBody"`
 }
 
-// Load parses the embedded schema fixture and returns all endpoint definitions.
+type oaRequestBody struct {
+	Content map[string]oaMediaType `yaml:"content"`
+}
+
+type oaMediaType struct {
+	Schema oaSchema `yaml:"schema"`
+}
+
+type oaSchema struct {
+	Type       string              `yaml:"type"`
+	Required   []string            `yaml:"required"`
+	Properties map[string]oaSchema `yaml:"properties"`
+	Items      *oaSchema           `yaml:"items"`
+}
+
+var oaParamRE = regexp.MustCompile(`\{([^}]+)\}`)
+
+// oaPathToTemplate converts an OpenAPI path like /api/tasks/{id} to /api/tasks/:id.
+func oaPathToTemplate(p string) string {
+	return oaParamRE.ReplaceAllString(p, `:$1`)
+}
+
+// Load parses the embedded OpenAPI spec and returns all endpoint definitions.
 func Load() ([]EndpointAttrs, error) {
-	return parseSchema(fixtureData)
+	return parseOpenAPI(fixtureData)
 }
 
-func parseSchema(data []byte) ([]EndpointAttrs, error) {
-	var doc schemaDoc
-	if err := json.Unmarshal(data, &doc); err != nil {
-		return nil, fmt.Errorf("parsing schema: %w", err)
+func parseOpenAPI(data []byte) ([]EndpointAttrs, error) {
+	var spec oaSpec
+	if err := yaml.Unmarshal(data, &spec); err != nil {
+		return nil, fmt.Errorf("parsing api_spec.yaml: %w", err)
 	}
-	endpoints := make([]EndpointAttrs, 0, len(doc.Data))
-	for _, raw := range doc.Data {
-		ep := EndpointAttrs{
-			Method:      raw.Attrs.Method,
-			Path:        raw.Attrs.Path,
-			Description: raw.Attrs.Description,
+
+	var endpoints []EndpointAttrs
+	for path, pathItem := range spec.Paths {
+		template := oaPathToTemplate(path)
+		ops := []struct {
+			method string
+			op     *oaOperation
+		}{
+			{"GET", pathItem.Get},
+			{"POST", pathItem.Post},
+			{"PATCH", pathItem.Patch},
+			{"PUT", pathItem.Put},
+			{"DELETE", pathItem.Delete},
 		}
-		if len(raw.Attrs.RequestBody) > 0 && string(raw.Attrs.RequestBody) != "null" {
-			var rb RequestBody
-			if err := json.Unmarshal(raw.Attrs.RequestBody, &rb); err != nil {
-				return nil, fmt.Errorf("parsing request_body for %s %s: %w", ep.Method, ep.Path, err)
+		for _, o := range ops {
+			if o.op == nil {
+				continue
 			}
-			ep.RequestBody = &rb
+			ep := EndpointAttrs{
+				Method:      strings.ToUpper(o.method),
+				Path:        template,
+				Description: o.op.Summary,
+			}
+			if o.op.RequestBody != nil {
+				ep.RequestBody = extractRequestBody(o.op.RequestBody)
+			}
+			endpoints = append(endpoints, ep)
 		}
-		endpoints = append(endpoints, ep)
 	}
 	return endpoints, nil
+}
+
+// extractRequestBody parses an OpenAPI requestBody into a RequestBody.
+// It only processes application/json content. If the top-level schema has exactly
+// one property of type object, that property is the nesting key; otherwise no nesting.
+// Array fields are included but item-level field checking is skipped when the spec
+// defines array items as type: object with no properties (i.e. any item keys allowed).
+func extractRequestBody(rb *oaRequestBody) *RequestBody {
+	mt, ok := rb.Content["application/json"]
+	if !ok {
+		return nil
+	}
+
+	schema := mt.Schema
+	if schema.Type != "object" || len(schema.Properties) == 0 {
+		return nil
+	}
+
+	result := &RequestBody{ContentType: "application/json"}
+
+	// Detect nesting: exactly one top-level property of type object.
+	if len(schema.Properties) == 1 {
+		for nestKey, nestSchema := range schema.Properties {
+			if nestSchema.Type == "object" {
+				result.Nesting = nestKey
+				extractFields(nestSchema, result)
+				return result
+			}
+		}
+	}
+
+	// No nesting — extract fields from top-level schema.
+	extractFields(schema, result)
+	return result
+}
+
+func extractFields(schema oaSchema, result *RequestBody) {
+	requiredSet := make(map[string]bool, len(schema.Required))
+	for _, r := range schema.Required {
+		requiredSet[r] = true
+	}
+
+	for fieldName, fieldSchema := range schema.Properties {
+		f := Field{
+			Name: fieldName,
+			Type: fieldSchema.Type,
+		}
+		// For array fields: only populate ItemFields when the spec defines item properties.
+		if fieldSchema.Type == "array" && fieldSchema.Items != nil && len(fieldSchema.Items.Properties) > 0 {
+			for itemName := range fieldSchema.Items.Properties {
+				f.ItemFields = append(f.ItemFields, Field{Name: itemName})
+			}
+		}
+		if requiredSet[fieldName] {
+			result.Required = append(result.Required, f)
+		} else {
+			result.Optional = append(result.Optional, f)
+		}
+	}
 }
 
 // MatchPath returns true when actualPath matches the schema template path.
@@ -126,7 +227,6 @@ func FindEndpoint(endpoints []EndpointAttrs, method, path string) *EndpointAttrs
 //   - For requests with a body: every field in the body is in the endpoint's allowed set.
 //   - The nesting key is present if the schema requires it.
 func CheckRequest(r *http.Request, endpoints []EndpointAttrs) []string {
-	// Strip query string from path for matching.
 	path := r.URL.Path
 
 	ep := FindEndpoint(endpoints, r.Method, path)

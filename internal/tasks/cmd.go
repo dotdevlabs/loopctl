@@ -20,14 +20,17 @@ import (
 
 // TaskAttrs holds the attributes nested under JSON:API data.attributes.
 type TaskAttrs struct {
-	ProjectID   string `json:"project_id"`
-	Kind        string `json:"kind"`
-	Title       string `json:"title"`
-	Description string `json:"description"`
-	Status      string `json:"status"`
-	Stage       string `json:"stage"`
-	PRNumber    int    `json:"pr_number"`
-	CreatedAt   string `json:"created_at"`
+	ProjectID             string   `json:"project_id"`
+	Kind                  string   `json:"kind"`
+	Title                 string   `json:"title"`
+	Description           string   `json:"description"`
+	Status                string   `json:"status"`
+	Stage                 string   `json:"stage"`
+	PRNumber              int      `json:"pr_number"`
+	DependsOn             []string `json:"depends_on"`
+	DependenciesMet       bool     `json:"dependencies_met"`
+	BlockingDependencyIDs []string `json:"blocking_dependency_ids"`
+	CreatedAt             string   `json:"created_at"`
 }
 
 // ActivityAttrs holds the attributes nested under JSON:API data.attributes for task activities.
@@ -119,8 +122,9 @@ func getCmd() *cobra.Command {
 				{Header: "TITLE"},
 				{Header: "STAGE"},
 				{Header: "STATUS"},
+				{Header: "DEPENDENCIES_MET"},
 			}
-			rows := [][]string{{res.ID, t.Kind, t.Title, t.Stage, t.Status}}
+			rows := [][]string{{res.ID, t.Kind, t.Title, t.Stage, t.Status, fmt.Sprintf("%v", t.DependenciesMet)}}
 			return r.Render(cols, rows, res)
 		},
 	}
@@ -252,7 +256,7 @@ func updateCmd() *cobra.Command {
 			body := map[string]any{"task": patch}
 			path := "/api/tasks/" + url.PathEscape(args[0])
 
-			res, err := apiclient.PatchJSONAPISingle[TaskAttrs](ctx, activeCtx, path, body)
+			res, err := apiclient.PatchJSONBodyJSONAPIResponse[TaskAttrs](ctx, activeCtx, path, body)
 			if err != nil {
 				return err
 			}

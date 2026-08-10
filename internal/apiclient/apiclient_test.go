@@ -99,8 +99,8 @@ func TestPostEnvelopeBareStatus(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !strings.Contains(err.Error(), "HTTP 422") {
-		t.Errorf("expected 'HTTP 422'; got: %v", err)
+	if !strings.Contains(err.Error(), "Unprocessable Entity") {
+		t.Errorf("expected 'Unprocessable Entity'; got: %v", err)
 	}
 }
 
@@ -271,8 +271,8 @@ func TestGetJSONAPISingleBareStatus(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on 500")
 	}
-	if !strings.Contains(err.Error(), "HTTP 500") {
-		t.Errorf("expected 'HTTP 500' in error; got: %v", err)
+	if !strings.Contains(err.Error(), "Internal Server Error") {
+		t.Errorf("expected 'Internal Server Error' in error; got: %v", err)
 	}
 }
 
@@ -443,9 +443,9 @@ func TestPostJSONAPISingleErrorFlatJSON(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on 400")
 	}
-	// flat error body: falls back to HTTP 400 since JSON:API parser finds no errors array
-	if !strings.Contains(err.Error(), "HTTP 400") {
-		t.Errorf("expected 'HTTP 400' fallback in error for flat body; got: %v", err)
+	// flat error body with no JSON:API errors array: falls back to http.StatusText
+	if !strings.Contains(err.Error(), "Bad Request") {
+		t.Errorf("expected 'Bad Request' fallback in error for flat body; got: %v", err)
 	}
 }
 
@@ -671,5 +671,75 @@ func TestVerboseLoggingGetJSONAPISingle(t *testing.T) {
 	}
 	if !strings.Contains(verbose, "/api/test/5") {
 		t.Errorf("expected path in verbose output; got: %q", verbose)
+	}
+}
+
+func TestDeleteJSONAPISuccess(t *testing.T) {
+	var gotMethod, gotPath string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer ts.Close()
+
+	err := apiclient.DeleteJSONAPI(context.Background(), activeCtx(t, ts.URL), "/api/account_pipeline_defaults/feature")
+	if err != nil {
+		t.Fatalf("expected no error; got: %v", err)
+	}
+	if gotMethod != http.MethodDelete {
+		t.Errorf("expected DELETE; got: %s", gotMethod)
+	}
+	if gotPath != "/api/account_pipeline_defaults/feature" {
+		t.Errorf("expected /api/account_pipeline_defaults/feature; got: %s", gotPath)
+	}
+}
+
+func TestDeleteJSONAPIError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = fmt.Fprint(w, `{"errors":[{"status":"404","detail":"task kind not found"}]}`)
+	}))
+	defer ts.Close()
+
+	err := apiclient.DeleteJSONAPI(context.Background(), activeCtx(t, ts.URL), "/api/account_pipeline_defaults/unknown")
+	if err == nil {
+		t.Fatal("expected error on 404")
+	}
+	if !strings.Contains(err.Error(), "task kind not found") {
+		t.Errorf("expected detail in error; got: %v", err)
+	}
+}
+
+func TestDeleteJSONAPIBareStatus(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+	}))
+	defer ts.Close()
+
+	err := apiclient.DeleteJSONAPI(context.Background(), activeCtx(t, ts.URL), "/api/test/1")
+	if err == nil {
+		t.Fatal("expected error on 403")
+	}
+	if !strings.Contains(err.Error(), "Forbidden") {
+		t.Errorf("expected 'Forbidden' in error; got: %v", err)
+	}
+}
+
+func TestDeleteJSONAPIContextCancelled(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer ts.Close()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	err := apiclient.DeleteJSONAPI(ctx, activeCtx(t, ts.URL), "/api/test/1")
+	if err == nil {
+		t.Fatal("expected error for cancelled context")
+	}
+	if err != context.Canceled {
+		t.Errorf("expected context.Canceled; got: %v", err)
 	}
 }

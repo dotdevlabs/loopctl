@@ -5,6 +5,7 @@ go 1.24.5
 require (
 	github.com/dotdevlabs/ctlkit v0.0.0-20260805143707-138a4985f212
 	github.com/spf13/cobra v1.10.2
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (
@@ -28,5 +29,4 @@ require (
 	golang.org/x/sys v0.18.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	gopkg.in/ini.v1 v1.67.0 // indirect
-	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

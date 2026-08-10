@@ -164,24 +164,16 @@ func TestConformance_PipelinesUpdate_WithStages(t *testing.T) {
 	}
 }
 
-func TestConformance_ViolationDetection_ForbiddenStageField(t *testing.T) {
+// TestConformance_StageFieldsPermissive verifies that stage items accept any keys.
+// The spec defines stages as array of type: object with no properties, so any
+// key in a stage item is valid and must not trigger a conformance violation.
+func TestConformance_StageFieldsPermissive(t *testing.T) {
 	endpoints := loadSchemaOrSkip(t)
-	// A stage with a bad_field key should trigger a violation.
-	body := `{"pipeline":{"name":"x","stages":[{"name":"plan","role":"planning","instructions":"i","bad_field":"x"}]}}`
+	body := `{"pipeline":{"name":"x","stages":[{"name":"plan","role":"planning","instructions":"i","arbitrary_key":"x"}]}}`
 	req, _ := http.NewRequest(http.MethodPost, "http://x/api/pipelines", strings.NewReader(body))
 	violations := schema.CheckRequest(req, endpoints)
-	if len(violations) == 0 {
-		t.Fatal("expected violation for forbidden stage field 'bad_field'; got none")
-	}
-	found := false
-	for _, v := range violations {
-		if strings.Contains(v, "bad_field") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Errorf("expected 'bad_field' in violations; got: %v", violations)
+	if len(violations) != 0 {
+		t.Errorf("spec defines stages items as open objects — arbitrary stage keys must not produce violations; got: %v", violations)
 	}
 }
 
