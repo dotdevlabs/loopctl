@@ -277,35 +277,39 @@ Attempting to create a built-in task kind surfaces the API's human-readable erro
 
 Set the default pipeline for a task kind. Tasks of this kind will use the specified pipeline unless overridden at task creation time.
 
+The first argument is the task kind **name** (e.g. `feature`), not a numeric ID. Use `loopctl task-kinds list` to see available kind names.
+
 ```bash
-loopctl task-kinds set-default-pipeline <kind-id> --pipeline-id <pipeline-id>
-loopctl task-kinds set-default-pipeline <kind-id> --pipeline-id <pipeline-id> --json
-loopctl task-kinds set-default-pipeline <kind-id> --pipeline-id <pipeline-id> --dry-run
+loopctl task-kinds set-default-pipeline <kind-name> --pipeline-id <integer-pipeline-id>
+loopctl task-kinds set-default-pipeline <kind-name> --pipeline-id <integer-pipeline-id> --json
+loopctl task-kinds set-default-pipeline <kind-name> --pipeline-id <integer-pipeline-id> --dry-run
 ```
 
 **Flags:**
 
 | Flag | Required | Description |
 |------|----------|-------------|
-| `--pipeline-id` | yes | ID of the pipeline to set as default for this kind |
+| `--pipeline-id` | yes | Integer ID of the pipeline to set as default for this kind |
 
-Output columns on success: `ID`, `NAME`, `DEFAULT_PIPELINE_ID`.
+Output columns on success: `ID`, `KIND`, `PIPELINE_ID`.
 
-**API:** `PATCH /api/task_kinds/:id`
+**API:** `PATCH /api/account_pipeline_defaults/:kind`
 
 #### task-kinds clear-default-pipeline
 
 Clear the default pipeline for a task kind, returning it to unset.
 
+The first argument is the task kind **name** (e.g. `feature`), not a numeric ID.
+
 ```bash
-loopctl task-kinds clear-default-pipeline <kind-id>
-loopctl task-kinds clear-default-pipeline <kind-id> --json
-loopctl task-kinds clear-default-pipeline <kind-id> --dry-run
+loopctl task-kinds clear-default-pipeline <kind-name>
+loopctl task-kinds clear-default-pipeline <kind-name> --json
+loopctl task-kinds clear-default-pipeline <kind-name> --dry-run
 ```
 
-Output columns on success: `ID`, `NAME`, `DEFAULT_PIPELINE_ID`.
+On success, prints a confirmation message. With `--json`, emits `{"kind":"...","status":"cleared"}`.
 
-**API:** `PATCH /api/task_kinds/:id`
+**API:** `DELETE /api/account_pipeline_defaults/:kind`
 
 ---
 
@@ -332,7 +336,7 @@ loopctl tasks list --project-id <project-id> --json
 
 #### tasks get
 
-Get a task by ID. Output columns: `ID`, `KIND`, `TITLE`, `STAGE`, `STATUS`.
+Get a task by ID. Output columns: `ID`, `KIND`, `TITLE`, `STAGE`, `STATUS`, `DEPENDENCIES_MET`.
 
 ```bash
 loopctl tasks get <id>
@@ -590,11 +594,11 @@ loopctl projects create --name "Daybreak" --platform rails --pipeline "My Workfl
 ```bash
 loopctl task-kinds create --name my-kind
 
-# Set a pipeline as the default for the kind
-loopctl task-kinds set-default-pipeline <kind-id> --pipeline-id <pipeline-id>
+# Set a pipeline as the default for the kind (use kind name, not ID)
+loopctl task-kinds set-default-pipeline my-kind --pipeline-id <integer-pipeline-id>
 
-# Clear the default pipeline for the kind
-loopctl task-kinds clear-default-pipeline <kind-id>
+# Clear the default pipeline for the kind (use kind name, not ID)
+loopctl task-kinds clear-default-pipeline my-kind
 ```
 
 ### Dispatch a dependency graph at once
@@ -630,8 +634,8 @@ loopctl tasks create --project-id p1 --kind bug --title "Fix it" --description "
 loopctl pipelines create --name "My Workflow" --dry-run
 loopctl pipelines update <id> --name "Renamed" --dry-run
 loopctl task-kinds create --name my-kind --dry-run
-loopctl task-kinds set-default-pipeline <kind-id> --pipeline-id <pipeline-id> --dry-run
-loopctl task-kinds clear-default-pipeline <kind-id> --dry-run
+loopctl task-kinds set-default-pipeline <kind-name> --pipeline-id <integer-pipeline-id> --dry-run
+loopctl task-kinds clear-default-pipeline <kind-name> --dry-run
 ```
 
 ---
