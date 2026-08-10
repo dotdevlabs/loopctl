@@ -3,13 +3,15 @@ package schema
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"io"
 	"net/http"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"encoding/json"
+	"gopkg.in/yaml.v3"
 )
 
 func TestLoad(t *testing.T) {
@@ -36,10 +38,16 @@ func TestLoad(t *testing.T) {
 		"POST /api/pipelines",
 		"PATCH /api/pipelines/:id",
 		"POST /api/task_kinds",
+		"PATCH /api/account_pipeline_defaults/:kind",
+		"DELETE /api/account_pipeline_defaults/:kind",
 	} {
 		if !found[want] {
 			t.Errorf("Load() missing endpoint %q", want)
 		}
+	}
+	// PATCH /api/task_kinds/:id must NOT be present (not in spec).
+	if found["PATCH /api/task_kinds/:id"] {
+		t.Error("Load() must not contain PATCH /api/task_kinds/:id (not in spec)")
 	}
 }
 
@@ -121,7 +129,7 @@ func TestCheckRequest_WrongNesting(t *testing.T) {
 
 func TestCheckRequest_NullBodyEndpoint_NoBody(t *testing.T) {
 	endpoints, _ := Load()
-	// POST /api/tasks/:task_id/cancellation has request_body null — no body is correct.
+	// POST /api/tasks/:task_id/cancellation has no requestBody — no body is correct.
 	req, _ := http.NewRequest(http.MethodPost, "http://x/api/tasks/t1/cancellation", nil)
 	violations := CheckRequest(req, endpoints)
 	if len(violations) != 0 {
@@ -179,73 +187,57 @@ func TestCheckRequest_UpdateTask_ForbiddenOldFields(t *testing.T) {
 	}
 }
 
-func TestCheckRequest_StageItemFields_NoViolation(t *testing.T) {
+// TestCheckRequest_StageFields verifies that stage items in pipeline create/update
+// are allowed without field-level restrictions (spec defines stages as array of
+// type: object with no properties, so any keys are valid).
+func TestCheckRequest_StageFields_NoViolation(t *testing.T) {
 	endpoints, _ := Load()
 	body := `{"pipeline":{"name":"x","stages":[{"name":"plan","role":"planning","instructions":"i"}]}}`
 	req, _ := http.NewRequest(http.MethodPost, "http://x/api/pipelines", strings.NewReader(body))
 	violations := CheckRequest(req, endpoints)
 	if len(violations) != 0 {
-		t.Errorf("expected no violations for valid stages; got: %v", violations)
+		t.Errorf("expected no violations for stages with any field names; got: %v", violations)
 	}
 }
 
-func TestCheckRequest_StageItemFields_ForbiddenField(t *testing.T) {
+// TestCheckRequest_StageFields_AnyKeyAllowed verifies that unknown stage item keys
+// produce no violations (spec defines items as open objects with no properties).
+func TestCheckRequest_StageFields_AnyKeyAllowed(t *testing.T) {
 	endpoints, _ := Load()
-	body := `{"pipeline":{"name":"x","stages":[{"name":"plan","role":"planning","instructions":"i","bad_field":"x"}]}}`
-	req, _ := http.NewRequest(http.MethodPost, "http://x/api/pipelines", strings.NewReader(body))
-	violations := CheckRequest(req, endpoints)
-	if len(violations) == 0 {
-		t.Fatal("expected violation for forbidden stage field 'bad_field'; got none")
-	}
-	found := false
-	for _, v := range violations {
-		if strings.Contains(v, "bad_field") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Errorf("expected 'bad_field' in violations; got: %v", violations)
-	}
-}
-
-func TestCheckRequest_StageItemFields_MultipleStages(t *testing.T) {
-	endpoints, _ := Load()
-	body := `{"pipeline":{"name":"x","stages":[{"name":"plan","role":"planning","instructions":"p"},{"name":"impl","role":"implementing","instructions":"i"}]}}`
+	body := `{"pipeline":{"name":"x","stages":[{"name":"plan","role":"planning","instructions":"i","arbitrary_key":"x"}]}}`
 	req, _ := http.NewRequest(http.MethodPost, "http://x/api/pipelines", strings.NewReader(body))
 	violations := CheckRequest(req, endpoints)
 	if len(violations) != 0 {
-		t.Errorf("expected no violations for multiple valid stages; got: %v", violations)
+		t.Errorf("expected no violations for arbitrary stage keys (spec is permissive); got: %v", violations)
 	}
 }
 
-func TestCheckRequest_PipelineUpdate_StageItemFields_NoViolation(t *testing.T) {
+func TestCheckRequest_AccountPipelineDefault_NoViolation(t *testing.T) {
 	endpoints, _ := Load()
-	body := `{"pipeline":{"stages":[{"name":"plan","role":"planning","instructions":"Plan."}]}}`
-	req, _ := http.NewRequest(http.MethodPatch, "http://x/api/pipelines/p1", strings.NewReader(body))
+	body := `{"account_pipeline_default":{"pipeline_id":123}}`
+	req, _ := http.NewRequest(http.MethodPatch, "http://x/api/account_pipeline_defaults/feature", strings.NewReader(body))
 	violations := CheckRequest(req, endpoints)
 	if len(violations) != 0 {
-		t.Errorf("expected no violations for valid pipeline update with stages; got: %v", violations)
+		t.Errorf("expected no violations for account_pipeline_default patch; got: %v", violations)
 	}
 }
 
-func TestCheckRequest_PipelineUpdate_StageItemFields_ForbiddenField(t *testing.T) {
+func TestCheckRequest_AccountPipelineDefault_ForbiddenField(t *testing.T) {
 	endpoints, _ := Load()
-	body := `{"pipeline":{"stages":[{"name":"plan","role":"planning","instructions":"i","extra":"x"}]}}`
-	req, _ := http.NewRequest(http.MethodPatch, "http://x/api/pipelines/p1", strings.NewReader(body))
+	body := `{"account_pipeline_default":{"pipeline_id":123,"bad_field":"x"}}`
+	req, _ := http.NewRequest(http.MethodPatch, "http://x/api/account_pipeline_defaults/feature", strings.NewReader(body))
 	violations := CheckRequest(req, endpoints)
 	if len(violations) == 0 {
-		t.Fatal("expected violation for forbidden stage field in pipeline update; got none")
+		t.Fatal("expected violation for bad_field in account_pipeline_default; got none")
 	}
-	found := false
-	for _, v := range violations {
-		if strings.Contains(v, "extra") {
-			found = true
-			break
-		}
-	}
-	if !found {
-		t.Errorf("expected 'extra' in violations; got: %v", violations)
+}
+
+func TestCheckRequest_DeleteAccountPipelineDefault_NoBody(t *testing.T) {
+	endpoints, _ := Load()
+	req, _ := http.NewRequest(http.MethodDelete, "http://x/api/account_pipeline_defaults/feature", nil)
+	violations := CheckRequest(req, endpoints)
+	if len(violations) != 0 {
+		t.Errorf("expected no violations for DELETE account_pipeline_defaults; got: %v", violations)
 	}
 }
 
@@ -267,29 +259,30 @@ func TestSchemaSourceSync(t *testing.T) {
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		t.Fatalf("fetching source contract: %v", err)
+		t.Fatalf("fetching source spec: %v", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("source contract responded %d", resp.StatusCode)
+		t.Fatalf("source spec responded %d", resp.StatusCode)
 	}
 
 	source, err := io.ReadAll(resp.Body)
 	if err != nil {
-		t.Fatalf("reading source contract: %v", err)
+		t.Fatalf("reading source spec: %v", err)
 	}
 
+	// Normalize both YAML documents to JSON for byte-stable comparison.
 	var sourceParsed, localParsed any
-	if err := json.Unmarshal(source, &sourceParsed); err != nil {
-		t.Fatalf("parsing source: %v", err)
+	if err := yaml.Unmarshal(source, &sourceParsed); err != nil {
+		t.Fatalf("parsing source YAML: %v", err)
 	}
-	if err := json.Unmarshal(fixtureData, &localParsed); err != nil {
-		t.Fatalf("parsing local copy: %v", err)
+	if err := yaml.Unmarshal(fixtureData, &localParsed); err != nil {
+		t.Fatalf("parsing local YAML: %v", err)
 	}
 	sourceNorm, _ := json.Marshal(sourceParsed)
 	localNorm, _ := json.Marshal(localParsed)
 
 	if !bytes.Equal(sourceNorm, localNorm) {
-		t.Fatal("testdata/schema.json diverges from the published source document; update the file to match")
+		t.Fatal("testdata/api_spec.yaml diverges from the published source spec; update the file to match")
 	}
 }

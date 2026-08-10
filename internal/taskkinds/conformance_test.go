@@ -80,6 +80,7 @@ func TestConformance_ViolationDetection_ForbiddenTaskKindField(t *testing.T) {
 	}
 }
 
+// TestConformance_TaskKindsSetDefaultPipeline verifies PATCH /api/account_pipeline_defaults/{kind}.
 func TestConformance_TaskKindsSetDefaultPipeline(t *testing.T) {
 	endpoints := loadSchemaOrSkip(t)
 	var violations []string
@@ -88,7 +89,7 @@ func TestConformance_TaskKindsSetDefaultPipeline(t *testing.T) {
 		gotContentType = r.Header.Get("Content-Type")
 		violations = schema.CheckRequest(r, endpoints)
 		w.Header().Set("Content-Type", "application/vnd.api+json")
-		_, _ = fmt.Fprint(w, `{"data":{"type":"task_kinds","id":"kind1","attributes":{"name":"feature","built_in":false,"default_pipeline_id":"pipe-abc"}}}`)
+		_, _ = fmt.Fprint(w, `{"data":{"type":"account_pipeline_defaults","id":"apd1","attributes":{"kind":"feature","pipeline_id":"123"}}}`)
 	}))
 	defer ts.Close()
 
@@ -96,8 +97,8 @@ func TestConformance_TaskKindsSetDefaultPipeline(t *testing.T) {
 	cmd := setDefaultPipelineCmd()
 	cmd.SetContext(ctx)
 	cmd.SetOut(io.Discard)
-	_ = cmd.Flags().Set("pipeline-id", "pipe-abc")
-	_ = cmd.RunE(cmd, []string{"kind1"})
+	_ = cmd.Flags().Set("pipeline-id", "123")
+	_ = cmd.RunE(cmd, []string{"feature"})
 
 	if len(violations) != 0 {
 		t.Errorf("conformance violations for task-kinds set-default-pipeline: %v", violations)
@@ -107,15 +108,15 @@ func TestConformance_TaskKindsSetDefaultPipeline(t *testing.T) {
 	}
 }
 
+// TestConformance_TaskKindsClearDefaultPipeline verifies DELETE /api/account_pipeline_defaults/{kind}.
 func TestConformance_TaskKindsClearDefaultPipeline(t *testing.T) {
 	endpoints := loadSchemaOrSkip(t)
 	var violations []string
-	var gotContentType string
+	var gotMethod string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotContentType = r.Header.Get("Content-Type")
+		gotMethod = r.Method
 		violations = schema.CheckRequest(r, endpoints)
-		w.Header().Set("Content-Type", "application/vnd.api+json")
-		_, _ = fmt.Fprint(w, `{"data":{"type":"task_kinds","id":"kind1","attributes":{"name":"feature","built_in":false,"default_pipeline_id":""}}}`)
+		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer ts.Close()
 
@@ -123,23 +124,25 @@ func TestConformance_TaskKindsClearDefaultPipeline(t *testing.T) {
 	cmd := clearDefaultPipelineCmd()
 	cmd.SetContext(ctx)
 	cmd.SetOut(io.Discard)
-	_ = cmd.RunE(cmd, []string{"kind1"})
+	_ = cmd.RunE(cmd, []string{"feature"})
 
 	if len(violations) != 0 {
 		t.Errorf("conformance violations for task-kinds clear-default-pipeline: %v", violations)
 	}
-	if gotContentType != "application/json" {
-		t.Errorf("clear-default-pipeline Content-Type = %q; want application/json", gotContentType)
+	if gotMethod != http.MethodDelete {
+		t.Errorf("clear-default-pipeline method = %q; want DELETE", gotMethod)
 	}
 }
 
+// TestConformance_ViolationDetection_ForbiddenTaskKindPatchField verifies that
+// PATCH /api/task_kinds/:id is NOT in the spec and any request to it is a violation.
 func TestConformance_ViolationDetection_ForbiddenTaskKindPatchField(t *testing.T) {
 	endpoints := loadSchemaOrSkip(t)
-	// "built_in" is not a writable field in PATCH /api/task_kinds/:id.
+	// PATCH /api/task_kinds/:id is not in the spec at all.
 	body := `{"task_kind":{"built_in":true}}`
 	req, _ := http.NewRequest(http.MethodPatch, "http://x/api/task_kinds/kind1", strings.NewReader(body))
 	violations := schema.CheckRequest(req, endpoints)
 	if len(violations) == 0 {
-		t.Fatal("expected violation for 'built_in' field in task_kinds PATCH; got none")
+		t.Fatal("expected violation for PATCH /api/task_kinds/:id (endpoint not in spec); got none")
 	}
 }

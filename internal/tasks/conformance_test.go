@@ -98,7 +98,9 @@ func TestConformance_TasksCreate(t *testing.T) {
 func TestConformance_TasksUpdate(t *testing.T) {
 	endpoints := loadSchemaOrSkip(t)
 	var violations []string
+	var gotContentType string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotContentType = r.Header.Get("Content-Type")
 		violations = schema.CheckRequest(r, endpoints)
 		w.Header().Set("Content-Type", "application/vnd.api+json")
 		_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{}}}`)
@@ -114,6 +116,9 @@ func TestConformance_TasksUpdate(t *testing.T) {
 
 	if len(violations) != 0 {
 		t.Errorf("conformance violations for tasks update: %v", violations)
+	}
+	if gotContentType != "application/json" {
+		t.Errorf("tasks update Content-Type = %q; want application/json", gotContentType)
 	}
 }
 

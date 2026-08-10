@@ -1,0 +1,1965 @@
+openapi: "3.0.3"
+info:
+  title: LoopControl API
+  version: "1.0.0"
+  description: API for managing containerized agent environments on a Kubernetes cluster.
+
+servers:
+  - url: /
+
+security:
+  - bearerAuth: []
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+
+  schemas:
+    JsonApiResource:
+      type: object
+      required: [type, id, attributes]
+      properties:
+        type:
+          type: string
+        id:
+          type: string
+        attributes:
+          type: object
+        relationships:
+          type: object
+
+    JsonApiErrors:
+      type: object
+      required: [errors]
+      properties:
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              title: { type: string }
+              detail: { type: string }
+              source: { type: object }
+
+    AgentAttributes:
+      type: object
+      properties:
+        name: { type: string }
+        slug: { type: string }
+
+    PlatformAttributes:
+      type: object
+      properties:
+        name: { type: string }
+        display_name: { type: string }
+        container_image: { type: string }
+        needs_database: { type: boolean }
+        port: { type: integer }
+        built_in: { type: boolean }
+
+    TaskKindAttributes:
+      type: object
+      properties:
+        name: { type: string }
+        built_in: { type: boolean }
+        account_id: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    PipelineAttributes:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string }
+        built_in: { type: boolean }
+        kind: { type: string }
+        task_kind_id: { type: string }
+        account_id: { type: string }
+        stage_count: { type: integer }
+        stages: { type: array, items: { type: object } }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    PipelineUpdateResponseAttributes:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string }
+        built_in: { type: boolean }
+        kind: { type: string }
+        task_kind_id: { type: string }
+        account_id: { type: string }
+        stage_count: { type: integer }
+        stages: { type: array, items: { type: object } }
+
+    PipelineCloneResponseAttributes:
+      type: object
+      properties:
+        name: { type: string }
+        built_in: { type: boolean }
+        stage_count: { type: integer }
+
+    ProjectAttributes:
+      type: object
+      properties:
+        name: { type: string }
+        display_name: { type: string }
+        git_repo_url: { type: string }
+        git_branch: { type: string }
+        default_branch: { type: string }
+        port: { type: integer }
+        bootstrapping: { type: boolean }
+        active_tasks_count: { type: integer }
+        tasks_completed_today: { type: integer }
+        tasks_completed_last_7_days: { type: integer }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    ProjectCreateResponseAttributes:
+      type: object
+      properties:
+        name: { type: string }
+        display_name: { type: string }
+        git_repo_url: { type: string }
+        git_branch: { type: string }
+        default_branch: { type: string }
+        bootstrapping: { type: boolean }
+
+    ProjectUpdateResponseAttributes:
+      type: object
+      properties:
+        display_name: { type: string }
+        git_branch: { type: string }
+
+    ContainerAttributes:
+      type: object
+      properties:
+        uid: { type: string }
+        status: { type: string }
+        agent_status: { type: string }
+        status_message: { type: string }
+        error_context: { type: object }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    TaskListAttributes:
+      type: object
+      properties:
+        title: { type: string }
+        kind: { type: string }
+        prompt_hash: { type: string }
+        pr_number: { type: integer }
+        pr_url: { type: string }
+        description: { type: string }
+        pr_merged_at: { type: string, format: date-time }
+        merge_commit_sha: { type: string }
+        ci_status: { type: string }
+        ci_status_url: { type: string }
+        code_review_status: { type: string }
+        blocked_reason: { type: string }
+        completed_at: { type: string, format: date-time }
+        picked_up_at: { type: string, format: date-time }
+        project_id: { type: string }
+        stage: { type: string }
+        current_state: { type: string }
+        status: { type: string }
+        depends_on:
+          type: array
+          items: { type: string }
+        dependencies_met: { type: boolean }
+        blocking_dependency_ids:
+          type: array
+          items: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    TaskShowAttributes:
+      type: object
+      properties:
+        title: { type: string }
+        kind: { type: string }
+        stage: { type: string }
+        current_state: { type: string }
+        status: { type: string }
+        project_id: { type: string }
+        prompt_hash: { type: string }
+        pr_number: { type: integer }
+        pr_url: { type: string }
+        description: { type: string }
+        pr_merged_at: { type: string, format: date-time }
+        merge_commit_sha: { type: string }
+        ci_status: { type: string }
+        ci_status_url: { type: string }
+        code_review_status: { type: string }
+        blocked_reason: { type: string }
+        completed_at: { type: string, format: date-time }
+        picked_up_at: { type: string, format: date-time }
+        depends_on:
+          type: array
+          items: { type: string }
+        dependencies_met: { type: boolean }
+        blocking_dependency_ids:
+          type: array
+          items: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    TaskCreateResponseAttributes:
+      type: object
+      properties:
+        title: { type: string }
+        kind: { type: string }
+        stage: { type: string }
+        project_id: { type: string }
+        depends_on:
+          type: array
+          items: { type: string }
+        dependencies_met: { type: boolean }
+
+    TaskUpdateResponseAttributes:
+      type: object
+      properties:
+        title: { type: string }
+        stage: { type: string }
+
+    RecordingAttributes:
+      type: object
+      properties:
+        recording_type: { type: string }
+        filename: { type: string }
+        started_at: { type: string, format: date-time }
+        ended_at: { type: string, format: date-time }
+        duration: { type: integer }
+        size_bytes: { type: integer }
+        file_available: { type: boolean }
+        deleted_at: { type: string, format: date-time }
+        content_url: { type: string }
+        container_id: { type: string }
+        stage_name: { type: string }
+        created_at: { type: string, format: date-time }
+
+    RecordingCreateResponseAttributes:
+      type: object
+      properties:
+        recording_type: { type: string }
+        filename: { type: string }
+
+    CommentAttributes:
+      type: object
+      properties:
+        body: { type: string }
+        comment_type: { type: string }
+        created_at: { type: string, format: date-time }
+
+    TodoAttributes:
+      type: object
+      properties:
+        content: { type: string }
+        active_form: { type: string }
+        status:
+          type: string
+          enum: [pending, in_progress, completed]
+        position: { type: integer }
+        todo_type: { type: string }
+        started_at: { type: string, format: date-time }
+        completed_at: { type: string, format: date-time }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    TodoCreateResponseAttributes:
+      type: object
+      properties:
+        content: { type: string }
+        active_form: { type: string }
+        status: { type: string }
+        position: { type: integer }
+        todo_type: { type: string }
+
+    TodoUpdateResponseAttributes:
+      type: object
+      properties:
+        content: { type: string }
+        status: { type: string }
+        position: { type: integer }
+        updated_at: { type: string, format: date-time }
+
+    TransitionAttributes:
+      type: object
+      properties:
+        from_stage: { type: string }
+        to_stage: { type: string }
+        custom_stage_name: { type: string }
+        metadata: { type: object }
+        created_at: { type: string, format: date-time }
+
+    ActivityAttributes:
+      type: object
+      properties:
+        action: { type: string }
+        details: { type: string }
+        metadata: { type: object }
+        container_id: { type: string }
+        created_at: { type: string, format: date-time }
+
+    FlowRegistryFlowAttributes:
+      type: object
+      properties:
+        name: { type: string }
+        description: { type: string }
+        steps: { type: array, items: { type: object } }
+        assertions: { type: array, items: { type: object } }
+        baseline_commit_sha: { type: string }
+        source: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    AccountPipelineDefaultAttributes:
+      type: object
+      properties:
+        kind: { type: string }
+        pipeline_id: { type: string }
+        task_kind_id: { type: string }
+        account_id: { type: string }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+
+    TopupPackageAttributes:
+      type: object
+      properties:
+        hours: { type: integer }
+        price_cents: { type: integer }
+
+    TopupCheckoutAttributes:
+      type: object
+      properties:
+        package_id: { type: string }
+        checkout_url: { type: string }
+        hours: { type: integer }
+        price_cents: { type: integer }
+
+paths:
+  /api/agents:
+    get:
+      operationId: get-api-agents
+      summary: Lists agents for the current account.
+      parameters:
+        - { name: "query", in: query, schema: { type: string } }
+        - { name: "page[number]", in: query, schema: { type: integer, default: 1 } }
+        - { name: "page[size]", in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
+      responses:
+        '200':
+          description: Paginated list of agents
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: '#/components/schemas/JsonApiResource'
+                        - type: object
+                          properties:
+                            attributes:
+                              $ref: '#/components/schemas/AgentAttributes'
+
+  /api/platforms:
+    get:
+      operationId: get-api-platforms
+      summary: Lists platforms available to the current account (built-in and custom).
+      parameters:
+        - { name: "page[number]", in: query, schema: { type: integer, default: 1 } }
+        - { name: "page[size]", in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
+      responses:
+        '200':
+          description: Paginated list of platforms
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: '#/components/schemas/JsonApiResource'
+                        - type: object
+                          properties:
+                            attributes:
+                              $ref: '#/components/schemas/PlatformAttributes'
+
+  /api/task_kinds:
+    get:
+      operationId: get-api-task-kinds
+      summary: Lists built-in and account-custom task kinds.
+      parameters:
+        - { name: "page[number]", in: query, schema: { type: integer, default: 1 } }
+        - { name: "page[size]", in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
+      responses:
+        '200':
+          description: Paginated list of task kinds
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: '#/components/schemas/JsonApiResource'
+                        - type: object
+                          properties:
+                            attributes:
+                              $ref: '#/components/schemas/TaskKindAttributes'
+    post:
+      operationId: post-api-task-kinds
+      summary: Creates a custom task kind scoped to the current account.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                task_kind:
+                  type: object
+                  required: [name]
+                  properties:
+                    name:
+                      type: string
+                      description: Unique name for the task kind within the account
+      responses:
+        '201':
+          description: Created task kind
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/JsonApiResource'
+                      - type: object
+                        properties:
+                          attributes:
+                            $ref: '#/components/schemas/TaskKindAttributes'
+        '422':
+          description: Validation failed (e.g. name already taken)
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
+
+  /api/pipelines:
+    get:
+      operationId: get-api-pipelines
+      summary: Lists built-in and account-custom pipelines.
+      parameters:
+        - { name: "page[number]", in: query, schema: { type: integer, default: 1 } }
+        - { name: "page[size]", in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
+      responses:
+        '200':
+          description: Paginated list of pipelines
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: '#/components/schemas/JsonApiResource'
+                        - type: object
+                          properties:
+                            attributes:
+                              $ref: '#/components/schemas/PipelineAttributes'
+    post:
+      operationId: post-api-pipelines
+      summary: Creates a custom pipeline scoped to the current account.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pipeline:
+                  type: object
+                  required: [name]
+                  properties:
+                    name:
+                      type: string
+                      description: Pipeline name, unique within account
+                    description:
+                      type: string
+                      description: Human-readable description
+                    kind:
+                      type: string
+                      description: Task kind name to associate with the pipeline
+                    stages:
+                      type: array
+                      items: { type: object }
+                      description: "Ordered workflow stages. Each: { name, role: 'working', instructions }"
+      responses:
+        '201':
+          description: Created pipeline
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/JsonApiResource'
+                      - type: object
+                        properties:
+                          attributes:
+                            $ref: '#/components/schemas/PipelineAttributes'
+        '422':
+          description: Validation failed
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
+
+  /api/pipelines/{id}:
+    get:
+      operationId: get-api-pipeline
+      summary: Returns a single pipeline including its workflow stages.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string }, description: Pipeline ID }
+      responses:
+        '200':
+          description: Pipeline record with stages
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/JsonApiResource'
+                      - type: object
+                        properties:
+                          attributes:
+                            $ref: '#/components/schemas/PipelineAttributes'
+        '404':
+          description: Pipeline not found
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
+    patch:
+      operationId: patch-api-pipeline
+      summary: Updates a custom pipeline. When stages are provided, replaces all workflow stages atomically.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string }, description: Pipeline ID }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pipeline:
+                  type: object
+                  properties:
+                    name: { type: string }
+                    description: { type: string }
+                    kind: { type: string }
+                    stages:
+                      type: array
+                      items: { type: object }
+                      description: "Ordered workflow stages. Replaces all existing. Send empty array to remove all."
+      responses:
+        '200':
+          description: Updated pipeline
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/JsonApiResource'
+                      - type: object
+                        properties:
+                          attributes:
+                            $ref: '#/components/schemas/PipelineUpdateResponseAttributes'
+        '404':
+          description: Pipeline not found
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
+        '422':
+          description: Validation failed
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
+
+  /api/pipelines/{pipeline_id}/clone:
+    post:
+      operationId: post-api-pipeline-clone
+      summary: Clones a built-in or custom pipeline into the current account.
+      parameters:
+        - { name: pipeline_id, in: path, required: true, schema: { type: string }, description: ID of the pipeline to clone }
+      responses:
+        '201':
+          description: Cloned pipeline
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/JsonApiResource'
+                      - type: object
+                        properties:
+                          attributes:
+                            $ref: '#/components/schemas/PipelineCloneResponseAttributes'
+        '404':
+          description: Pipeline not found
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
+        '422':
+          description: Clone failed
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
+
+  /api/projects:
+    get:
+      operationId: get-api-projects
+      summary: Lists projects for the current account.
+      parameters:
+        - { name: "page[number]", in: query, schema: { type: integer, default: 1 } }
+        - { name: "page[size]", in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
+      responses:
+        '200':
+          description: Paginated list of projects
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: '#/components/schemas/JsonApiResource'
+                        - type: object
+                          properties:
+                            attributes:
+                              $ref: '#/components/schemas/ProjectAttributes'
+    post:
+      operationId: post-api-projects
+      summary: Creates a project.
+      parameters:
+        - { name: create_new_repo, in: query, schema: { type: boolean }, description: "When true, creates a new GitHub repository" }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                project:
+                  type: object
+                  properties:
+                    display_name: { type: string }
+                    name: { type: string }
+                    git_repo_url: { type: string }
+                    git_branch: { type: string }
+                    environment_id: { type: integer }
+                    container_image: { type: string }
+                    platform_id: { type: integer }
+                    pipeline_id: { type: integer }
+                    failure_policy: { type: string }
+                    fallback_agent_id: { type: integer }
+                    mcp_config: { type: object }
+      responses:
+        '201':
+          description: Created project
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/JsonApiResource'
+                      - type: object
+                        properties:
+                          attributes:
+                            $ref: '#/components/schemas/ProjectCreateResponseAttributes'
+        '422':
+          description: Validation failed
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
+
+  /api/projects/{id}:
+    get:
+      operationId: get-api-project
+      summary: Returns a single project.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string }, description: Project ID }
+      responses:
+        '200':
+          description: Project record
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/JsonApiResource'
+                      - type: object
+                        properties:
+                          attributes:
+                            $ref: '#/components/schemas/ProjectAttributes'
+        '404':
+          description: Project not found
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
+    patch:
+      operationId: patch-api-project
+      summary: Updates a project.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string }, description: Project ID }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                project:
+                  type: object
+                  properties:
+                    display_name: { type: string }
+                    git_branch: { type: string }
+                    environment_id: { type: integer }
+                    container_image: { type: string }
+                    platform_id: { type: integer }
+                    pipeline_id: { type: integer }
+                    failure_policy: { type: string }
+                    fallback_agent_id: { type: integer }
+                    mcp_config: { type: object }
+      responses:
+        '200':
+          description: Updated project
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/JsonApiResource'
+                      - type: object
+                        properties:
+                          attributes:
+                            $ref: '#/components/schemas/ProjectUpdateResponseAttributes'
+        '404':
+          description: Project not found
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
+        '422':
+          description: Validation failed
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
+
+  /api/containers/{id}:
+    patch:
+      operationId: patch-api-container
+      summary: Updates a container's agent-reported status fields.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string }, description: Container ID }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                agent_status: { type: string }
+                stream_url: { type: string }
+                deployed_commit_sha: { type: string }
+                deployed_commit_message: { type: string }
+      responses:
+        '200':
+          description: Updated container
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/JsonApiResource'
+                      - type: object
+                        properties:
+                          attributes:
+                            $ref: '#/components/schemas/ContainerAttributes'
+        '404':
+          description: Container not found
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
+        '422':
+          description: Validation failed
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
+
+  /api/tasks:
+    get:
+      operationId: get-api-tasks
+      summary: Lists tasks for the current account.
+      parameters:
+        - { name: project_id, in: query, schema: { type: string } }
+        - { name: "query", in: query, schema: { type: string } }
+        - { name: "page[number]", in: query, schema: { type: integer, default: 1 } }
+        - { name: "page[size]", in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
+      responses:
+        '200':
+          description: Paginated list of tasks
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: '#/components/schemas/JsonApiResource'
+                        - type: object
+                          properties:
+                            attributes:
+                              $ref: '#/components/schemas/TaskListAttributes'
+    post:
+      operationId: post-api-tasks
+      summary: Creates a task in a project.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                task:
+                  type: object
+                  required: [project_id, title, kind]
+                  properties:
+                    project_id: { type: string }
+                    title: { type: string }
+                    kind: { type: string }
+                    description: { type: string }
+                    depends_on:
+                      type: array
+                      items: { type: string }
+      responses:
+        '201':
+          description: Created task
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/JsonApiResource'
+                      - type: object
+                        properties:
+                          attributes:
+                            $ref: '#/components/schemas/TaskCreateResponseAttributes'
+        '422':
+          description: Validation failed
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
+
+  /api/tasks/{id}:
+    get:
+      operationId: get-api-task
+      summary: Returns a single task.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Task record
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/JsonApiResource'
+                      - type: object
+                        properties:
+                          attributes:
+                            $ref: '#/components/schemas/TaskShowAttributes'
+        '404':
+          description: Task not found
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
+    patch:
+      operationId: patch-api-task
+      summary: Updates a task's implementation/verification criteria or token usage counts.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                task:
+                  type: object
+                  properties:
+                    implementation_criteria: { type: string }
+                    verification_criteria: { type: string }
+                    input_tokens: { type: integer }
+                    output_tokens: { type: integer }
+      responses:
+        '200':
+          description: Updated task
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/JsonApiResource'
+                      - type: object
+                        properties:
+                          attributes:
+                            $ref: '#/components/schemas/TaskUpdateResponseAttributes'
+        '422':
+          description: Validation failed
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
+
+  /api/tasks/{id}/logs:
+    get:
+      operationId: get-api-task-logs
+      summary: Fetches Loki log lines for the task's container.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string } }
+        - { name: duration, in: query, schema: { type: integer } }
+        - { name: start, in: query, schema: { type: string } }
+        - { name: end, in: query, schema: { type: string } }
+        - { name: limit, in: query, schema: { type: integer, default: 500, minimum: 1, maximum: 5000 } }
+      responses:
+        '200':
+          description: Log lines and query metadata. Not JSON:API format.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  logs: { type: array, items: { type: string } }
+                  query: { type: object }
+        '503':
+          description: Loki unavailable or not configured
+
+  /api/tasks/{task_id}/recordings:
+    get:
+      operationId: get-api-task-recordings
+      summary: Lists recordings attached to a task.
+      parameters:
+        - { name: task_id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: List of recordings
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: '#/components/schemas/JsonApiResource'
+                        - type: object
+                          properties:
+                            attributes:
+                              $ref: '#/components/schemas/RecordingAttributes'
+    post:
+      operationId: post-api-task-recordings
+      summary: Uploads a new recording for a task.
+      parameters:
+        - { name: task_id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                recording_type: { type: string }
+                filename: { type: string }
+                started_at: { type: string }
+                ended_at: { type: string }
+                size_bytes: { type: integer }
+                path: { type: string }
+                stage: { type: string }
+                file:
+                  type: string
+                  format: binary
+      responses:
+        '201':
+          description: Created recording
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/JsonApiResource'
+                      - type: object
+                        properties:
+                          attributes:
+                            $ref: '#/components/schemas/RecordingCreateResponseAttributes'
+        '422':
+          description: Validation failed
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
+
+  /api/tasks/{task_id}/recordings/{id}:
+    get:
+      operationId: get-api-task-recording
+      summary: Returns a single recording.
+      parameters:
+        - { name: task_id, in: path, required: true, schema: { type: string } }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Recording record
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/JsonApiResource'
+                      - type: object
+                        properties:
+                          attributes:
+                            $ref: '#/components/schemas/RecordingAttributes'
+        '404':
+          description: Not found
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
+
+  /api/tasks/{task_id}/recordings/{recording_id}/content:
+    get:
+      operationId: get-api-task-recording-content
+      summary: Streams the raw content of an asciinema recording.
+      parameters:
+        - { name: task_id, in: path, required: true, schema: { type: string } }
+        - { name: recording_id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Raw recording bytes
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Recording or file not found
+        '410':
+          description: Recording file has been deleted
+        '422':
+          description: Recording type does not support content streaming
+
+  /api/tasks/{task_id}/images/{id}:
+    get:
+      operationId: get-api-task-image
+      summary: Serves an image file attached to a task.
+      parameters:
+        - { name: task_id, in: path, required: true, schema: { type: string } }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Raw image bytes
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Image not found
+
+  /api/tasks/{task_id}/completion:
+    post:
+      operationId: post-api-task-completion
+      summary: Marks a task stage complete (legacy completion endpoint).
+      parameters:
+        - { name: task_id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                result: { type: string }
+                message: { type: string }
+                summary: { type: string }
+      responses:
+        '200':
+          description: Completion result. Not JSON:API format.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  stage: { type: string }
+        '422':
+          description: Invalid state transition
+
+  /api/tasks/{task_id}/stage_completion:
+    post:
+      operationId: post-api-task-stage-completion
+      summary: Advances a task through its pipeline.
+      parameters:
+        - { name: task_id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                result: { type: string }
+                message: { type: string }
+                summary: { type: string }
+                flow_run_ids: { type: array, items: { type: integer } }
+                noop_reason: { type: string }
+                local_head_sha: { type: string }
+                working_tree_clean: { type: boolean }
+                input_tokens: { type: integer }
+                output_tokens: { type: integer }
+      responses:
+        '200':
+          description: Stage advance result. Not JSON:API format.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  stage: { type: string }
+                  gated: { type: boolean }
+                  waiting_on: { type: array, items: { type: string } }
+        '422':
+          description: Invalid state transition
+
+  /api/tasks/{task_id}/bootstrap_failure:
+    post:
+      operationId: post-api-task-bootstrap-failure
+      summary: Reports a bootstrap recipe failure.
+      parameters:
+        - { name: task_id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                failed_step: { type: string }
+                exit_code: { type: integer }
+      responses:
+        '200':
+          description: Acknowledgement. Not JSON:API format.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  stage: { type: string }
+        '422':
+          description: Task already in a terminal state
+
+  /api/tasks/{task_id}/pull_request:
+    post:
+      operationId: post-api-task-pull-request
+      summary: Creates the task's GitHub pull request if it doesn't exist yet (idempotent).
+      parameters:
+        - { name: task_id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: PR info. Not JSON:API format.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  pr_number: { type: integer }
+                  pr_url: { type: string }
+        '409':
+          description: PR has already been merged
+        '422':
+          description: Task is in a terminal state or PR creation failed
+
+  /api/tasks/{task_id}/prompt_sync:
+    post:
+      operationId: post-api-task-prompt-sync
+      summary: Called by a container whose local prompt hash doesn't match the server's.
+      parameters:
+        - { name: task_id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                local_hash: { type: string }
+      responses:
+        '200':
+          description: Sync acknowledged. Not JSON:API format.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  stage: { type: string }
+                  expected_hash: { type: string }
+        '422':
+          description: Task has no container
+
+  /api/tasks/{task_id}/comments:
+    post:
+      operationId: post-api-task-comments
+      summary: Posts a comment on a task from an agent.
+      parameters:
+        - { name: task_id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                comment:
+                  type: object
+                  required: [body]
+                  properties:
+                    body: { type: string }
+                    input_tokens: { type: integer }
+                    output_tokens: { type: integer }
+      responses:
+        '201':
+          description: Created comment
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/JsonApiResource'
+                      - type: object
+                        properties:
+                          attributes:
+                            $ref: '#/components/schemas/CommentAttributes'
+        '422':
+          description: Validation failed
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
+
+  /api/tasks/{task_id}/todos:
+    get:
+      operationId: get-api-task-todos
+      summary: Lists todos for a task, ordered chronologically.
+      parameters:
+        - { name: task_id, in: path, required: true, schema: { type: string } }
+        - { name: todo_type, in: query, schema: { type: string } }
+        - { name: "page[number]", in: query, schema: { type: integer, default: 1 } }
+        - { name: "page[size]", in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
+      responses:
+        '200':
+          description: Paginated list of todos
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: '#/components/schemas/JsonApiResource'
+                        - type: object
+                          properties:
+                            attributes:
+                              $ref: '#/components/schemas/TodoAttributes'
+    post:
+      operationId: post-api-task-todos
+      summary: Creates one or more todos for a task.
+      parameters:
+        - { name: task_id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                todo:
+                  type: object
+                  description: "Single todo object: { content, active_form, status, position, todo_type }"
+                todos:
+                  type: array
+                  items: { type: object }
+                  description: "Array of todo objects"
+      responses:
+        '201':
+          description: Created todos (data array)
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: '#/components/schemas/JsonApiResource'
+                        - type: object
+                          properties:
+                            attributes:
+                              $ref: '#/components/schemas/TodoCreateResponseAttributes'
+        '400':
+          description: Neither 'todo' nor 'todos' was provided
+        '422':
+          description: Validation failed
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
+
+  /api/tasks/{task_id}/todos/{id}:
+    patch:
+      operationId: patch-api-task-todo
+      summary: Updates a todo's status, content, or active_form.
+      parameters:
+        - { name: task_id, in: path, required: true, schema: { type: string } }
+        - { name: id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                status:
+                  type: string
+                  enum: [pending, in_progress, completed]
+                content: { type: string }
+                active_form: { type: string }
+      responses:
+        '200':
+          description: Updated todo
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/JsonApiResource'
+                      - type: object
+                        properties:
+                          attributes:
+                            $ref: '#/components/schemas/TodoUpdateResponseAttributes'
+        '422':
+          description: Validation failed
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
+
+  /api/tasks/{task_id}/transitions:
+    get:
+      operationId: get-api-task-transitions
+      summary: Lists the pipeline stage transitions for a task in chronological order.
+      parameters:
+        - { name: task_id, in: path, required: true, schema: { type: string } }
+        - { name: "page[number]", in: query, schema: { type: integer, default: 1 } }
+        - { name: "page[size]", in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
+      responses:
+        '200':
+          description: Paginated list of transitions
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: '#/components/schemas/JsonApiResource'
+                        - type: object
+                          properties:
+                            attributes:
+                              $ref: '#/components/schemas/TransitionAttributes'
+
+  /api/tasks/{task_id}/activities:
+    get:
+      operationId: get-api-task-activities
+      summary: Lists activity log entries for a task in reverse chronological order.
+      parameters:
+        - { name: task_id, in: path, required: true, schema: { type: string } }
+        - { name: "page[number]", in: query, schema: { type: integer, default: 1 } }
+        - { name: "page[size]", in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
+      responses:
+        '200':
+          description: Paginated list of activities
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: '#/components/schemas/JsonApiResource'
+                        - type: object
+                          properties:
+                            attributes:
+                              $ref: '#/components/schemas/ActivityAttributes'
+
+  /api/tasks/{task_id}/containers:
+    get:
+      operationId: get-api-task-containers
+      summary: Lists containers associated with a task.
+      parameters:
+        - { name: task_id, in: path, required: true, schema: { type: string } }
+        - { name: "page[number]", in: query, schema: { type: integer, default: 1 } }
+        - { name: "page[size]", in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
+      responses:
+        '200':
+          description: Paginated list of containers
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: '#/components/schemas/JsonApiResource'
+                        - type: object
+                          properties:
+                            attributes:
+                              $ref: '#/components/schemas/ContainerAttributes'
+
+  /api/tasks/{task_id}/cancellation:
+    post:
+      operationId: post-api-task-cancellation
+      summary: Cancels a task.
+      parameters:
+        - { name: task_id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Cancellation result. Not JSON:API format.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+                  stage: { type: string }
+        '422':
+          description: Task already in a terminal state, or invalid state transition
+
+  /api/tasks/{task_id}/restart:
+    post:
+      operationId: post-api-task-restart
+      summary: Restarts a task's container.
+      parameters:
+        - { name: task_id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Restart result. Not JSON:API format.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: integer }
+                  stage: { type: string }
+                  container_id: { type: integer }
+                  status: { type: string }
+        '422':
+          description: Restart failed
+
+  /api/planning_sessions/{planning_session_id}/drafts:
+    get:
+      operationId: get-api-planning-session-drafts
+      summary: Lists task drafts proposed during a planning session.
+      parameters:
+        - { name: planning_session_id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: List of planning drafts
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/JsonApiResource'
+    post:
+      operationId: post-api-planning-session-drafts
+      summary: Upserts task drafts for a planning session.
+      parameters:
+        - { name: planning_session_id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [drafts]
+              properties:
+                drafts:
+                  type: array
+                  items: { type: object }
+                  description: Array of draft objects to upsert. Each must have an 'id' field.
+      responses:
+        '200':
+          description: Draft count metadata. Not JSON:API format.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  draft_count: { type: integer }
+
+  /api/planning_sessions/{planning_session_id}/drafts/{id}:
+    delete:
+      operationId: delete-api-planning-session-draft
+      summary: Removes a draft from a planning session.
+      parameters:
+        - { name: planning_session_id, in: path, required: true, schema: { type: string } }
+        - { name: id, in: path, required: true, schema: { type: string }, description: Draft ID to remove }
+      responses:
+        '200':
+          description: Updated draft count. Not JSON:API format.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  draft_count: { type: integer }
+        '404':
+          description: Draft not found
+
+  /api/planning_sessions/{planning_session_id}/completion:
+    post:
+      operationId: post-api-planning-session-completion
+      summary: Marks a planning session as completed and advances the associated task.
+      parameters:
+        - { name: planning_session_id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Completion acknowledgement. Not JSON:API format.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string }
+
+  /api/projects/{project_slug}/flow_registry_flows:
+    get:
+      operationId: get-api-project-flow-registry-flows
+      summary: Lists active flow registry flows for a project.
+      parameters:
+        - { name: project_slug, in: path, required: true, schema: { type: string }, description: Project name/slug }
+        - { name: "page[number]", in: query, schema: { type: integer, default: 1 } }
+        - { name: "page[size]", in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
+      responses:
+        '200':
+          description: Paginated list of flow registry flows
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: '#/components/schemas/JsonApiResource'
+                        - type: object
+                          properties:
+                            attributes:
+                              $ref: '#/components/schemas/FlowRegistryFlowAttributes'
+
+  /api/flow_registry_flows/{flow_registry_flow_id}/recordings:
+    post:
+      operationId: post-api-flow-registry-flow-recordings
+      summary: Submits an rrweb session recording for a flow.
+      parameters:
+        - { name: flow_registry_flow_id, in: path, required: true, schema: { type: string } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                rrweb_events: { type: string }
+                commit_sha: { type: string }
+                recorded_at: { type: string }
+      responses:
+        '201':
+          description: Created recording. Not JSON:API format.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: integer }
+                  flow_registry_flow_id: { type: integer }
+                  recording_type: { type: string }
+                  commit_sha: { type: string }
+                  status: { type: string }
+                  recorded_at: { type: string, format: date-time }
+                  extracted_steps_count: { type: integer }
+                  created_at: { type: string, format: date-time }
+        '422':
+          description: Save failed
+
+  /api/flow_registry_flows/{flow_registry_flow_id}/runs:
+    post:
+      operationId: post-api-flow-registry-flow-runs
+      summary: Triggers a flow replay run for verification.
+      parameters:
+        - { name: flow_registry_flow_id, in: path, required: true, schema: { type: string } }
+      responses:
+        '201':
+          description: Created run. Not JSON:API format.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: integer }
+                  status: { type: string }
+                  trigger: { type: string }
+
+  /api/github/organizations:
+    get:
+      operationId: get-api-github-organizations
+      summary: Lists GitHub organizations accessible to the account's configured credentials.
+      responses:
+        '200':
+          description: List of GitHub organizations. Not JSON:API format.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  organizations: { type: array, items: { type: object } }
+        '503':
+          description: GitHub credentials not configured
+
+  /api/github/organizations/{org}/repositories:
+    get:
+      operationId: get-api-github-org-repositories
+      summary: Lists repositories for a GitHub organization.
+      parameters:
+        - { name: org, in: path, required: true, schema: { type: string } }
+        - { name: type, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: per_page, in: query, schema: { type: integer, default: 100, minimum: 1, maximum: 100 } }
+      responses:
+        '200':
+          description: Repository list from GitHub API. Not JSON:API format.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: object }
+
+  /api/github/repositories:
+    get:
+      operationId: get-api-github-repositories
+      summary: Lists all repositories accessible with the account's GitHub credentials.
+      parameters:
+        - { name: org, in: query, schema: { type: string } }
+        - { name: type, in: query, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: per_page, in: query, schema: { type: integer, default: 100, minimum: 1, maximum: 100 } }
+      responses:
+        '200':
+          description: Repository list from GitHub API. Not JSON:API format.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: object }
+    post:
+      operationId: post-api-github-repositories
+      summary: Creates a new GitHub repository.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name]
+              properties:
+                name: { type: string }
+                org: { type: string }
+                description: { type: string }
+                private: { type: boolean }
+                type: { type: string }
+      responses:
+        '200':
+          description: Created repository info from GitHub API. Not JSON:API format.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  repository: { type: object }
+        '422':
+          description: Repository name missing
+
+  /api/github/repositories/{owner}/{repo}/branches:
+    get:
+      operationId: get-api-github-repository-branches
+      summary: Lists branches for a GitHub repository.
+      parameters:
+        - { name: owner, in: path, required: true, schema: { type: string } }
+        - { name: repo, in: path, required: true, schema: { type: string } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: per_page, in: query, schema: { type: integer, default: 100, minimum: 1, maximum: 100 } }
+      responses:
+        '200':
+          description: Branch list from GitHub API. Not JSON:API format.
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { type: object }
+
+  /api/account_pipeline_defaults:
+    get:
+      operationId: get-api-account-pipeline-defaults
+      summary: Lists all account-level default pipelines, indexed by task kind.
+      parameters:
+        - { name: "page[number]", in: query, schema: { type: integer, default: 1 } }
+        - { name: "page[size]", in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
+      responses:
+        '200':
+          description: Paginated list of account pipeline defaults
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: '#/components/schemas/JsonApiResource'
+                        - type: object
+                          properties:
+                            attributes:
+                              $ref: '#/components/schemas/AccountPipelineDefaultAttributes'
+
+  /api/account_pipeline_defaults/{kind}:
+    patch:
+      operationId: patch-api-account-pipeline-default
+      summary: Sets or updates the default pipeline for a task kind on the account.
+      parameters:
+        - { name: kind, in: path, required: true, schema: { type: string }, description: "Task kind name (e.g. feature, debugging)" }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                account_pipeline_default:
+                  type: object
+                  required: [pipeline_id]
+                  properties:
+                    pipeline_id: { type: integer }
+      responses:
+        '200':
+          description: The created or updated default
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/JsonApiResource'
+                      - type: object
+                        properties:
+                          attributes:
+                            $ref: '#/components/schemas/AccountPipelineDefaultAttributes'
+        '404':
+          description: Unknown task kind
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
+        '422':
+          description: Validation failed
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
+    delete:
+      operationId: delete-api-account-pipeline-default
+      summary: Clears the default pipeline for a task kind. Idempotent.
+      parameters:
+        - { name: kind, in: path, required: true, schema: { type: string } }
+      responses:
+        '204':
+          description: Default cleared (or was already absent)
+        '404':
+          description: Unknown task kind
+
+  /api/billing/topup_packages:
+    get:
+      operationId: get-api-billing-topup-packages
+      summary: Lists all available compute-hour top-up packages.
+      responses:
+        '200':
+          description: All available top-up packages.
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      allOf:
+                        - $ref: '#/components/schemas/JsonApiResource'
+                        - type: object
+                          properties:
+                            attributes:
+                              $ref: '#/components/schemas/TopupPackageAttributes'
+
+  /api/billing/topups:
+    post:
+      operationId: post-api-billing-topups
+      summary: Creates a Stripe Checkout Session for a top-up package.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [package_id]
+              properties:
+                package_id:
+                  type: string
+                  description: "Top-up package identifier. Valid values: 10h, 50h, 100h."
+      responses:
+        '201':
+          description: Checkout session created.
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/JsonApiResource'
+                      - type: object
+                        properties:
+                          attributes:
+                            $ref: '#/components/schemas/TopupCheckoutAttributes'
+        '422':
+          description: Invalid package_id supplied.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'

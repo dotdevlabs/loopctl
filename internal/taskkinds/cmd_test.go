@@ -361,6 +361,7 @@ func mapKeys[V any](m map[string]V) []string {
 	return keys
 }
 
+// TestTaskKindsSetDefaultPipeline verifies the new endpoint: PATCH /api/account_pipeline_defaults/{kind}.
 func TestTaskKindsSetDefaultPipeline(t *testing.T) {
 	var gotBody []byte
 	var gotMethod, gotPath string
@@ -369,7 +370,7 @@ func TestTaskKindsSetDefaultPipeline(t *testing.T) {
 		gotPath = r.URL.Path
 		gotBody, _ = io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/vnd.api+json")
-		_, _ = fmt.Fprint(w, `{"data":{"type":"task_kinds","id":"kind1","attributes":{"name":"feature","built_in":false,"default_pipeline_id":"pipe-abc"}}}`)
+		_, _ = fmt.Fprint(w, `{"data":{"type":"account_pipeline_defaults","id":"apd1","attributes":{"kind":"feature","pipeline_id":"123"}}}`)
 	}))
 	defer ts.Close()
 
@@ -379,39 +380,36 @@ func TestTaskKindsSetDefaultPipeline(t *testing.T) {
 	cmd := setDefaultPipelineCmd()
 	cmd.SetContext(ctx)
 	cmd.SetOut(&out)
-	if err := cmd.Flags().Set("pipeline-id", "pipe-abc"); err != nil {
+	if err := cmd.Flags().Set("pipeline-id", "123"); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := cmd.RunE(cmd, []string{"kind1"}); err != nil {
+	if err := cmd.RunE(cmd, []string{"feature"}); err != nil {
 		t.Fatalf("set-default-pipeline failed: %v", err)
 	}
 
 	if gotMethod != http.MethodPatch {
 		t.Errorf("expected PATCH; got %s", gotMethod)
 	}
-	if gotPath != "/api/task_kinds/kind1" {
-		t.Errorf("expected path /api/task_kinds/kind1; got %s", gotPath)
+	if gotPath != "/api/account_pipeline_defaults/feature" {
+		t.Errorf("expected path /api/account_pipeline_defaults/feature; got %s", gotPath)
 	}
 	got := out.String()
-	if !strings.Contains(got, "kind1") {
-		t.Errorf("output missing kind id:\n%s", got)
+	if !strings.Contains(got, "apd1") {
+		t.Errorf("output missing id:\n%s", got)
 	}
-	if !strings.Contains(got, "pipe-abc") {
-		t.Errorf("output missing default_pipeline_id:\n%s", got)
+	if !strings.Contains(string(gotBody), `"account_pipeline_default"`) {
+		t.Errorf("request body missing account_pipeline_default wrapper: %s", gotBody)
 	}
-	if !strings.Contains(string(gotBody), `"task_kind"`) {
-		t.Errorf("request body missing task_kind wrapper: %s", gotBody)
-	}
-	if !strings.Contains(string(gotBody), `"default_pipeline_id"`) {
-		t.Errorf("request body missing default_pipeline_id: %s", gotBody)
+	if !strings.Contains(string(gotBody), `"pipeline_id"`) {
+		t.Errorf("request body missing pipeline_id: %s", gotBody)
 	}
 }
 
 func TestTaskKindsSetDefaultPipelineJSON(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/vnd.api+json")
-		_, _ = fmt.Fprint(w, `{"data":{"type":"task_kinds","id":"kind1","attributes":{"name":"feature","built_in":false,"default_pipeline_id":"pipe-abc"}}}`)
+		_, _ = fmt.Fprint(w, `{"data":{"type":"account_pipeline_defaults","id":"apd1","attributes":{"kind":"feature","pipeline_id":"123"}}}`)
 	}))
 	defer ts.Close()
 
@@ -421,18 +419,18 @@ func TestTaskKindsSetDefaultPipelineJSON(t *testing.T) {
 	cmd := setDefaultPipelineCmd()
 	cmd.SetContext(ctx)
 	cmd.SetOut(&out)
-	if err := cmd.Flags().Set("pipeline-id", "pipe-abc"); err != nil {
+	if err := cmd.Flags().Set("pipeline-id", "123"); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := cmd.RunE(cmd, []string{"kind1"}); err != nil {
+	if err := cmd.RunE(cmd, []string{"feature"}); err != nil {
 		t.Fatalf("set-default-pipeline JSON failed: %v", err)
 	}
 	got := out.String()
 	if !strings.Contains(got, `"id"`) {
 		t.Errorf("expected id in JSON output; got:\n%s", got)
 	}
-	if !strings.Contains(got, "kind1") {
+	if !strings.Contains(got, "apd1") {
 		t.Errorf("expected id value in JSON output; got:\n%s", got)
 	}
 }
@@ -451,11 +449,11 @@ func TestTaskKindsSetDefaultPipelineDryRun(t *testing.T) {
 	cmd := setDefaultPipelineCmd()
 	cmd.SetContext(ctx)
 	cmd.SetOut(&out)
-	if err := cmd.Flags().Set("pipeline-id", "pipe-abc"); err != nil {
+	if err := cmd.Flags().Set("pipeline-id", "123"); err != nil {
 		t.Fatal(err)
 	}
 
-	if err := cmd.RunE(cmd, []string{"kind1"}); err != nil {
+	if err := cmd.RunE(cmd, []string{"feature"}); err != nil {
 		t.Fatalf("set-default-pipeline dry-run failed: %v", err)
 	}
 	if called {
@@ -463,6 +461,31 @@ func TestTaskKindsSetDefaultPipelineDryRun(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "dry-run") {
 		t.Errorf("expected dry-run in output; got:\n%s", out.String())
+	}
+}
+
+func TestTaskKindsSetDefaultPipelineInvalidID(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := setDefaultPipelineCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	if err := cmd.Flags().Set("pipeline-id", "not-a-number"); err != nil {
+		t.Fatal(err)
+	}
+
+	err := cmd.RunE(cmd, []string{"feature"})
+	if err == nil {
+		t.Fatal("expected error for non-integer pipeline-id")
+	}
+	if !strings.Contains(err.Error(), "integer") {
+		t.Errorf("expected integer error message; got: %v", err)
 	}
 }
 
@@ -480,11 +503,11 @@ func TestTaskKindsSetDefaultPipelineError(t *testing.T) {
 	cmd := setDefaultPipelineCmd()
 	cmd.SetContext(ctx)
 	cmd.SetOut(&out)
-	if err := cmd.Flags().Set("pipeline-id", "bad-pipe"); err != nil {
+	if err := cmd.Flags().Set("pipeline-id", "999"); err != nil {
 		t.Fatal(err)
 	}
 
-	err := cmd.RunE(cmd, []string{"kind1"})
+	err := cmd.RunE(cmd, []string{"feature"})
 	if err == nil {
 		t.Fatal("expected error on 422")
 	}
@@ -493,12 +516,14 @@ func TestTaskKindsSetDefaultPipelineError(t *testing.T) {
 	}
 }
 
+// TestSetDefaultPipelineRequestBodyShape verifies PATCH /api/account_pipeline_defaults/{kind}
+// sends {"account_pipeline_default": {"pipeline_id": <integer>}}.
 func TestSetDefaultPipelineRequestBodyShape(t *testing.T) {
 	var gotBody []byte
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotBody, _ = io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/vnd.api+json")
-		_, _ = fmt.Fprint(w, `{"data":{"type":"task_kinds","id":"kind1","attributes":{"name":"feature","built_in":false,"default_pipeline_id":"pipe-abc"}}}`)
+		_, _ = fmt.Fprint(w, `{"data":{"type":"account_pipeline_defaults","id":"apd1","attributes":{"kind":"feature","pipeline_id":"123"}}}`)
 	}))
 	defer ts.Close()
 
@@ -508,10 +533,10 @@ func TestSetDefaultPipelineRequestBodyShape(t *testing.T) {
 	cmd := setDefaultPipelineCmd()
 	cmd.SetContext(ctx)
 	cmd.SetOut(&out)
-	if err := cmd.Flags().Set("pipeline-id", "pipe-abc"); err != nil {
+	if err := cmd.Flags().Set("pipeline-id", "123"); err != nil {
 		t.Fatal(err)
 	}
-	if err := cmd.RunE(cmd, []string{"kind1"}); err != nil {
+	if err := cmd.RunE(cmd, []string{"feature"}); err != nil {
 		t.Fatalf("set-default-pipeline failed: %v", err)
 	}
 
@@ -520,44 +545,45 @@ func TestSetDefaultPipelineRequestBodyShape(t *testing.T) {
 		t.Fatalf("request body is not valid JSON: %v\nbody: %s", err, gotBody)
 	}
 
-	rawKind, ok := parsed["task_kind"]
+	rawAPD, ok := parsed["account_pipeline_default"]
 	if !ok {
-		t.Fatalf("request body missing top-level 'task_kind' key; got keys: %v\nbody: %s", mapKeys(parsed), gotBody)
+		t.Fatalf("request body missing top-level 'account_pipeline_default' key; got keys: %v\nbody: %s", mapKeys(parsed), gotBody)
 	}
 
-	var kindObj map[string]json.RawMessage
-	if err := json.Unmarshal(rawKind, &kindObj); err != nil {
-		t.Fatalf("task_kind value is not a JSON object: %v", err)
+	var apdObj map[string]json.RawMessage
+	if err := json.Unmarshal(rawAPD, &apdObj); err != nil {
+		t.Fatalf("account_pipeline_default value is not a JSON object: %v", err)
 	}
 
-	if _, ok := kindObj["default_pipeline_id"]; !ok {
-		t.Errorf("task_kind object missing 'default_pipeline_id' field; got keys: %v", mapKeys(kindObj))
+	if _, ok := apdObj["pipeline_id"]; !ok {
+		t.Errorf("account_pipeline_default object missing 'pipeline_id' field; got keys: %v", mapKeys(apdObj))
 	}
 
-	for k := range kindObj {
-		if k != "default_pipeline_id" {
-			t.Errorf("task_kind object contains unexpected field %q; only 'default_pipeline_id' is allowed", k)
+	for k := range apdObj {
+		if k != "pipeline_id" {
+			t.Errorf("account_pipeline_default object contains unexpected field %q; only 'pipeline_id' is allowed", k)
 		}
 	}
 
-	var pipelineID string
-	if err := json.Unmarshal(kindObj["default_pipeline_id"], &pipelineID); err != nil {
-		t.Fatalf("default_pipeline_id should be a string; got: %s", kindObj["default_pipeline_id"])
+	var pipelineID int64
+	if err := json.Unmarshal(apdObj["pipeline_id"], &pipelineID); err != nil {
+		t.Fatalf("pipeline_id should be an integer; got: %s", apdObj["pipeline_id"])
 	}
-	if pipelineID != "pipe-abc" {
-		t.Errorf("expected default_pipeline_id=pipe-abc; got: %q", pipelineID)
+	if pipelineID != 123 {
+		t.Errorf("expected pipeline_id=123; got: %d", pipelineID)
 	}
 }
 
+// TestTaskKindsClearDefaultPipeline verifies the new endpoint: DELETE /api/account_pipeline_defaults/{kind}.
 func TestTaskKindsClearDefaultPipeline(t *testing.T) {
-	var gotBody []byte
 	var gotMethod, gotPath string
+	var gotBodyLen int
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotMethod = r.Method
 		gotPath = r.URL.Path
-		gotBody, _ = io.ReadAll(r.Body)
-		w.Header().Set("Content-Type", "application/vnd.api+json")
-		_, _ = fmt.Fprint(w, `{"data":{"type":"task_kinds","id":"kind1","attributes":{"name":"feature","built_in":false,"default_pipeline_id":""}}}`)
+		body, _ := io.ReadAll(r.Body)
+		gotBodyLen = len(body)
+		w.WriteHeader(http.StatusNoContent)
 	}))
 	defer ts.Close()
 
@@ -568,25 +594,21 @@ func TestTaskKindsClearDefaultPipeline(t *testing.T) {
 	cmd.SetContext(ctx)
 	cmd.SetOut(&out)
 
-	if err := cmd.RunE(cmd, []string{"kind1"}); err != nil {
+	if err := cmd.RunE(cmd, []string{"feature"}); err != nil {
 		t.Fatalf("clear-default-pipeline failed: %v", err)
 	}
 
-	if gotMethod != http.MethodPatch {
-		t.Errorf("expected PATCH; got %s", gotMethod)
+	if gotMethod != http.MethodDelete {
+		t.Errorf("expected DELETE; got %s", gotMethod)
 	}
-	if gotPath != "/api/task_kinds/kind1" {
-		t.Errorf("expected path /api/task_kinds/kind1; got %s", gotPath)
+	if gotPath != "/api/account_pipeline_defaults/feature" {
+		t.Errorf("expected path /api/account_pipeline_defaults/feature; got %s", gotPath)
 	}
-	got := out.String()
-	if !strings.Contains(got, "kind1") {
-		t.Errorf("output missing kind id:\n%s", got)
+	if gotBodyLen != 0 {
+		t.Errorf("expected empty body for DELETE; got %d bytes", gotBodyLen)
 	}
-	if !strings.Contains(string(gotBody), `"task_kind"`) {
-		t.Errorf("request body missing task_kind wrapper: %s", gotBody)
-	}
-	if !strings.Contains(string(gotBody), `"default_pipeline_id"`) {
-		t.Errorf("request body missing default_pipeline_id: %s", gotBody)
+	if !strings.Contains(out.String(), "cleared") {
+		t.Errorf("expected 'cleared' in output; got:\n%s", out.String())
 	}
 }
 
@@ -605,7 +627,7 @@ func TestTaskKindsClearDefaultPipelineDryRun(t *testing.T) {
 	cmd.SetContext(ctx)
 	cmd.SetOut(&out)
 
-	if err := cmd.RunE(cmd, []string{"kind1"}); err != nil {
+	if err := cmd.RunE(cmd, []string{"feature"}); err != nil {
 		t.Fatalf("clear-default-pipeline dry-run failed: %v", err)
 	}
 	if called {
@@ -616,12 +638,10 @@ func TestTaskKindsClearDefaultPipelineDryRun(t *testing.T) {
 	}
 }
 
-func TestClearDefaultPipelineRequestBodyShape(t *testing.T) {
-	var gotBody []byte
+func TestTaskKindsClearDefaultPipelineError(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotBody, _ = io.ReadAll(r.Body)
-		w.Header().Set("Content-Type", "application/vnd.api+json")
-		_, _ = fmt.Fprint(w, `{"data":{"type":"task_kinds","id":"kind1","attributes":{"name":"feature","built_in":false,"default_pipeline_id":""}}}`)
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = fmt.Fprint(w, `{"errors":[{"status":"404","detail":"task kind not found"}]}`)
 	}))
 	defer ts.Close()
 
@@ -631,30 +651,12 @@ func TestClearDefaultPipelineRequestBodyShape(t *testing.T) {
 	cmd := clearDefaultPipelineCmd()
 	cmd.SetContext(ctx)
 	cmd.SetOut(&out)
-	if err := cmd.RunE(cmd, []string{"kind1"}); err != nil {
-		t.Fatalf("clear-default-pipeline failed: %v", err)
-	}
 
-	var parsed map[string]json.RawMessage
-	if err := json.Unmarshal(gotBody, &parsed); err != nil {
-		t.Fatalf("request body is not valid JSON: %v\nbody: %s", err, gotBody)
+	err := cmd.RunE(cmd, []string{"unknown-kind"})
+	if err == nil {
+		t.Fatal("expected error on 404")
 	}
-
-	rawKind, ok := parsed["task_kind"]
-	if !ok {
-		t.Fatalf("request body missing top-level 'task_kind' key; got keys: %v\nbody: %s", mapKeys(parsed), gotBody)
-	}
-
-	var kindObj map[string]json.RawMessage
-	if err := json.Unmarshal(rawKind, &kindObj); err != nil {
-		t.Fatalf("task_kind value is not a JSON object: %v", err)
-	}
-
-	if _, ok := kindObj["default_pipeline_id"]; !ok {
-		t.Errorf("task_kind object missing 'default_pipeline_id' field; got keys: %v", mapKeys(kindObj))
-	}
-
-	if string(kindObj["default_pipeline_id"]) != "null" {
-		t.Errorf("expected default_pipeline_id to be JSON null; got: %s", kindObj["default_pipeline_id"])
+	if !strings.Contains(err.Error(), "task kind not found") {
+		t.Errorf("expected error detail in message; got: %v", err)
 	}
 }

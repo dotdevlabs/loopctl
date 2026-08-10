@@ -695,7 +695,7 @@ func extractJSONAPIOrFlatError(body []byte, status int) string {
 			}
 		}
 	}
-	return fmt.Sprintf("HTTP %d", status)
+	return http.StatusText(status)
 }
 
 func extractAPIError(body []byte, status int) string {
@@ -717,7 +717,48 @@ func extractAPIError(body []byte, status int) string {
 			}
 		}
 	}
-	return fmt.Sprintf("HTTP %d", status)
+	return http.StatusText(status)
+}
+
+// DeleteJSONAPI issues a DELETE to path and returns nil on 2xx (including 204).
+// On non-2xx it extracts JSON:API errors and returns a CLIError.
+func DeleteJSONAPI(ctx context.Context, activeCtx *config.Context, path string) error {
+	url := strings.TrimRight(activeCtx.BaseURL, "/") + path
+	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, url, nil)
+	if err != nil {
+		return fmt.Errorf("building request: %w", err)
+	}
+	req.Header.Set("Accept", "application/vnd.api+json")
+	req.Header.Set("Authorization", "Bearer "+activeCtx.Token)
+	req.Header.Set("User-Agent", browserUserAgent)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return fmt.Errorf("request failed: %w", err)
+	}
+
+	respBody, readErr := io.ReadAll(resp.Body)
+	if closeErr := resp.Body.Close(); closeErr != nil {
+		return fmt.Errorf("closing response body: %w", closeErr)
+	}
+	if readErr != nil {
+		return fmt.Errorf("reading response: %w", readErr)
+	}
+
+	logVerbose(verboseFrom(ctx), http.MethodDelete, url, resp.StatusCode, respBody)
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return nil
+	}
+
+	return clierror.New(
+		statusToCode(resp.StatusCode),
+		extractJSONAPIOrFlatError(respBody, resp.StatusCode),
+		"",
+	)
 }
 
 func statusToCode(status int) clierror.ErrorCode {
