@@ -270,6 +270,123 @@ At least one flag must be provided. Output columns on success: `ID`, `NAME`, `KI
 
 **API:** `PATCH /api/pipelines/:id`
 
+#### pipelines stages
+
+Manage the individual stages of a pipeline. These commands expose the full stage attribute set per the published API contract. Because there is no dedicated stages endpoint, each write command performs a read-modify-write: it GETs the current pipeline, applies your changes, and PATCHes the full updated stages array atomically.
+
+> **Note:** Two concurrent `stages add` (or `update`/`remove`) calls can overwrite each other — this is inherent to the API design (no conditional PATCH). For safe concurrent edits, serialize your calls.
+
+##### pipelines stages list
+
+List the stages of a pipeline.
+
+```bash
+loopctl pipelines stages list <pipeline-id>
+loopctl pipelines stages list <pipeline-id> --json
+```
+
+Output columns: `POSITION`, `NAME`, `ROLE`, `STAGE_TYPE`, `GATE`, `AGENT`.
+
+**API:** `GET /api/pipelines/:id`
+
+##### pipelines stages add
+
+Append a new stage to a pipeline. Only the flags you provide are included — unset optional flags are not sent.
+
+```bash
+# Minimal — just a name
+loopctl pipelines stages add <pipeline-id> --name implement
+
+# With role and instructions
+loopctl pipelines stages add <pipeline-id> \
+  --name implement \
+  --role implementing \
+  --instructions "Implement the approved plan."
+
+# Full attribute set
+loopctl pipelines stages add <pipeline-id> \
+  --name review \
+  --role reviewing \
+  --instructions "Review the implementation." \
+  --gate manual \
+  --agent my-reviewer \
+  --advance-notice "30m" \
+  --position 3 \
+  --runs-in-container \
+  --on-failure '{"max_rework_count":2,"rework_to_position":1}' \
+  --prompt-sections '[{"key":"context","content":"..."}]' \
+  --stage-triggers '["on_push"]' \
+  --advance-requirements '["tests_pass"]' \
+  --branch-conditions '["main"]' \
+  --environment '{"CI":"true"}'
+
+# Preview without making API calls
+loopctl pipelines stages add <pipeline-id> --name review --dry-run
+```
+
+**Flags:**
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--name` | yes | Stage name (unique identifier within the pipeline) |
+| `--role` | no | Lifecycle role (e.g. `planning`, `implementing`, `reviewing`) |
+| `--stage-type` | no | `stage_type` for custom stage types |
+| `--custom-stage-name` | no | `custom_stage_name` (custom type only) |
+| `--template` | no | Template (custom type only) |
+| `--instructions` | no | Full agent prompt text for this stage |
+| `--gate` | no | Advance gate (e.g. `manual`, `ci_pass`) |
+| `--agent` | no | Agent slug override |
+| `--advance-notice` | no | Advance notice value |
+| `--position` | no | Explicit position override |
+| `--runs-in-container` | no | Override `runs_in_container` for this stage |
+| `--on-failure` | no | JSON object: `{"max_rework_count":3,"rework_to_position":0}` |
+| `--prompt-sections` | no | JSON array of prompt section objects |
+| `--stage-triggers` | no | JSON array of trigger strings |
+| `--advance-requirements` | no | JSON array of requirement strings |
+| `--branch-conditions` | no | JSON array of branch condition strings |
+| `--environment` | no | JSON object of environment key/value pairs |
+
+Output columns on success: `ID`, `NAME`, `KIND`. Use `--json` for the full pipeline resource (stages included).
+
+**APIs:** `GET /api/pipelines/:id` then `PATCH /api/pipelines/:id`
+
+##### pipelines stages update
+
+Update an existing stage by name. Only the flags you provide are changed — other fields are preserved, including any server-generated fields.
+
+```bash
+# Change instructions
+loopctl pipelines stages update <pipeline-id> <stage-name> \
+  --instructions "Updated prompt text."
+
+# Change gate and add failure policy
+loopctl pipelines stages update <pipeline-id> review \
+  --gate ci_pass \
+  --on-failure '{"max_rework_count":3}'
+
+# Preview without making API calls
+loopctl pipelines stages update <pipeline-id> review --gate manual --dry-run
+```
+
+Accepts the same flags as `stages add` except `--name` (the stage is identified by the `<stage-name>` positional argument). At least one flag must be provided. If two stages share the same name, the first match is updated.
+
+Output columns on success: `ID`, `NAME`, `KIND`. Use `--json` for the full pipeline resource.
+
+**APIs:** `GET /api/pipelines/:id` then `PATCH /api/pipelines/:id`
+
+##### pipelines stages remove
+
+Remove a stage by name. Sends the remaining stages (or an empty array if removing the last stage).
+
+```bash
+loopctl pipelines stages remove <pipeline-id> <stage-name>
+loopctl pipelines stages remove <pipeline-id> review --dry-run
+```
+
+Output columns on success: `ID`, `NAME`, `KIND`. Use `--json` for the full pipeline resource.
+
+**APIs:** `GET /api/pipelines/:id` then `PATCH /api/pipelines/:id`
+
 ---
 
 ### task-kinds
@@ -612,16 +729,43 @@ loopctl pipelines create --name "My Workflow"
 loopctl task-kinds create --name my-workflow-kind
 loopctl pipelines create --name "My Workflow" --kind my-workflow-kind
 
-# Create a pipeline with stages authored at creation time
+# Create a pipeline with stages authored at creation time (basic shape)
 loopctl pipelines create --name "My Workflow" \
-  --stages '[{"name":"plan","role":"planning","instructions":"Plan the work."},{"name":"implement","role":"implementing","instructions":"Implement the plan."}]'
-
-# Add or replace stages on an existing pipeline
-loopctl pipelines update <pipeline-id> \
   --stages '[{"name":"plan","role":"planning","instructions":"Plan the work."},{"name":"implement","role":"implementing","instructions":"Implement the plan."}]'
 
 # Use the new pipeline when creating a project
 loopctl projects create --name "Daybreak" --platform rails --pipeline "My Workflow"
+```
+
+### Manage pipeline stages with the full attribute set
+
+```bash
+# List stages for a pipeline
+loopctl pipelines stages list <pipeline-id>
+
+# Add a minimal stage (name only required)
+loopctl pipelines stages add <pipeline-id> --name review --role reviewing
+
+# Add a stage with a failure policy and manual gate
+loopctl pipelines stages add <pipeline-id> \
+  --name review \
+  --role reviewing \
+  --instructions "Review the implementation carefully." \
+  --gate manual \
+  --on-failure '{"max_rework_count":2,"rework_to_position":1}'
+
+# Update a stage's instructions and gate in place
+loopctl pipelines stages update <pipeline-id> review \
+  --instructions "Updated review instructions." \
+  --gate ci_pass
+
+# Remove a stage
+loopctl pipelines stages remove <pipeline-id> review
+
+# Preview any write without making API calls
+loopctl pipelines stages add <pipeline-id> --name review --dry-run
+loopctl pipelines stages update <pipeline-id> review --gate manual --dry-run
+loopctl pipelines stages remove <pipeline-id> review --dry-run
 ```
 
 ### Create a custom task kind and set its default pipeline
@@ -668,6 +812,9 @@ loopctl projects create --name "Daybreak" --platform-id "pf1" --dry-run
 loopctl tasks create --project-id p1 --kind bug --title "Fix it" --description "..." --dry-run
 loopctl pipelines create --name "My Workflow" --dry-run
 loopctl pipelines update <id> --name "Renamed" --dry-run
+loopctl pipelines stages add <pipeline-id> --name review --dry-run
+loopctl pipelines stages update <pipeline-id> review --gate manual --dry-run
+loopctl pipelines stages remove <pipeline-id> review --dry-run
 loopctl task-kinds create --name my-kind --dry-run
 loopctl task-kinds set-default-pipeline <kind-name> --pipeline-id <integer-pipeline-id> --dry-run
 loopctl task-kinds clear-default-pipeline <kind-name> --dry-run
