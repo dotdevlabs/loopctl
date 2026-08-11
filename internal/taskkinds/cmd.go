@@ -48,7 +48,7 @@ func listCmd() *cobra.Command {
 			activeCtx := ctxutil.ActiveContextFrom(ctx)
 			r := ctxutil.RendererFrom(ctx)
 
-			col, err := apiclient.GetJSONAPICollection[TaskKindAttrs](ctx, activeCtx, "/api/task_kinds")
+			col, err := apiclient.GetJSONAPICollectionAllPages[TaskKindAttrs](ctx, activeCtx, "/api/task_kinds")
 			if err != nil {
 				return err
 			}

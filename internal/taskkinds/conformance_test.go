@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/dotdevlabs/loopctl/internal/schema"
@@ -144,5 +145,42 @@ func TestConformance_ViolationDetection_ForbiddenTaskKindPatchField(t *testing.T
 	violations := schema.CheckRequest(req, endpoints)
 	if len(violations) == 0 {
 		t.Fatal("expected violation for PATCH /api/task_kinds/:id (endpoint not in spec); got none")
+	}
+}
+
+func TestConformance_TaskKindsListPaginates(t *testing.T) {
+	var requestCount int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&requestCount, 1)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		if r.URL.RawQuery == "" {
+			_, _ = fmt.Fprintf(w,
+				`{"data":[{"type":"task_kinds","id":"k1","attributes":{"name":"feature","built_in":true}}],"links":{"next":"%s/api/task_kinds?page%%5Bnumber%%5D=2"}}`,
+				"http://"+r.Host)
+		} else {
+			_, _ = fmt.Fprint(w,
+				`{"data":[{"type":"task_kinds","id":"k2","attributes":{"name":"bugfix","built_in":false}}],"links":{}}`)
+		}
+	}))
+	defer ts.Close()
+
+	var out strings.Builder
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+	cmd := listCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("task-kinds list with pagination failed: %v", err)
+	}
+	if got := atomic.LoadInt32(&requestCount); got != 2 {
+		t.Errorf("expected 2 requests (2 pages); got %d", got)
+	}
+	result := out.String()
+	if !strings.Contains(result, "feature") {
+		t.Errorf("output missing feature from page 1:\n%s", result)
+	}
+	if !strings.Contains(result, "bugfix") {
+		t.Errorf("output missing bugfix from page 2:\n%s", result)
 	}
 }

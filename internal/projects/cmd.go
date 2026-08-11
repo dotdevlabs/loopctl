@@ -47,7 +47,7 @@ func listCmd() *cobra.Command {
 			activeCtx := ctxutil.ActiveContextFrom(ctx)
 			r := ctxutil.RendererFrom(ctx)
 
-			col, err := apiclient.GetJSONAPICollection[ProjectAttrs](ctx, activeCtx, "/api/projects")
+			col, err := apiclient.GetJSONAPICollectionAllPages[ProjectAttrs](ctx, activeCtx, "/api/projects")
 			if err != nil {
 				return err
 			}
@@ -173,7 +173,7 @@ func createCmd() *cobra.Command {
 			// Resolve platform name to ID if needed.
 			effectivePlatformID := platformID
 			if platform != "" {
-				col, err := apiclient.GetJSONAPICollection[platformLookup](ctx, activeCtx, "/api/platforms")
+				col, err := apiclient.GetJSONAPICollectionAllPages[platformLookup](ctx, activeCtx, "/api/platforms")
 				if err != nil {
 					return err
 				}
@@ -194,7 +194,7 @@ func createCmd() *cobra.Command {
 			// Resolve pipeline name to ID if needed.
 			effectivePipelineID := pipelineID
 			if pipeline != "" {
-				col, err := apiclient.GetJSONAPICollection[pipelineLookup](ctx, activeCtx, "/api/pipelines")
+				col, err := apiclient.GetJSONAPICollectionAllPages[pipelineLookup](ctx, activeCtx, "/api/pipelines")
 				if err != nil {
 					return err
 				}

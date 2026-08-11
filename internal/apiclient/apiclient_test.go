@@ -743,3 +743,169 @@ func TestDeleteJSONAPIContextCancelled(t *testing.T) {
 		t.Errorf("expected context.Canceled; got: %v", err)
 	}
 }
+
+func TestGetJSONAPICollectionPopulatesLinks(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":[],"links":{"first":"/api/test","next":"/api/test?page[number]=2","last":"/api/test?page[number]=3"}}`)
+	}))
+	defer ts.Close()
+
+	col, err := apiclient.GetJSONAPICollection[testData](context.Background(), activeCtx(t, ts.URL), "/api/test")
+	if err != nil {
+		t.Fatalf("expected no error; got: %v", err)
+	}
+	if col.Links.Next != "/api/test?page[number]=2" {
+		t.Errorf("expected Next link; got: %q", col.Links.Next)
+	}
+	if col.Links.First != "/api/test" {
+		t.Errorf("expected First link; got: %q", col.Links.First)
+	}
+}
+
+func TestGetJSONAPICollectionAllPagesSinglePage(t *testing.T) {
+	var requestCount int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":[{"type":"items","id":"1","attributes":{"value":"only"}}],"links":{}}`)
+	}))
+	defer ts.Close()
+
+	col, err := apiclient.GetJSONAPICollectionAllPages[testData](context.Background(), activeCtx(t, ts.URL), "/api/test")
+	if err != nil {
+		t.Fatalf("expected no error; got: %v", err)
+	}
+	if requestCount != 1 {
+		t.Errorf("expected 1 request; got: %d", requestCount)
+	}
+	if len(col.Data) != 1 || col.Data[0].ID != "1" {
+		t.Errorf("expected 1 item with id=1; got: %+v", col.Data)
+	}
+}
+
+func TestGetJSONAPICollectionAllPagesFollowsNext(t *testing.T) {
+	var requestCount int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		if r.URL.RawQuery == "" {
+			_, _ = fmt.Fprintf(w, `{"data":[{"type":"items","id":"1","attributes":{"value":"page1"}}],"links":{"next":"%s/api/test?page%%5Bnumber%%5D=2"}}`, "http://"+r.Host)
+		} else {
+			_, _ = fmt.Fprint(w, `{"data":[{"type":"items","id":"2","attributes":{"value":"page2"}}],"links":{}}`)
+		}
+	}))
+	defer ts.Close()
+
+	col, err := apiclient.GetJSONAPICollectionAllPages[testData](context.Background(), activeCtx(t, ts.URL), "/api/test")
+	if err != nil {
+		t.Fatalf("expected no error; got: %v", err)
+	}
+	if requestCount != 2 {
+		t.Errorf("expected 2 requests; got: %d", requestCount)
+	}
+	if len(col.Data) != 2 {
+		t.Fatalf("expected 2 items; got: %d", len(col.Data))
+	}
+	if col.Data[0].ID != "1" || col.Data[1].ID != "2" {
+		t.Errorf("unexpected items: %+v", col.Data)
+	}
+}
+
+func TestGetJSONAPICollectionAllPagesRelativeNext(t *testing.T) {
+	var requestCount int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		if r.URL.RawQuery == "" {
+			_, _ = fmt.Fprint(w, `{"data":[{"type":"items","id":"a","attributes":{"value":"p1"}}],"links":{"next":"/api/test?page[number]=2"}}`)
+		} else {
+			_, _ = fmt.Fprint(w, `{"data":[{"type":"items","id":"b","attributes":{"value":"p2"}}],"links":{}}`)
+		}
+	}))
+	defer ts.Close()
+
+	col, err := apiclient.GetJSONAPICollectionAllPages[testData](context.Background(), activeCtx(t, ts.URL), "/api/test")
+	if err != nil {
+		t.Fatalf("expected no error; got: %v", err)
+	}
+	if requestCount != 2 {
+		t.Errorf("expected 2 requests; got: %d", requestCount)
+	}
+	if len(col.Data) != 2 {
+		t.Fatalf("expected 2 items; got: %d", len(col.Data))
+	}
+	if col.Data[0].ID != "a" || col.Data[1].ID != "b" {
+		t.Errorf("unexpected items: %+v", col.Data)
+	}
+}
+
+func TestGetJSONAPICollectionAllPagesThreePages(t *testing.T) {
+	var requestCount int
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		page := r.URL.Query().Get("page[number]")
+		switch page {
+		case "":
+			_, _ = fmt.Fprint(w, `{"data":[{"type":"items","id":"1","attributes":{"value":"p1"}}],"links":{"next":"/api/test?page[number]=2"}}`)
+		case "2":
+			_, _ = fmt.Fprint(w, `{"data":[{"type":"items","id":"2","attributes":{"value":"p2"}}],"links":{"next":"/api/test?page[number]=3"}}`)
+		default:
+			_, _ = fmt.Fprint(w, `{"data":[{"type":"items","id":"3","attributes":{"value":"p3"}}],"links":{}}`)
+		}
+	}))
+	defer ts.Close()
+
+	col, err := apiclient.GetJSONAPICollectionAllPages[testData](context.Background(), activeCtx(t, ts.URL), "/api/test")
+	if err != nil {
+		t.Fatalf("expected no error; got: %v", err)
+	}
+	if requestCount != 3 {
+		t.Errorf("expected 3 requests; got: %d", requestCount)
+	}
+	if len(col.Data) != 3 {
+		t.Fatalf("expected 3 items; got: %d", len(col.Data))
+	}
+}
+
+func TestGetJSONAPISingleFullDecodesLinksself(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"items","id":"7","links":{"self":"/api/items/7"},"attributes":{"value":"v"}}}`)
+	}))
+	defer ts.Close()
+
+	res, err := apiclient.GetJSONAPISingleFull[testData](context.Background(), activeCtx(t, ts.URL), "/api/items/7")
+	if err != nil {
+		t.Fatalf("expected no error; got: %v", err)
+	}
+	if res.ID != "7" {
+		t.Errorf("expected ID=7; got: %q", res.ID)
+	}
+	if res.Attributes.Value != "v" {
+		t.Errorf("expected value=v; got: %q", res.Attributes.Value)
+	}
+	if res.SelfLink != "/api/items/7" {
+		t.Errorf("expected SelfLink=/api/items/7; got: %q", res.SelfLink)
+	}
+}
+
+func TestGetJSONAPISingleFullNoLinksself(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"items","id":"5","attributes":{"value":"nolnk"}}}`)
+	}))
+	defer ts.Close()
+
+	res, err := apiclient.GetJSONAPISingleFull[testData](context.Background(), activeCtx(t, ts.URL), "/api/items/5")
+	if err != nil {
+		t.Fatalf("expected no error; got: %v", err)
+	}
+	if res.SelfLink != "" {
+		t.Errorf("expected empty SelfLink; got: %q", res.SelfLink)
+	}
+	if res.ID != "5" {
+		t.Errorf("expected ID=5; got: %q", res.ID)
+	}
+}

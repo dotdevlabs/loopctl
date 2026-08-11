@@ -74,7 +74,7 @@ func listCmd() *cobra.Command {
 			r := ctxutil.RendererFrom(ctx)
 
 			path := "/api/tasks?project_id=" + url.QueryEscape(projectID)
-			col, err := apiclient.GetJSONAPICollection[TaskAttrs](ctx, activeCtx, path)
+			col, err := apiclient.GetJSONAPICollectionAllPages[TaskAttrs](ctx, activeCtx, path)
 			if err != nil {
 				return err
 			}
@@ -347,9 +347,13 @@ func watchTask(
 	var lastActID string
 
 	poll := func() (bool, error) {
-		res, err := apiclient.GetJSONAPISingle[TaskAttrs](ctx, activeCtx, taskPath)
+		res, err := apiclient.GetJSONAPISingleFull[TaskAttrs](ctx, activeCtx, taskPath)
 		if err != nil {
 			return false, err
+		}
+		if sp := apiclient.SelfLinkPath(res.SelfLink, activeCtx.BaseURL); sp != "" {
+			taskPath = sp
+			activitiesPath = sp + "/activities"
 		}
 		t := res.Attributes
 

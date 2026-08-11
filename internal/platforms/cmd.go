@@ -35,7 +35,7 @@ func listCmd() *cobra.Command {
 			activeCtx := ctxutil.ActiveContextFrom(ctx)
 			r := ctxutil.RendererFrom(ctx)
 
-			col, err := apiclient.GetJSONAPICollection[PlatformAttrs](ctx, activeCtx, "/api/platforms")
+			col, err := apiclient.GetJSONAPICollectionAllPages[PlatformAttrs](ctx, activeCtx, "/api/platforms")
 			if err != nil {
 				return err
 			}
