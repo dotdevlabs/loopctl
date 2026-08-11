@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/dotdevlabs/loopctl/internal/schema"
@@ -240,5 +241,42 @@ func TestConformance_CheckRequestStageParsing(t *testing.T) {
 	var parsed map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(buf.String()), &parsed); err != nil {
 		t.Errorf("body was not restored after CheckRequest: %v", err)
+	}
+}
+
+func TestConformance_PipelinesListPaginates(t *testing.T) {
+	var requestCount int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&requestCount, 1)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		if r.URL.RawQuery == "" {
+			_, _ = fmt.Fprintf(w,
+				`{"data":[{"type":"pipelines","id":"pl1","attributes":{"name":"alpha-pipeline","kind":"feature"}}],"links":{"next":"%s/api/pipelines?page%%5Bnumber%%5D=2"}}`,
+				"http://"+r.Host)
+		} else {
+			_, _ = fmt.Fprint(w,
+				`{"data":[{"type":"pipelines","id":"pl2","attributes":{"name":"beta-pipeline","kind":"feature"}}],"links":{}}`)
+		}
+	}))
+	defer ts.Close()
+
+	var out strings.Builder
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+	cmd := listCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("pipelines list with pagination failed: %v", err)
+	}
+	if got := atomic.LoadInt32(&requestCount); got != 2 {
+		t.Errorf("expected 2 requests (2 pages); got %d", got)
+	}
+	result := out.String()
+	if !strings.Contains(result, "alpha-pipeline") {
+		t.Errorf("output missing alpha-pipeline from page 1:\n%s", result)
+	}
+	if !strings.Contains(result, "beta-pipeline") {
+		t.Errorf("output missing beta-pipeline from page 2:\n%s", result)
 	}
 }

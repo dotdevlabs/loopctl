@@ -57,7 +57,7 @@ func listCmd() *cobra.Command {
 			activeCtx := ctxutil.ActiveContextFrom(ctx)
 			r := ctxutil.RendererFrom(ctx)
 
-			col, err := apiclient.GetJSONAPICollection[PipelineAttrs](ctx, activeCtx, "/api/pipelines")
+			col, err := apiclient.GetJSONAPICollectionAllPages[PipelineAttrs](ctx, activeCtx, "/api/pipelines")
 			if err != nil {
 				return err
 			}

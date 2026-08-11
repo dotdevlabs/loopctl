@@ -19,7 +19,7 @@ components:
   schemas:
     JsonApiResource:
       type: object
-      required: [type, id, attributes]
+      required: [type, id, attributes, links]
       properties:
         type:
           type: string
@@ -29,6 +29,32 @@ components:
           type: object
         relationships:
           type: object
+        links:
+          type: object
+          required: [self]
+          properties:
+            self:
+              type: string
+              nullable: true
+
+    JsonApiLinks:
+      type: object
+      required: [self, first, last]
+      properties:
+        self: { type: string }
+        first: { type: string }
+        last: { type: string }
+        prev: { type: string, nullable: true }
+        next: { type: string, nullable: true }
+
+    JsonApiPaginationMeta:
+      type: object
+      required: [total_count, page_count, current_page, per_page]
+      properties:
+        total_count: { type: integer }
+        page_count: { type: integer }
+        current_page: { type: integer }
+        per_page: { type: integer }
 
     JsonApiErrors:
       type: object
@@ -42,6 +68,26 @@ components:
               title: { type: string }
               detail: { type: string }
               source: { type: object }
+
+    JsonApiToOneRelationship:
+      type: object
+      properties:
+        data:
+          type: object
+          required: [type, id]
+          properties:
+            type: { type: string }
+            id: { type: string }
+
+    JsonApiNullableToOneRelationship:
+      type: object
+      properties:
+        data:
+          nullable: true
+          type: object
+          properties:
+            type: { type: string }
+            id: { type: string }
 
     AgentAttributes:
       type: object
@@ -111,6 +157,7 @@ components:
         default_branch: { type: string }
         port: { type: integer }
         bootstrapping: { type: boolean }
+        pipeline_name: { type: string, nullable: true }
         active_tasks_count: { type: integer }
         tasks_completed_today: { type: integer }
         tasks_completed_last_7_days: { type: integer }
@@ -132,6 +179,7 @@ components:
       properties:
         display_name: { type: string }
         git_branch: { type: string }
+        pipeline_name: { type: string, nullable: true }
 
     ContainerAttributes:
       type: object
@@ -392,7 +440,7 @@ paths:
             application/vnd.api+json:
               schema:
                 type: object
-                required: [data]
+                required: [data, links, meta]
                 properties:
                   data:
                     type: array
@@ -403,6 +451,10 @@ paths:
                           properties:
                             attributes:
                               $ref: '#/components/schemas/AgentAttributes'
+                  links:
+                    $ref: '#/components/schemas/JsonApiLinks'
+                  meta:
+                    $ref: '#/components/schemas/JsonApiPaginationMeta'
 
   /api/platforms:
     get:
@@ -418,7 +470,7 @@ paths:
             application/vnd.api+json:
               schema:
                 type: object
-                required: [data]
+                required: [data, links, meta]
                 properties:
                   data:
                     type: array
@@ -429,6 +481,10 @@ paths:
                           properties:
                             attributes:
                               $ref: '#/components/schemas/PlatformAttributes'
+                  links:
+                    $ref: '#/components/schemas/JsonApiLinks'
+                  meta:
+                    $ref: '#/components/schemas/JsonApiPaginationMeta'
 
   /api/task_kinds:
     get:
@@ -444,7 +500,7 @@ paths:
             application/vnd.api+json:
               schema:
                 type: object
-                required: [data]
+                required: [data, links, meta]
                 properties:
                   data:
                     type: array
@@ -455,6 +511,10 @@ paths:
                           properties:
                             attributes:
                               $ref: '#/components/schemas/TaskKindAttributes'
+                  links:
+                    $ref: '#/components/schemas/JsonApiLinks'
+                  meta:
+                    $ref: '#/components/schemas/JsonApiPaginationMeta'
     post:
       operationId: post-api-task-kinds
       summary: Creates a custom task kind scoped to the current account.
@@ -509,7 +569,7 @@ paths:
             application/vnd.api+json:
               schema:
                 type: object
-                required: [data]
+                required: [data, links, meta]
                 properties:
                   data:
                     type: array
@@ -520,6 +580,10 @@ paths:
                           properties:
                             attributes:
                               $ref: '#/components/schemas/PipelineAttributes'
+                  links:
+                    $ref: '#/components/schemas/JsonApiLinks'
+                  meta:
+                    $ref: '#/components/schemas/JsonApiPaginationMeta'
     post:
       operationId: post-api-pipelines
       summary: Creates a custom pipeline scoped to the current account.
@@ -698,7 +762,7 @@ paths:
             application/vnd.api+json:
               schema:
                 type: object
-                required: [data]
+                required: [data, links, meta]
                 properties:
                   data:
                     type: array
@@ -709,6 +773,17 @@ paths:
                           properties:
                             attributes:
                               $ref: '#/components/schemas/ProjectAttributes'
+                            relationships:
+                              type: object
+                              properties:
+                                platform:
+                                  $ref: '#/components/schemas/JsonApiToOneRelationship'
+                                pipeline:
+                                  $ref: '#/components/schemas/JsonApiNullableToOneRelationship'
+                  links:
+                    $ref: '#/components/schemas/JsonApiLinks'
+                  meta:
+                    $ref: '#/components/schemas/JsonApiPaginationMeta'
     post:
       operationId: post-api-projects
       summary: Creates a project.
@@ -779,6 +854,13 @@ paths:
                         properties:
                           attributes:
                             $ref: '#/components/schemas/ProjectAttributes'
+                          relationships:
+                            type: object
+                            properties:
+                              platform:
+                                $ref: '#/components/schemas/JsonApiToOneRelationship'
+                              pipeline:
+                                $ref: '#/components/schemas/JsonApiNullableToOneRelationship'
         '404':
           description: Project not found
           content:
@@ -824,6 +906,13 @@ paths:
                         properties:
                           attributes:
                             $ref: '#/components/schemas/ProjectUpdateResponseAttributes'
+                          relationships:
+                            type: object
+                            properties:
+                              platform:
+                                $ref: '#/components/schemas/JsonApiToOneRelationship'
+                              pipeline:
+                                $ref: '#/components/schemas/JsonApiNullableToOneRelationship'
         '404':
           description: Project not found
           content:
@@ -898,7 +987,7 @@ paths:
             application/vnd.api+json:
               schema:
                 type: object
-                required: [data]
+                required: [data, links, meta]
                 properties:
                   data:
                     type: array
@@ -909,6 +998,10 @@ paths:
                           properties:
                             attributes:
                               $ref: '#/components/schemas/TaskListAttributes'
+                  links:
+                    $ref: '#/components/schemas/JsonApiLinks'
+                  meta:
+                    $ref: '#/components/schemas/JsonApiPaginationMeta'
     post:
       operationId: post-api-tasks
       summary: Creates a task in a project.
@@ -1051,14 +1144,16 @@ paths:
       summary: Lists recordings attached to a task.
       parameters:
         - { name: task_id, in: path, required: true, schema: { type: string } }
+        - { name: "page[number]", in: query, schema: { type: integer, default: 1 } }
+        - { name: "page[size]", in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
       responses:
         '200':
-          description: List of recordings
+          description: Paginated list of recordings
           content:
             application/vnd.api+json:
               schema:
                 type: object
-                required: [data]
+                required: [data, links, meta]
                 properties:
                   data:
                     type: array
@@ -1069,6 +1164,10 @@ paths:
                           properties:
                             attributes:
                               $ref: '#/components/schemas/RecordingAttributes'
+                  links:
+                    $ref: '#/components/schemas/JsonApiLinks'
+                  meta:
+                    $ref: '#/components/schemas/JsonApiPaginationMeta'
     post:
       operationId: post-api-task-recordings
       summary: Uploads a new recording for a task.
@@ -1382,7 +1481,7 @@ paths:
             application/vnd.api+json:
               schema:
                 type: object
-                required: [data]
+                required: [data, links, meta]
                 properties:
                   data:
                     type: array
@@ -1393,6 +1492,10 @@ paths:
                           properties:
                             attributes:
                               $ref: '#/components/schemas/TodoAttributes'
+                  links:
+                    $ref: '#/components/schemas/JsonApiLinks'
+                  meta:
+                    $ref: '#/components/schemas/JsonApiPaginationMeta'
     post:
       operationId: post-api-task-todos
       summary: Creates one or more todos for a task.
@@ -1494,7 +1597,7 @@ paths:
             application/vnd.api+json:
               schema:
                 type: object
-                required: [data]
+                required: [data, links, meta]
                 properties:
                   data:
                     type: array
@@ -1505,6 +1608,10 @@ paths:
                           properties:
                             attributes:
                               $ref: '#/components/schemas/TransitionAttributes'
+                  links:
+                    $ref: '#/components/schemas/JsonApiLinks'
+                  meta:
+                    $ref: '#/components/schemas/JsonApiPaginationMeta'
 
   /api/tasks/{task_id}/activities:
     get:
@@ -1521,7 +1628,7 @@ paths:
             application/vnd.api+json:
               schema:
                 type: object
-                required: [data]
+                required: [data, links, meta]
                 properties:
                   data:
                     type: array
@@ -1532,6 +1639,10 @@ paths:
                           properties:
                             attributes:
                               $ref: '#/components/schemas/ActivityAttributes'
+                  links:
+                    $ref: '#/components/schemas/JsonApiLinks'
+                  meta:
+                    $ref: '#/components/schemas/JsonApiPaginationMeta'
 
   /api/tasks/{task_id}/containers:
     get:
@@ -1548,7 +1659,7 @@ paths:
             application/vnd.api+json:
               schema:
                 type: object
-                required: [data]
+                required: [data, links, meta]
                 properties:
                   data:
                     type: array
@@ -1559,6 +1670,10 @@ paths:
                           properties:
                             attributes:
                               $ref: '#/components/schemas/ContainerAttributes'
+                  links:
+                    $ref: '#/components/schemas/JsonApiLinks'
+                  meta:
+                    $ref: '#/components/schemas/JsonApiPaginationMeta'
 
   /api/tasks/{task_id}/cancellation:
     post:
@@ -1696,7 +1811,7 @@ paths:
             application/vnd.api+json:
               schema:
                 type: object
-                required: [data]
+                required: [data, links, meta]
                 properties:
                   data:
                     type: array
@@ -1707,6 +1822,10 @@ paths:
                           properties:
                             attributes:
                               $ref: '#/components/schemas/FlowRegistryFlowAttributes'
+                  links:
+                    $ref: '#/components/schemas/JsonApiLinks'
+                  meta:
+                    $ref: '#/components/schemas/JsonApiPaginationMeta'
 
   /api/flow_registry_flows/{flow_registry_flow_id}/recordings:
     post:
@@ -1871,7 +1990,7 @@ paths:
             application/vnd.api+json:
               schema:
                 type: object
-                required: [data]
+                required: [data, links, meta]
                 properties:
                   data:
                     type: array
@@ -1882,6 +2001,10 @@ paths:
                           properties:
                             attributes:
                               $ref: '#/components/schemas/AccountPipelineDefaultAttributes'
+                  links:
+                    $ref: '#/components/schemas/JsonApiLinks'
+                  meta:
+                    $ref: '#/components/schemas/JsonApiPaginationMeta'
 
   /api/account_pipeline_defaults/{kind}:
     patch:

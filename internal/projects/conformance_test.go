@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/dotdevlabs/loopctl/internal/schema"
@@ -154,5 +155,42 @@ func TestConformance_ViolationDetection_ForbiddenTopLevelKeys(t *testing.T) {
 	violations := schema.CheckRequest(req, endpoints)
 	if len(violations) == 0 {
 		t.Fatal("expected violations for forbidden top-level keys in projects create; got none")
+	}
+}
+
+func TestConformance_ProjectsListPaginates(t *testing.T) {
+	var requestCount int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&requestCount, 1)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		if r.URL.RawQuery == "" {
+			_, _ = fmt.Fprintf(w,
+				`{"data":[{"type":"projects","id":"p1","attributes":{"name":"Alpha","platform_id":"pf1","git_repo_url":""}}],"links":{"next":"%s/api/projects?page%%5Bnumber%%5D=2"}}`,
+				"http://"+r.Host)
+		} else {
+			_, _ = fmt.Fprint(w,
+				`{"data":[{"type":"projects","id":"p2","attributes":{"name":"Beta","platform_id":"pf1","git_repo_url":""}}],"links":{}}`)
+		}
+	}))
+	defer ts.Close()
+
+	var out strings.Builder
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+	cmd := listCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("projects list with pagination failed: %v", err)
+	}
+	if got := atomic.LoadInt32(&requestCount); got != 2 {
+		t.Errorf("expected 2 requests (2 pages); got %d", got)
+	}
+	result := out.String()
+	if !strings.Contains(result, "Alpha") {
+		t.Errorf("output missing Alpha from page 1:\n%s", result)
+	}
+	if !strings.Contains(result, "Beta") {
+		t.Errorf("output missing Beta from page 2:\n%s", result)
 	}
 }
