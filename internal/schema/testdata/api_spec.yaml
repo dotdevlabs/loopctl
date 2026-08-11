@@ -114,6 +114,77 @@ components:
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
 
+    PipelineStageTrigger:
+      type: object
+      properties:
+        timing:  { type: string, enum: [before_entry, after_entry, before_exit, after_exit] }
+        handler: { type: string, description: "Ruby constant of the handler class." }
+        config:  { type: object }
+
+    PipelineStage:
+      type: object
+      description: A single workflow stage as returned in pipeline responses.
+      properties:
+        id:                         { type: string }
+        stage_type:                 { type: string }
+        custom_stage_name:          { type: string, nullable: true }
+        gate:                       { type: string, enum: [automated, human] }
+        on_failure:                 { type: string, enum: [rework, block] }
+        max_rework_count:           { type: integer, nullable: true }
+        rework_to_position:         { type: integer, nullable: true }
+        position:                   { type: integer }
+        agent_id:                   { type: string, nullable: true }
+        environment_id:             { type: string, nullable: true }
+        advance_requirements:       { type: array, items: { type: object } }
+        advance_notice:             { type: string, nullable: true }
+        branch_conditions:          { type: array, items: { type: object } }
+        runs_in_container_override: { type: boolean, nullable: true }
+        prompt_sections:            { type: object }
+        stage_triggers:
+          type: array
+          items:
+            $ref: '#/components/schemas/PipelineStageTrigger'
+        name:         { type: string, nullable: true, description: "Deprecated: same as custom_stage_name." }
+        role:         { type: string, description: "Deprecated: always 'working'." }
+        instructions: { type: string, description: "Deprecated: same as prompt_sections.template." }
+
+    PipelineStageInput:
+      type: object
+      description: >-
+        Full stage attribute set for pipeline create/update. stage_type defaults to "custom".
+        For custom stages custom_stage_name (or legacy name) and a prompt template
+        (prompt_sections.template or legacy instructions) are required.
+      properties:
+        stage_type:                 { type: string, description: "Stage type name. Defaults to 'custom'." }
+        custom_stage_name:          { type: string }
+        prompt_sections:            { type: object }
+        gate:                       { type: string, enum: [automated, human] }
+        on_failure:                 { type: string, enum: [rework, block] }
+        max_rework_count:           { type: integer }
+        rework_to_position:         { type: integer }
+        position:                   { type: integer }
+        agent_id:                   { type: integer }
+        environment_id:             { type: integer }
+        advance_requirements:       { type: array, items: { type: object } }
+        advance_notice:             { type: string }
+        branch_conditions:
+          type: array
+          items:
+            type: object
+            properties:
+              field:         { type: string }
+              op:            { type: string, enum: [eq, ne, gt, lt, gte, lte, in, not_in] }
+              value:         {}
+              next_position: { type: integer }
+        runs_in_container_override: { type: boolean, nullable: true }
+        stage_triggers:
+          type: array
+          items:
+            $ref: '#/components/schemas/PipelineStageTrigger'
+        name:         { type: string, description: "Deprecated: use custom_stage_name." }
+        role:         { type: string, enum: [working], description: "Deprecated: use stage_type: 'custom'." }
+        instructions: { type: string, description: "Deprecated: use prompt_sections.template." }
+
     PipelineAttributes:
       type: object
       properties:
@@ -124,7 +195,10 @@ components:
         task_kind_id: { type: string }
         account_id: { type: string }
         stage_count: { type: integer }
-        stages: { type: array, items: { type: object } }
+        stages:
+          type: array
+          items:
+            $ref: '#/components/schemas/PipelineStage'
         created_at: { type: string, format: date-time }
         updated_at: { type: string, format: date-time }
 
@@ -138,7 +212,10 @@ components:
         task_kind_id: { type: string }
         account_id: { type: string }
         stage_count: { type: integer }
-        stages: { type: array, items: { type: object } }
+        stages:
+          type: array
+          items:
+            $ref: '#/components/schemas/PipelineStage'
 
     PipelineCloneResponseAttributes:
       type: object
@@ -609,8 +686,9 @@ paths:
                       description: Task kind name to associate with the pipeline
                     stages:
                       type: array
-                      items: { type: object }
-                      description: "Ordered workflow stages. Each: { name, role: 'working', instructions }"
+                      items:
+                        $ref: '#/components/schemas/PipelineStageInput'
+                      description: "Ordered workflow stages. Full attribute set; all fields optional except name/instructions for custom stages."
       responses:
         '201':
           description: Created pipeline
@@ -682,8 +760,9 @@ paths:
                     kind: { type: string }
                     stages:
                       type: array
-                      items: { type: object }
-                      description: "Ordered workflow stages. Replaces all existing. Send empty array to remove all."
+                      items:
+                        $ref: '#/components/schemas/PipelineStageInput'
+                      description: "Ordered workflow stages. Replaces all existing atomically. Send empty array to clear."
       responses:
         '200':
           description: Updated pipeline

@@ -15,10 +15,11 @@ import (
 
 // PipelineAttrs holds the attributes returned by /api/pipelines.
 type PipelineAttrs struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Kind        string `json:"kind"`
-	StageCount  int    `json:"stage_count"`
+	Name        string            `json:"name"`
+	Description string            `json:"description"`
+	Kind        string            `json:"kind"`
+	StageCount  int               `json:"stage_count"`
+	Stages      []json.RawMessage `json:"stages,omitempty"`
 }
 
 // Stage represents one step in a pipeline.
@@ -37,6 +38,7 @@ func NewCmd() *cobra.Command {
 	cmd.AddCommand(listCmd())
 	cmd.AddCommand(createCmd())
 	cmd.AddCommand(updateCmd())
+	cmd.AddCommand(stagesCmd())
 	return cmd
 }
 
