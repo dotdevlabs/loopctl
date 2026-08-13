@@ -591,6 +591,20 @@ loopctl tasks cancel <id> --dry-run
 
 ---
 
+#### tasks unblock
+
+Unblock a task that is blocked (e.g. due to `max_reworks_exceeded`). On success, prints a confirmation. With `--json`, emits `{"id":"...","status":"...","stage":"..."}`. Attempting to unblock a task that is not blocked surfaces the API's human-readable error.
+
+```bash
+loopctl tasks unblock <id>
+loopctl tasks unblock <id> --json
+loopctl tasks unblock <id> --dry-run
+```
+
+**API:** `POST /api/tasks/:task_id/unblock`
+
+---
+
 #### tasks watch
 
 Follow a task to a terminal state, streaming stage and activity changes as they occur. Exits with code 0 when the task reaches `completed` or `reviewed`; exits non-zero on `rejected`, container error, or timeout.
