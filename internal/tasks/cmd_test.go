@@ -1127,6 +1127,126 @@ func TestTasksCreateNoDependsOnOmitted(t *testing.T) {
 	}
 }
 
+func TestTasksUnblock(t *testing.T) {
+	var gotMethod, gotPath string
+	var gotBody []byte
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotBody, _ = io.ReadAll(r.Body)
+		if r.Header.Get("Authorization") != "Bearer test-token" {
+			t.Errorf("missing/wrong auth: %s", r.Header.Get("Authorization"))
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"id":1,"status":"open","stage":"implementing"}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "test-token", false, &out)
+
+	cmd := unblockCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	if err := cmd.RunE(cmd, []string{"t1"}); err != nil {
+		t.Fatalf("unblock failed: %v", err)
+	}
+	if gotMethod != http.MethodPost {
+		t.Errorf("expected POST; got %s", gotMethod)
+	}
+	if gotPath != "/api/tasks/t1/unblock" {
+		t.Errorf("expected /api/tasks/t1/unblock; got %s", gotPath)
+	}
+	if len(gotBody) != 0 {
+		t.Errorf("expected no request body; got: %s", gotBody)
+	}
+	if !strings.Contains(out.String(), "t1") {
+		t.Errorf("output missing task id:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "unblocked") {
+		t.Errorf("output missing 'unblocked':\n%s", out.String())
+	}
+}
+
+func TestTasksUnblockJSON(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"id":1,"status":"open","stage":"implementing"}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", true, &out)
+
+	cmd := unblockCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	if err := cmd.RunE(cmd, []string{"t1"}); err != nil {
+		t.Fatalf("unblock JSON failed: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, `"id"`) {
+		t.Errorf("expected 'id' field in JSON output:\n%s", got)
+	}
+	if !strings.Contains(got, `"t1"`) {
+		t.Errorf("expected task id in JSON output:\n%s", got)
+	}
+}
+
+func TestTasksUnblockError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = fmt.Fprint(w, `{"error":"task is not blocked"}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := unblockCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	err := cmd.RunE(cmd, []string{"t1"})
+	if err == nil {
+		t.Fatal("expected error for 422 response")
+	}
+	if !strings.Contains(err.Error(), "task is not blocked") {
+		t.Errorf("expected server error message; got: %v", err)
+	}
+}
+
+func TestTasksUnblockDryRun(t *testing.T) {
+	called := false
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	renderer := output.New(false, "", &out, io.Discard)
+	ctx := context.Background()
+	ctx = ctxutil.WithRenderer(ctx, renderer)
+	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{DryRun: true})
+
+	cmd := unblockCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	if err := cmd.RunE(cmd, []string{"t1"}); err != nil {
+		t.Fatalf("unblock dry-run failed: %v", err)
+	}
+	if called {
+		t.Error("dry-run should not make HTTP request")
+	}
+	if !strings.Contains(out.String(), "dry-run") {
+		t.Errorf("expected dry-run message; got: %s", out.String())
+	}
+}
+
 func TestTasksCreateWatch_Timeout(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/vnd.api+json")

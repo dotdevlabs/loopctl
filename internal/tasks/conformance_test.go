@@ -254,6 +254,27 @@ func TestConformance_TasksListPaginates(t *testing.T) {
 	}
 }
 
+func TestConformance_TasksUnblock(t *testing.T) {
+	endpoints := loadSchemaOrSkip(t)
+	var violations []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		violations = schema.CheckRequest(r, endpoints)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = fmt.Fprint(w, `{"id":1,"status":"open","stage":"implementing"}`)
+	}))
+	defer ts.Close()
+
+	ctx := makeCtx(t, ts.URL, "tok", false, io.Discard)
+	cmd := unblockCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(io.Discard)
+	_ = cmd.RunE(cmd, []string{"t1"})
+
+	if len(violations) != 0 {
+		t.Errorf("conformance violations for tasks unblock: %v", violations)
+	}
+}
+
 func TestConformance_TasksWatchUsesLinksself(t *testing.T) {
 	var requestedPaths []string
 	var taskCallIdx int32

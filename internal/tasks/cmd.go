@@ -47,6 +47,13 @@ type CancellationResult struct {
 	Stage  string `json:"stage"`
 }
 
+// UnblockResult is the flat JSON response from the unblock endpoint.
+type UnblockResult struct {
+	ID     int    `json:"id"`
+	Stage  string `json:"stage"`
+	Status string `json:"status"`
+}
+
 // NewCmd returns the "tasks" parent command with all verb subcommands.
 func NewCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -59,6 +66,7 @@ func NewCmd() *cobra.Command {
 	cmd.AddCommand(updateCmd())
 	cmd.AddCommand(watchCmd())
 	cmd.AddCommand(cancelCmd())
+	cmd.AddCommand(unblockCmd())
 	return cmd
 }
 
@@ -312,6 +320,38 @@ func cancelCmd() *cobra.Command {
 				return output.JSONTo(out, map[string]string{"id": args[0], "status": status, "stage": result.Stage})
 			}
 			_, _ = fmt.Fprintf(out, "task %s cancelled\n", args[0])
+			return nil
+		},
+	}
+}
+
+func unblockCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "unblock <id>",
+		Short: "Unblock a blocked task",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+
+			if ctxutil.GlobalFlagsFrom(ctx).DryRun {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(),
+					"dry-run: would POST /api/tasks/%s/unblock\n", args[0])
+				return nil
+			}
+
+			activeCtx := ctxutil.ActiveContextFrom(ctx)
+			out := cmd.OutOrStdout()
+
+			path := "/api/tasks/" + url.PathEscape(args[0]) + "/unblock"
+			result, err := apiclient.PostJSONFlatErr[UnblockResult](ctx, activeCtx, path, nil)
+			if err != nil {
+				return err
+			}
+
+			if ctxutil.GlobalFlagsFrom(ctx).JSON {
+				return output.JSONTo(out, map[string]string{"id": args[0], "status": result.Status, "stage": result.Stage})
+			}
+			_, _ = fmt.Fprintf(out, "task %s unblocked\n", args[0])
 			return nil
 		},
 	}

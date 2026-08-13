@@ -507,6 +507,71 @@ func PostJSON[T any](ctx context.Context, activeCtx *config.Context, path string
 	)
 }
 
+// PostJSONFlatErr POSTs body to path and decodes the flat JSON response body directly into T.
+// Pass nil body to send a request with no body.
+// On non-2xx it extracts the top-level error/message/errors field from a flat JSON body.
+func PostJSONFlatErr[T any](ctx context.Context, activeCtx *config.Context, path string, body any) (T, error) {
+	var zero T
+	var reqBody []byte
+	if body != nil {
+		var err error
+		reqBody, err = json.Marshal(body)
+		if err != nil {
+			return zero, fmt.Errorf("encoding request body: %w", err)
+		}
+	}
+
+	url := strings.TrimRight(activeCtx.BaseURL, "/") + path
+	var bodyReader io.Reader
+	if reqBody != nil {
+		bodyReader = bytes.NewReader(reqBody)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bodyReader)
+	if err != nil {
+		return zero, fmt.Errorf("building request: %w", err)
+	}
+	if reqBody != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "Bearer "+activeCtx.Token)
+	req.Header.Set("User-Agent", browserUserAgent)
+
+	resp, err := http.DefaultClient.Do(req) //#nosec G107 -- URL is constructed from trusted config
+	if err != nil {
+		if ctx.Err() != nil {
+			return zero, ctx.Err()
+		}
+		return zero, fmt.Errorf("request failed: %w", err)
+	}
+
+	respBody, readErr := io.ReadAll(resp.Body)
+	if closeErr := resp.Body.Close(); closeErr != nil {
+		return zero, fmt.Errorf("closing response body: %w", closeErr)
+	}
+	if readErr != nil {
+		return zero, fmt.Errorf("reading response: %w", readErr)
+	}
+
+	logVerbose(verboseFrom(ctx), http.MethodPost, url, resp.StatusCode, respBody)
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		var result T
+		if len(respBody) > 0 {
+			if err := json.Unmarshal(respBody, &result); err != nil {
+				return zero, fmt.Errorf("decoding response: %w", err)
+			}
+		}
+		return result, nil
+	}
+
+	return zero, clierror.New(
+		statusToCode(resp.StatusCode),
+		extractAPIError(respBody, resp.StatusCode),
+		"",
+	)
+}
+
 // PostJSONBodyJSONAPIResponse POSTs a JSON body to path and decodes the JSON:API single-resource response.
 // Unlike PostJSONAPISingle, it sets Content-Type: application/json (not application/vnd.api+json).
 // On non-2xx it extracts JSON:API errors[].detail/title and returns a CLIError.
