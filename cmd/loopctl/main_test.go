@@ -17,6 +17,7 @@ import (
 	"github.com/dotdevlabs/ctlkit/pkg/version"
 	"github.com/spf13/cobra"
 
+	"github.com/dotdevlabs/loopctl/internal/onboard"
 	"github.com/dotdevlabs/loopctl/internal/pipelines"
 	"github.com/dotdevlabs/loopctl/internal/platforms"
 	"github.com/dotdevlabs/loopctl/internal/projects"
@@ -33,6 +34,7 @@ func buildRoot() *cobra.Command {
 		Short:   "CLI for managing LoopControl",
 		Version: ver,
 		Commands: []*cobra.Command{
+			onboard.NewCmd(),
 			platforms.NewCmd(),
 			pipelines.NewCmd(),
 			projects.NewCmd(),
@@ -68,7 +70,7 @@ func TestRootHasResourceCommands(t *testing.T) {
 	for _, sub := range cmd.Commands() {
 		names[sub.Name()] = true
 	}
-	for _, want := range []string{"projects", "tasks", "task-kinds", "pipelines", "platforms", "schema"} {
+	for _, want := range []string{"onboard", "projects", "tasks", "task-kinds", "pipelines", "platforms", "schema"} {
 		if !names[want] {
 			t.Errorf("missing subcommand %q", want)
 		}

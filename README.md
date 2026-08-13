@@ -29,6 +29,9 @@ go install github.com/dotdevlabs/loopctl/cmd/loopctl@latest
 loopctl authenticates via bearer token. Provide credentials using a named context or environment variables:
 
 ```bash
+# Bootstrap a brand-new machine in one step (no prior config required)
+loopctl onboard --email you@example.com
+
 # Environment variables
 export LOOPCTL_TOKEN=your-api-token
 export LOOPCTL_CONTEXT=production   # optional: named context
@@ -640,6 +643,47 @@ loopctl ai           # markdown output
 loopctl ai --json    # structured JSON for agent ingestion
 ```
 
+### onboard
+
+Register a new machine and persist API credentials in a single step. Does not require any prior configuration. Calls `POST /api/registrations` (unauthenticated), then writes the returned token into `~/.config/atmt/loopcontrol.yaml` under the specified context name.
+
+```bash
+# Minimal — register with just an email
+loopctl onboard --email you@example.com
+
+# Custom context name (default: "default")
+loopctl onboard --email you@example.com --name production
+
+# Custom token label and account name
+loopctl onboard --email you@example.com --token-name "ci-runner" --account-name "Acme Corp"
+
+# Point at a non-production instance
+loopctl onboard --email you@example.com --url https://staging.loopcontrol.ai
+
+# Machine-stable JSON output
+loopctl onboard --email you@example.com --json
+```
+
+**Flags:**
+
+| Flag | Required | Default | Description |
+|------|----------|---------|-------------|
+| `--email` | yes | | Email address for the new account |
+| `--name` | no | `"default"` | Context name to store credentials under |
+| `--url` | no | `"https://app.loopcontrol.ai"` | LoopControl API base URL |
+| `--token-name` | no | | Label for the generated API token |
+| `--account-name` | no | | Account name |
+
+On success, prints `Registered. Context "<name>" saved.` With `--json`, emits:
+
+```json
+{"context":"default","token":"<token>","token_label":"<label>"}
+```
+
+If the config already has a current context, it is preserved — only the new named context is added. If no current context existed, the new context becomes the current context.
+
+**API:** `POST /api/registrations` (no authentication required)
+
 ### auth
 
 Manage API authentication. Provided by ctlkit.
@@ -673,6 +717,22 @@ loopctl version --json
 ---
 
 ## Common Workflows
+
+### Bootstrap a new machine
+
+```bash
+# Register and configure credentials in one step
+loopctl onboard --email you@example.com
+
+# Verify the stored token works
+loopctl projects list
+
+# Bootstrap a second named context (e.g. for a staging environment)
+loopctl onboard --email you@example.com \
+  --url https://staging.loopcontrol.ai \
+  --name staging
+loopctl context use staging
+```
 
 ### Create a task and follow it to completion
 

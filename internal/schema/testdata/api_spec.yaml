@@ -347,6 +347,7 @@ components:
       type: object
       properties:
         title: { type: string }
+        description: { type: string }
         stage: { type: string }
 
     RecordingAttributes:
@@ -387,7 +388,7 @@ components:
           type: string
           enum: [pending, in_progress, completed]
         position: { type: integer }
-        todo_type: { type: string }
+        stage_name: { type: string }
         started_at: { type: string, format: date-time }
         completed_at: { type: string, format: date-time }
         created_at: { type: string, format: date-time }
@@ -400,7 +401,7 @@ components:
         active_form: { type: string }
         status: { type: string }
         position: { type: integer }
-        todo_type: { type: string }
+        stage_name: { type: string }
 
     TodoUpdateResponseAttributes:
       type: object
@@ -479,6 +480,15 @@ components:
           type: string
           description: Latest applied migration version from schema_migrations.
 
+    RegistrationAttributes:
+      type: object
+      properties:
+        account_name:   { type: string }
+        account_slug:   { type: string }
+        owner_email:    { type: string, format: email }
+        api_token:      { type: string, description: "Plaintext bearer token. Shown exactly once." }
+        api_token_name: { type: string }
+
 paths:
   /api/status:
     get:
@@ -501,6 +511,54 @@ paths:
                         properties:
                           attributes:
                             $ref: '#/components/schemas/StatusAttributes'
+
+  /api/registrations:
+    post:
+      operationId: post-api-registrations
+      summary: Creates a new account, owner user, and API token. No authentication required.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                registration:
+                  type: object
+                  required: [email_address]
+                  properties:
+                    email_address:  { type: string, format: email }
+                    api_token_name: { type: string }
+                    account_name:   { type: string }
+      responses:
+        '201':
+          description: Account and token created
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/JsonApiResource'
+                      - type: object
+                        properties:
+                          attributes:
+                            $ref: '#/components/schemas/RegistrationAttributes'
+        '422':
+          description: Validation failure (blank/duplicate/invalid email)
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
+        '429':
+          description: Rate limit exceeded
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
 
   /api/agents:
     get:
@@ -1155,7 +1213,7 @@ paths:
                 $ref: '#/components/schemas/JsonApiErrors'
     patch:
       operationId: patch-api-task
-      summary: Updates a task's implementation/verification criteria or token usage counts.
+      summary: Updates a task's title, description, implementation/verification criteria, or token usage counts.
       parameters:
         - { name: id, in: path, required: true, schema: { type: string } }
       requestBody:
@@ -1167,6 +1225,8 @@ paths:
                 task:
                   type: object
                   properties:
+                    title: { type: string }
+                    description: { type: string }
                     implementation_criteria: { type: string }
                     verification_criteria: { type: string }
                     input_tokens: { type: integer }
@@ -1188,7 +1248,7 @@ paths:
                           attributes:
                             $ref: '#/components/schemas/TaskUpdateResponseAttributes'
         '422':
-          description: Validation failed
+          description: Validation failed or title/description edited after task entered working state
           content:
             application/vnd.api+json:
               schema:
@@ -1550,7 +1610,7 @@ paths:
       summary: Lists todos for a task, ordered chronologically.
       parameters:
         - { name: task_id, in: path, required: true, schema: { type: string } }
-        - { name: todo_type, in: query, schema: { type: string } }
+        - { name: stage_name, in: query, schema: { type: string } }
         - { name: "page[number]", in: query, schema: { type: integer, default: 1 } }
         - { name: "page[size]", in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
       responses:
@@ -1588,7 +1648,7 @@ paths:
               properties:
                 todo:
                   type: object
-                  description: "Single todo object: { content, active_form, status, position, todo_type }"
+                  description: "Single todo object: { content, active_form, status, position, stage_name }"
                 todos:
                   type: array
                   items: { type: object }
@@ -1793,6 +1853,26 @@ paths:
                   status: { type: string }
         '422':
           description: Restart failed
+
+  /api/tasks/{task_id}/unblock:
+    post:
+      operationId: post-api-task-unblock
+      summary: Unblocks a task blocked with max_reworks_exceeded, resets the rework counter, and resumes the task at the implementing stage.
+      parameters:
+        - { name: task_id, in: path, required: true, schema: { type: string } }
+      responses:
+        '200':
+          description: Unblock result. Not JSON:API format.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  id: { type: integer }
+                  stage: { type: string }
+                  status: { type: string }
+        '422':
+          description: Unblock failed (task not blocked, wrong blocked_reason, or no rework target)
 
   /api/planning_sessions/{planning_session_id}/drafts:
     get:
