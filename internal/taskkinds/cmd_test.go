@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/dotdevlabs/ctlkit/pkg/config"
@@ -658,5 +659,158 @@ func TestTaskKindsClearDefaultPipelineError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "task kind not found") {
 		t.Errorf("expected error detail in message; got: %v", err)
+	}
+}
+
+func TestListDefaultPipelines(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/account_pipeline_defaults" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if r.Method != http.MethodGet {
+			t.Errorf("unexpected method: %s", r.Method)
+		}
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":[{"type":"account_pipeline_defaults","id":"apd1","attributes":{"kind":"feature","pipeline_id":"42"}}]}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "test-token", false, &out)
+
+	cmd := listDefaultPipelinesCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("list-default-pipelines failed: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "apd1") {
+		t.Errorf("output missing id:\n%s", got)
+	}
+	if !strings.Contains(got, "feature") {
+		t.Errorf("output missing kind:\n%s", got)
+	}
+	if !strings.Contains(got, "42") {
+		t.Errorf("output missing pipeline_id:\n%s", got)
+	}
+}
+
+func TestListDefaultPipelinesJSON(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":[{"type":"account_pipeline_defaults","id":"apd1","attributes":{"kind":"feature","pipeline_id":"42"}}]}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", true, &out)
+
+	cmd := listDefaultPipelinesCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("list-default-pipelines JSON failed: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, `"data"`) {
+		t.Errorf("expected JSON collection envelope; got:\n%s", got)
+	}
+	if !strings.Contains(got, "feature") {
+		t.Errorf("expected kind in JSON output; got:\n%s", got)
+	}
+}
+
+func TestListDefaultPipelinesError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = fmt.Fprint(w, `{"errors":[{"status":"500","detail":"internal server error"}]}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := listDefaultPipelinesCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	err := cmd.RunE(cmd, nil)
+	if err == nil {
+		t.Fatal("expected error on 500")
+	}
+	if !strings.Contains(err.Error(), "internal server error") {
+		t.Errorf("expected error detail in message; got: %v", err)
+	}
+}
+
+func TestListDefaultPipelinesVerbose(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":[{"type":"account_pipeline_defaults","id":"apd1","attributes":{"kind":"feature","pipeline_id":"42"}}]}`)
+	}))
+	defer ts.Close()
+
+	var out, errBuf bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+	ctx = apiclient.WithVerbose(ctx, &errBuf)
+
+	cmd := listDefaultPipelinesCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("list-default-pipelines verbose failed: %v", err)
+	}
+
+	verbose := errBuf.String()
+	if !strings.Contains(verbose, "GET") {
+		t.Errorf("expected GET in verbose output; got: %q", verbose)
+	}
+	if !strings.Contains(verbose, "/api/account_pipeline_defaults") {
+		t.Errorf("expected /api/account_pipeline_defaults in verbose output; got: %q", verbose)
+	}
+	if !strings.Contains(verbose, "200") {
+		t.Errorf("expected status 200 in verbose output; got: %q", verbose)
+	}
+}
+
+func TestListDefaultPipelinesPaginates(t *testing.T) {
+	var requestCount int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&requestCount, 1)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		if r.URL.RawQuery == "" {
+			_, _ = fmt.Fprintf(w,
+				`{"data":[{"type":"account_pipeline_defaults","id":"apd1","attributes":{"kind":"feature","pipeline_id":"1"}}],"links":{"next":"%s/api/account_pipeline_defaults?page%%5Bnumber%%5D=2"}}`,
+				"http://"+r.Host)
+		} else {
+			_, _ = fmt.Fprint(w,
+				`{"data":[{"type":"account_pipeline_defaults","id":"apd2","attributes":{"kind":"bugfix","pipeline_id":"2"}}],"links":{}}`)
+		}
+	}))
+	defer ts.Close()
+
+	var out strings.Builder
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+	cmd := listDefaultPipelinesCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("list-default-pipelines pagination failed: %v", err)
+	}
+	if got := atomic.LoadInt32(&requestCount); got != 2 {
+		t.Errorf("expected 2 requests (2 pages); got %d", got)
+	}
+	result := out.String()
+	if !strings.Contains(result, "feature") {
+		t.Errorf("output missing feature from page 1:\n%s", result)
+	}
+	if !strings.Contains(result, "bugfix") {
+		t.Errorf("output missing bugfix from page 2:\n%s", result)
 	}
 }

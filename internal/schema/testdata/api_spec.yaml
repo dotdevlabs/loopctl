@@ -551,9 +551,9 @@ components:
         api_token_name: { type: string }
 
 paths:
-  /api/status:
+  /status:
     get:
-      operationId: get-api-status
+      operationId: get-status
       summary: Returns application version and database migration state. No authentication required.
       security: []
       responses:

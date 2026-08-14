@@ -34,6 +34,7 @@ func NewCmd() *cobra.Command {
 	}
 	cmd.AddCommand(listCmd())
 	cmd.AddCommand(createCmd())
+	cmd.AddCommand(listDefaultPipelinesCmd())
 	cmd.AddCommand(setDefaultPipelineCmd())
 	cmd.AddCommand(clearDefaultPipelineCmd())
 	return cmd
@@ -113,6 +114,37 @@ func createCmd() *cobra.Command {
 	cmd.Flags().StringVar(&name, "name", "", "Identifier/slug for the task kind")
 	_ = cmd.MarkFlagRequired("name")
 	return cmd
+}
+
+// listDefaultPipelinesCmd targets GET /api/account_pipeline_defaults per the spec.
+func listDefaultPipelinesCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "list-default-pipelines",
+		Short: "List account-level default pipelines by task kind",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			ctx := cmd.Context()
+			activeCtx := ctxutil.ActiveContextFrom(ctx)
+			r := ctxutil.RendererFrom(ctx)
+
+			col, err := apiclient.GetJSONAPICollectionAllPages[AccountPipelineDefaultAttrs](
+				ctx, activeCtx, "/api/account_pipeline_defaults",
+			)
+			if err != nil {
+				return err
+			}
+
+			cols := []output.Column{
+				{Header: "ID"},
+				{Header: "KIND"},
+				{Header: "PIPELINE_ID"},
+			}
+			rows := make([][]string, len(col.Data))
+			for i, d := range col.Data {
+				rows[i] = []string{d.ID, d.Attributes.Kind, d.Attributes.PipelineID}
+			}
+			return r.Render(cols, rows, col)
+		},
+	}
 }
 
 // setDefaultPipelineCmd targets PATCH /api/account_pipeline_defaults/{kind} per the spec.
