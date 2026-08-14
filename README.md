@@ -631,6 +631,38 @@ loopctl tasks watch <id> --json
 
 ---
 
+### topup
+
+Get a Stripe hosted-checkout link to fund your LoopControl account. When the account balance is insufficient, the API returns HTTP 402 with the available payment products. `loopctl topup` surfaces the checkout link for the chosen product so you can complete payment in a browser.
+
+```bash
+# Print the checkout link for the default top-up package
+loopctl topup
+
+# Choose a specific product
+loopctl topup --product trial
+loopctl topup --product subscription
+
+# Machine-stable JSON output (for scripting or agents)
+loopctl topup --json
+```
+
+**Flags:**
+
+| Flag | Default | Description |
+|------|---------|-------------|
+| `--product` | `topup` | Product to fund: `trial` (5-hour trial), `topup` (top-up package), or `subscription` (subscription prepay) |
+
+On success, prints the Stripe checkout URL. With `--json`, emits:
+
+```json
+{"product": "topup", "rail": "human_link", "url": "https://checkout.stripe.com/..."}
+```
+
+**API:** `POST /api/topup`
+
+---
+
 ### schema
 
 Inspect the API's published contract.

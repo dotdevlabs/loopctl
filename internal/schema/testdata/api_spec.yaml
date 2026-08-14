@@ -456,6 +456,40 @@ components:
       properties:
         hours: { type: integer }
         price_cents: { type: integer }
+        one_time: { type: boolean }
+
+    FundingEnvelopeRail:
+      type: object
+      properties:
+        method: { type: string }
+        href:   { type: string }
+        params: { type: object }
+
+    FundingEnvelopeProduct:
+      type: object
+      properties:
+        id:          { type: string }
+        kind:        { type: string }
+        hours:       { type: integer, nullable: true }
+        price_cents: { type: integer, nullable: true }
+        one_time:    { type: boolean, nullable: true }
+        available:   { type: boolean }
+        payment_rails:
+          type: object
+          properties:
+            human_link:
+              $ref: '#/components/schemas/FundingEnvelopeRail'
+
+    FundingEnvelopeMeta:
+      type: object
+      properties:
+        enabled_rails:
+          type: array
+          items: { type: string }
+        fundable_products:
+          type: array
+          items:
+            $ref: '#/components/schemas/FundingEnvelopeProduct'
 
     TopupCheckoutAttributes:
       type: object
@@ -2259,7 +2293,7 @@ paths:
               properties:
                 package_id:
                   type: string
-                  description: "Top-up package identifier. Valid values: 10h, 50h, 100h."
+                  description: "Top-up package identifier. Valid values: trial_5h (one-time per account), 10h, 50h, 100h."
       responses:
         '201':
           description: Checkout session created.
@@ -2278,6 +2312,38 @@ paths:
                             $ref: '#/components/schemas/TopupCheckoutAttributes'
         '422':
           description: Invalid package_id supplied.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
+
+  /api/billing/funding_envelope:
+    get:
+      operationId: get-api-billing-funding-envelope
+      summary: >-
+        Returns HTTP 402 with a machine-readable menu of fundable products and
+        enabled payment rails. Callers use this to decide what to buy and how
+        to pay when the account has insufficient compute balance.
+      responses:
+        '402':
+          description: Payment required — returns fundable products and payment rails
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                properties:
+                  errors:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        status: { type: string }
+                        title:  { type: string }
+                        detail: { type: string }
+                  meta:
+                    $ref: '#/components/schemas/FundingEnvelopeMeta'
+        '401':
+          description: Missing or invalid bearer token
           content:
             application/vnd.api+json:
               schema:
