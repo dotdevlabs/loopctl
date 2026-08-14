@@ -136,11 +136,7 @@ func GetJSONAPISingleFull[T any](ctx context.Context, activeCtx *config.Context,
 		return SingleResult[T]{Resource: res, SelfLink: doc.Data.Links.Self}, nil
 	}
 
-	return SingleResult[T]{}, clierror.New(
-		statusToCode(resp.StatusCode),
-		extractJSONAPIOrFlatError(respBody, resp.StatusCode),
-		"",
-	)
+	return SingleResult[T]{}, errorRespJSONAPI(respBody, resp.StatusCode)
 }
 
 // rawCollectionDoc is the wire-format wrapper for a JSON:API collection response.
@@ -211,11 +207,7 @@ func fetchJSONAPICollectionPage[T any](ctx context.Context, token, fullURL strin
 		return col, nil
 	}
 
-	return httpclient.Collection[T]{}, clierror.New(
-		statusToCode(resp.StatusCode),
-		extractJSONAPIOrFlatError(respBody, resp.StatusCode),
-		"",
-	)
+	return httpclient.Collection[T]{}, errorRespJSONAPI(respBody, resp.StatusCode)
 }
 
 // GetJSONAPICollection GETs path and decodes the JSON:API collection response.
@@ -321,11 +313,7 @@ func GetEnvelope[T any](ctx context.Context, activeCtx *config.Context, path str
 		return env, nil
 	}
 
-	return httpclient.Envelope[T]{}, clierror.New(
-		statusToCode(resp.StatusCode),
-		extractAPIError(respBody, resp.StatusCode),
-		"",
-	)
+	return httpclient.Envelope[T]{}, errorRespFlat(respBody, resp.StatusCode)
 }
 
 // GetJSON GETs path and decodes the flat JSON response body directly into T.
@@ -369,11 +357,7 @@ func GetJSON[T any](ctx context.Context, activeCtx *config.Context, path string)
 		return result, nil
 	}
 
-	return zero, clierror.New(
-		statusToCode(resp.StatusCode),
-		extractAPIError(respBody, resp.StatusCode),
-		"",
-	)
+	return zero, errorRespFlat(respBody, resp.StatusCode)
 }
 
 // PostJSONAPISingle POSTs a JSON body to path and decodes the JSON:API single-resource response.
@@ -435,11 +419,7 @@ func PostJSONAPISingle[T any](ctx context.Context, activeCtx *config.Context, pa
 		return res, nil
 	}
 
-	return httpclient.Resource[T]{}, clierror.New(
-		statusToCode(resp.StatusCode),
-		extractJSONAPIOrFlatError(respBody, resp.StatusCode),
-		"",
-	)
+	return httpclient.Resource[T]{}, errorRespJSONAPI(respBody, resp.StatusCode)
 }
 
 // PostJSON POSTs body to path and decodes the flat JSON response body directly into T.
@@ -500,11 +480,7 @@ func PostJSON[T any](ctx context.Context, activeCtx *config.Context, path string
 		return result, nil
 	}
 
-	return zero, clierror.New(
-		statusToCode(resp.StatusCode),
-		extractJSONAPIOrFlatError(respBody, resp.StatusCode),
-		"",
-	)
+	return zero, errorRespJSONAPI(respBody, resp.StatusCode)
 }
 
 // PostJSONFlatErr POSTs body to path and decodes the flat JSON response body directly into T.
@@ -565,11 +541,7 @@ func PostJSONFlatErr[T any](ctx context.Context, activeCtx *config.Context, path
 		return result, nil
 	}
 
-	return zero, clierror.New(
-		statusToCode(resp.StatusCode),
-		extractAPIError(respBody, resp.StatusCode),
-		"",
-	)
+	return zero, errorRespFlat(respBody, resp.StatusCode)
 }
 
 // PostJSONBodyJSONAPIResponse POSTs a JSON body to path and decodes the JSON:API single-resource response.
@@ -632,11 +604,7 @@ func PostJSONBodyJSONAPIResponse[T any](ctx context.Context, activeCtx *config.C
 		return res, nil
 	}
 
-	return httpclient.Resource[T]{}, clierror.New(
-		statusToCode(resp.StatusCode),
-		extractJSONAPIOrFlatError(respBody, resp.StatusCode),
-		"",
-	)
+	return httpclient.Resource[T]{}, errorRespJSONAPI(respBody, resp.StatusCode)
 }
 
 // PatchJSONBodyJSONAPIResponse PATCHes a JSON body to path and decodes the JSON:API single-resource response.
@@ -699,11 +667,7 @@ func PatchJSONBodyJSONAPIResponse[T any](ctx context.Context, activeCtx *config.
 		return res, nil
 	}
 
-	return httpclient.Resource[T]{}, clierror.New(
-		statusToCode(resp.StatusCode),
-		extractJSONAPIOrFlatError(respBody, resp.StatusCode),
-		"",
-	)
+	return httpclient.Resource[T]{}, errorRespJSONAPI(respBody, resp.StatusCode)
 }
 
 // PostEnvelope POSTs a JSON body to path and decodes a successful response into
@@ -753,11 +717,7 @@ func PostEnvelope[T any](ctx context.Context, activeCtx *config.Context, path st
 		return env, nil
 	}
 
-	return httpclient.Envelope[T]{}, clierror.New(
-		statusToCode(resp.StatusCode),
-		extractAPIError(respBody, resp.StatusCode),
-		"",
-	)
+	return httpclient.Envelope[T]{}, errorRespFlat(respBody, resp.StatusCode)
 }
 
 // PatchJSONAPISingle PATCHes path with a JSON body and decodes the JSON:API single-resource response.
@@ -819,11 +779,7 @@ func PatchJSONAPISingle[T any](ctx context.Context, activeCtx *config.Context, p
 		return res, nil
 	}
 
-	return httpclient.Resource[T]{}, clierror.New(
-		statusToCode(resp.StatusCode),
-		extractJSONAPIOrFlatError(respBody, resp.StatusCode),
-		"",
-	)
+	return httpclient.Resource[T]{}, errorRespJSONAPI(respBody, resp.StatusCode)
 }
 
 type jsonAPIErrEntry struct {
@@ -925,11 +881,7 @@ func DeleteJSONAPI(ctx context.Context, activeCtx *config.Context, path string) 
 		return nil
 	}
 
-	return clierror.New(
-		statusToCode(resp.StatusCode),
-		extractJSONAPIOrFlatError(respBody, resp.StatusCode),
-		"",
-	)
+	return errorRespJSONAPI(respBody, resp.StatusCode)
 }
 
 func statusToCode(status int) clierror.ErrorCode {

@@ -19,6 +19,7 @@ import (
 	"github.com/dotdevlabs/loopctl/internal/schema"
 	"github.com/dotdevlabs/loopctl/internal/taskkinds"
 	"github.com/dotdevlabs/loopctl/internal/tasks"
+	"github.com/dotdevlabs/loopctl/internal/topup"
 )
 
 func main() {
@@ -37,6 +38,7 @@ func main() {
 			schema.NewCmd(),
 			tasks.NewCmd(),
 			taskkinds.NewCmd(),
+			topup.NewCmd(),
 		},
 		Workflows: wfs,
 	})
