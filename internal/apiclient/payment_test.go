@@ -181,3 +181,102 @@ func TestDeleteJSONAPI402(t *testing.T) {
 		t.Fatalf("expected *PaymentRequiredError; got %T: %v", err, err)
 	}
 }
+
+const x402Body402 = `{
+	"rails": ["x402", "human_link"],
+	"products": [
+		{"key": "topup", "label": "Top-up package", "rails": {
+			"x402": {
+				"url": "",
+				"amount": "1000000",
+				"recipient": "0xRecipient",
+				"token": "0xToken",
+				"chain_id": 42161,
+				"deadline": 9999999999,
+				"nonce": "0xdeadbeef"
+			},
+			"human_link": {"url": "https://checkout.stripe.com/topup"}
+		}}
+	]
+}`
+
+const l402Body402 = `{
+	"rails": ["l402"],
+	"products": [
+		{"key": "topup", "label": "Top-up package", "rails": {
+			"l402": {
+				"url": "",
+				"macaroon": "dGVzdG1hY2Fyb29u",
+				"invoice": "lnbc100n1..."
+			}
+		}}
+	]
+}`
+
+func TestParse402X402Rail(t *testing.T) {
+	e := parse402([]byte(x402Body402))
+	if e == nil {
+		t.Fatal("expected non-nil PaymentRequiredError")
+	}
+	if len(e.Info.Rails) != 2 {
+		t.Fatalf("expected 2 rails; got %d", len(e.Info.Rails))
+	}
+	if e.Info.Rails[0] != "x402" {
+		t.Errorf("expected first rail=x402; got %q", e.Info.Rails[0])
+	}
+	ri, ok := e.Info.Products[0].Rails["x402"]
+	if !ok {
+		t.Fatal("expected x402 rail on product")
+	}
+	if ri.Amount != "1000000" {
+		t.Errorf("expected Amount=1000000; got %q", ri.Amount)
+	}
+	if ri.Recipient != "0xRecipient" {
+		t.Errorf("expected Recipient=0xRecipient; got %q", ri.Recipient)
+	}
+	if ri.Token != "0xToken" {
+		t.Errorf("expected Token=0xToken; got %q", ri.Token)
+	}
+	if ri.ChainID != 42161 {
+		t.Errorf("expected ChainID=42161; got %d", ri.ChainID)
+	}
+	if ri.Deadline != 9999999999 {
+		t.Errorf("expected Deadline=9999999999; got %d", ri.Deadline)
+	}
+	if ri.Nonce != "0xdeadbeef" {
+		t.Errorf("expected Nonce=0xdeadbeef; got %q", ri.Nonce)
+	}
+}
+
+func TestParse402L402Rail(t *testing.T) {
+	e := parse402([]byte(l402Body402))
+	if e == nil {
+		t.Fatal("expected non-nil PaymentRequiredError")
+	}
+	ri, ok := e.Info.Products[0].Rails["l402"]
+	if !ok {
+		t.Fatal("expected l402 rail on product")
+	}
+	if ri.Macaroon != "dGVzdG1hY2Fyb29u" {
+		t.Errorf("expected Macaroon=dGVzdG1hY2Fyb29u; got %q", ri.Macaroon)
+	}
+	if ri.Invoice != "lnbc100n1..." {
+		t.Errorf("expected Invoice=lnbc100n1...; got %q", ri.Invoice)
+	}
+}
+
+func TestRailInfoBackwardCompatible(t *testing.T) {
+	// Original human_link-only body should still decode correctly with new struct.
+	e := parse402([]byte(fullBody402))
+	if e == nil {
+		t.Fatal("expected non-nil PaymentRequiredError")
+	}
+	ri := e.Info.Products[0].Rails["human_link"]
+	if ri.URL != "https://checkout.stripe.com/trial" {
+		t.Errorf("expected trial URL; got %q", ri.URL)
+	}
+	// New fields should be zero-valued.
+	if ri.Amount != "" || ri.Macaroon != "" || ri.ChainID != 0 {
+		t.Error("expected new fields to be zero-valued on human_link rail")
+	}
+}

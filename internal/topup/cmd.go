@@ -13,6 +13,7 @@ import (
 	"github.com/dotdevlabs/ctlkit/pkg/ctxutil"
 
 	"github.com/dotdevlabs/loopctl/internal/apiclient"
+	"github.com/dotdevlabs/loopctl/internal/wallet"
 )
 
 const defaultTopupEndpoint = "/api/topup"
@@ -39,9 +40,17 @@ func (HumanLinkPayer) Pay(_ context.Context, product string, info apiclient.Fund
 	return fmt.Errorf("product %q not found in funding info", product)
 }
 
-// NewCmd returns the "topup" command with HumanLinkPayer wired in.
+// NewCmd returns the "topup" command with wallet-aware payer selection.
 func NewCmd() *cobra.Command {
-	return newCmdWithPayer(HumanLinkPayer{})
+	wc := wallet.Load()
+	rails := []RailPayer{
+		NewX402Payer(defaultTopupEndpoint, wc.Arbitrum),
+		NewL402Payer(defaultTopupEndpoint, wc.Lightning),
+	}
+	return newCmdWithPayer(SelectingPayer{
+		Rails:    rails,
+		Fallback: HumanLinkPayer{},
+	})
 }
 
 // newCmdWithPayer is the testable constructor; accepts an injected payer.
