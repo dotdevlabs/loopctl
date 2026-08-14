@@ -465,6 +465,29 @@ components:
         href:   { type: string }
         params: { type: object }
 
+    X402PaymentRequirements:
+      type: object
+      properties:
+        method:            { type: string }
+        href:              { type: string }
+        params:            { type: object }
+        scheme:            { type: string }
+        network:           { type: string }
+        maxAmountRequired: { type: string }
+        payTo:             { type: string }
+        asset:             { type: string }
+        x402Version:       { type: integer }
+
+    L402PaymentRequirements:
+      type: object
+      properties:
+        method:       { type: string }
+        href:         { type: string }
+        params:       { type: object }
+        invoice:      { type: string, description: "BOLT11 Lightning invoice" }
+        macaroon:     { type: string, description: "Base64-encoded L402 macaroon" }
+        payment_hash: { type: string, description: "Hex payment hash (SHA256 of preimage)" }
+
     FundingEnvelopeProduct:
       type: object
       properties:
@@ -479,6 +502,10 @@ components:
           properties:
             human_link:
               $ref: '#/components/schemas/FundingEnvelopeRail'
+            x402:
+              $ref: '#/components/schemas/X402PaymentRequirements'
+            lightning:
+              $ref: '#/components/schemas/L402PaymentRequirements'
 
     FundingEnvelopeMeta:
       type: object
@@ -2316,6 +2343,182 @@ paths:
             application/vnd.api+json:
               schema:
                 $ref: '#/components/schemas/JsonApiErrors'
+
+  /api/billing/usdc_payments:
+    post:
+      operationId: post-api-billing-usdc-payments
+      summary: Records an on-chain USDC payment and credits the account.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [account_id, tx_hash, usdc_amount_cents, minutes]
+              properties:
+                account_id:
+                  type: integer
+                  description: Account to credit.
+                tx_hash:
+                  type: string
+                  description: On-chain transaction hash (used as idempotency key).
+                usdc_amount_cents:
+                  type: integer
+                  description: USDC amount received in hundredths of a cent.
+                minutes:
+                  type: integer
+                  description: Minutes to credit to the account's balance.
+      responses:
+        '201':
+          description: Settlement accepted.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [id, type, attributes]
+                    properties:
+                      id:
+                        type: integer
+                      type:
+                        type: string
+                        enum: [settlements]
+                      attributes:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                            enum: [accepted]
+        '401':
+          description: Missing or invalid bearer token.
+  /api/billing/x402_payments:
+    post:
+      operationId: post-api-billing-x402-payments
+      summary: >-
+        Verifies an x402 on-chain USDC payment on Arbitrum via the self-hosted
+        facilitator, credits compute minutes, and enqueues USDC→BTC conversion.
+        Clients must include the signed payment payload in the X-PAYMENT header.
+      parameters:
+        - in: query
+          name: package_id
+          required: true
+          schema: { type: string }
+          description: The fundable product to purchase (e.g. "10h").
+      requestBody:
+        description: No body required; payment payload is in X-PAYMENT header.
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Payment verified and minutes credited.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [id, type, attributes]
+                    properties:
+                      id:
+                        type: string
+                      type:
+                        type: string
+                        enum: [settlements]
+                      attributes:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                            enum: [accepted]
+                          minutes_credited:
+                            type: integer
+        '402':
+          description: X-PAYMENT header missing or payment invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
+        '422':
+          description: Unknown or ineligible package_id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
+        '401':
+          description: Missing or invalid bearer token.
+        '503':
+          description: Facilitator service unavailable.
+
+  /api/billing/l402_payments:
+    post:
+      operationId: post-api-billing-l402-payments
+      summary: >-
+        Verifies an L402 Lightning payment (macaroon + preimage) via the managed
+        self-custodial Lightning backend, and credits compute minutes.
+        Clients include credentials in the Authorization header as
+        "L402 <macaroon_base64>:<preimage_hex>".
+        Invoices expire; refresh the funding_envelope before retrying with a stale invoice.
+      parameters:
+        - in: query
+          name: package_id
+          required: true
+          schema: { type: string }
+          description: The fundable product to purchase (e.g. "10h").
+      requestBody:
+        description: No body required; L402 credentials are in the Authorization header.
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Payment verified and minutes credited.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    required: [id, type, attributes]
+                    properties:
+                      id:
+                        type: string
+                      type:
+                        type: string
+                        enum: [settlements]
+                      attributes:
+                        type: object
+                        properties:
+                          status:
+                            type: string
+                            enum: [accepted]
+                          minutes_credited:
+                            type: integer
+        '402':
+          description: Authorization header missing, malformed, or payment invalid.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
+        '422':
+          description: Unknown or ineligible package_id.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
+        '401':
+          description: Missing or invalid bearer token.
+        '503':
+          description: Lightning backend unavailable.
 
   /api/billing/funding_envelope:
     get:

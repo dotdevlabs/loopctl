@@ -633,10 +633,10 @@ loopctl tasks watch <id> --json
 
 ### topup
 
-Get a Stripe hosted-checkout link to fund your LoopControl account. When the account balance is insufficient, the API returns HTTP 402 with the available payment products. `loopctl topup` surfaces the checkout link for the chosen product so you can complete payment in a browser.
+Fund your LoopControl account. When the account balance is insufficient, the API returns HTTP 402 with the available payment products and rails. `loopctl topup` settles the payment automatically when a wallet is configured, or prints a Stripe hosted-checkout link for manual payment in a browser.
 
 ```bash
-# Print the checkout link for the default top-up package
+# Print the checkout link for the default top-up package (no wallet configured)
 loopctl topup
 
 # Choose a specific product
@@ -653,10 +653,65 @@ loopctl topup --json
 |------|---------|-------------|
 | `--product` | `topup` | Product to fund: `trial` (5-hour trial), `topup` (top-up package), or `subscription` (subscription prepay) |
 
-On success, prints the Stripe checkout URL. With `--json`, emits:
+#### Payment rails
+
+`loopctl topup` supports three payment rails, selected by what the 402 response advertises intersected with what the local wallet can satisfy:
+
+| Rail | Requires | Behavior |
+|------|----------|----------|
+| `x402` | `LOOPCTL_ARBITRUM_PRIVATE_KEY` | Signs and submits a USDC payment on Arbitrum (EIP-3009), then retries the request automatically |
+| `l402` | `LOOPCTL_LN_HOST` + `LOOPCTL_LN_MACAROON_HEX` | Pays the Lightning invoice via the configured LND node, then retries the request automatically |
+| `human_link` | _(none)_ | Prints the Stripe checkout URL for manual payment in a browser (default fallback) |
+
+Rails are tried in preference order: `x402` → `l402` → `human_link`. The first configured rail that the 402 response also advertises wins.
+
+#### Wallet configuration
+
+Wallet credentials are supplied via environment variables — never stored in the config file.
+
+**x402 (Arbitrum USDC):**
+
+| Variable | Description |
+|----------|-------------|
+| `LOOPCTL_ARBITRUM_PRIVATE_KEY` | 64-char hex secp256k1 private key (no `0x` prefix) |
+
+**L402 (Lightning via LND REST):**
+
+| Variable | Description |
+|----------|-------------|
+| `LOOPCTL_LN_HOST` | LND REST base URL, e.g. `https://localhost:8080` |
+| `LOOPCTL_LN_MACAROON_HEX` | Hex-encoded admin or invoice macaroon |
+| `LOOPCTL_LN_TLS_SKIP_VERIFY` | Set to `"true"` to skip TLS verification (dev only) |
+
+**Example — auto-pay with Arbitrum USDC:**
+
+```bash
+export LOOPCTL_ARBITRUM_PRIVATE_KEY=<64-char-hex-key>
+loopctl topup   # settles automatically; no browser required
+```
+
+**Example — auto-pay with Lightning:**
+
+```bash
+export LOOPCTL_LN_HOST=https://localhost:8080
+export LOOPCTL_LN_MACAROON_HEX=<hex-macaroon>
+loopctl topup   # pays the Lightning invoice and retries automatically
+```
+
+#### JSON output
+
+With `--json`, the output depends on which rail settled the payment:
 
 ```json
 {"product": "topup", "rail": "human_link", "url": "https://checkout.stripe.com/..."}
+```
+
+```json
+{"rail": "x402", "status": "paid", "from": "0x...", "product": "topup"}
+```
+
+```json
+{"rail": "l402", "status": "paid", "product": "topup"}
 ```
 
 **API:** `POST /api/topup`

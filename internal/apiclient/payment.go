@@ -10,6 +10,18 @@ import (
 // RailInfo holds per-rail payment info for a fundable product.
 type RailInfo struct {
 	URL string `json:"url"`
+
+	// x402 fields (Arbitrum USDC via EIP-3009)
+	Amount    string `json:"amount,omitempty"`    // USDC token units (wei-equivalent)
+	Recipient string `json:"recipient,omitempty"` // EVM recipient address (0x…)
+	Token     string `json:"token,omitempty"`     // USDC contract address
+	ChainID   int64  `json:"chain_id,omitempty"`  // EVM chain ID (42161 = Arbitrum One)
+	Deadline  int64  `json:"deadline,omitempty"`  // Unix timestamp (validBefore)
+	Nonce     string `json:"nonce,omitempty"`     // 32-byte hex nonce (server-provided)
+
+	// L402 fields (Lightning)
+	Macaroon string `json:"macaroon,omitempty"` // base64-encoded L402 macaroon
+	Invoice  string `json:"invoice,omitempty"`  // BOLT-11 Lightning invoice
 }
 
 // Product is a single fundable product advertised in a 402 body.
