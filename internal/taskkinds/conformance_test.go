@@ -148,6 +148,28 @@ func TestConformance_ViolationDetection_ForbiddenTaskKindPatchField(t *testing.T
 	}
 }
 
+// TestConformance_ListDefaultPipelines verifies GET /api/account_pipeline_defaults conforms to the spec.
+func TestConformance_ListDefaultPipelines(t *testing.T) {
+	endpoints := loadSchemaOrSkip(t)
+	var violations []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		violations = schema.CheckRequest(r, endpoints)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":[],"links":{},"meta":{"total":0,"page":1,"per_page":20}}`)
+	}))
+	defer ts.Close()
+
+	ctx := makeCtx(t, ts.URL, "tok", false, io.Discard)
+	cmd := listDefaultPipelinesCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(io.Discard)
+	_ = cmd.RunE(cmd, nil)
+
+	if len(violations) != 0 {
+		t.Errorf("conformance violations for list-default-pipelines: %v", violations)
+	}
+}
+
 func TestConformance_TaskKindsListPaginates(t *testing.T) {
 	var requestCount int32
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
