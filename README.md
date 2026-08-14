@@ -428,6 +428,19 @@ Attempting to create a built-in task kind surfaces the API's human-readable erro
 
 **API:** `POST /api/task_kinds`
 
+#### task-kinds list-default-pipelines
+
+List all account-level default pipelines, one row per task kind that has a default configured.
+
+```bash
+loopctl task-kinds list-default-pipelines
+loopctl task-kinds list-default-pipelines --json
+```
+
+Output columns: `ID`, `KIND`, `PIPELINE_ID`.
+
+**API:** `GET /api/account_pipeline_defaults`
+
 #### task-kinds set-default-pipeline
 
 Set the default pipeline for a task kind. Tasks of this kind will use the specified pipeline unless overridden at task creation time.
@@ -936,6 +949,9 @@ loopctl task-kinds create --name my-kind
 
 # Set a pipeline as the default for the kind (use kind name, not ID)
 loopctl task-kinds set-default-pipeline my-kind --pipeline-id <integer-pipeline-id>
+
+# Inspect all account-level default pipelines
+loopctl task-kinds list-default-pipelines
 
 # Clear the default pipeline for the kind (use kind name, not ID)
 loopctl task-kinds clear-default-pipeline my-kind
