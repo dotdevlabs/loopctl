@@ -254,6 +254,69 @@ func TestConformance_TasksListPaginates(t *testing.T) {
 	}
 }
 
+func TestConformance_TasksListGlobal(t *testing.T) {
+	endpoints := loadSchemaOrSkip(t)
+	var violations []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		violations = schema.CheckRequest(r, endpoints)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":[]}`)
+	}))
+	defer ts.Close()
+
+	ctx := makeCtx(t, ts.URL, "tok", false, io.Discard)
+	cmd := listCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(io.Discard)
+	// no --project-id: global account listing
+	_ = cmd.RunE(cmd, nil)
+
+	if len(violations) != 0 {
+		t.Errorf("conformance violations for global tasks list: %v", violations)
+	}
+}
+
+func TestConformance_TasksListGlobalPaginates(t *testing.T) {
+	var requestCount int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt32(&requestCount, 1)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		if r.URL.RawQuery == "" {
+			// First page: no query string, return next link.
+			_, _ = fmt.Fprintf(w,
+				`{"data":[{"type":"tasks","id":"t1","attributes":{"kind":"feature","title":"Global One","stage":"planning","status":"open"}}],"links":{"next":"%s/api/tasks?page%%5Bnumber%%5D=2"}}`,
+				"http://"+r.Host)
+		} else {
+			// Second page.
+			_ = n
+			_, _ = fmt.Fprint(w,
+				`{"data":[{"type":"tasks","id":"t2","attributes":{"kind":"feature","title":"Global Two","stage":"implementing","status":"open"}}],"links":{}}`)
+		}
+	}))
+	defer ts.Close()
+
+	var out strings.Builder
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+	cmd := listCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	// no --project-id
+
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("global list with pagination failed: %v", err)
+	}
+	if got := atomic.LoadInt32(&requestCount); got != 2 {
+		t.Errorf("expected 2 requests (2 pages); got %d", got)
+	}
+	result := out.String()
+	if !strings.Contains(result, "Global One") {
+		t.Errorf("output missing Global One from page 1:\n%s", result)
+	}
+	if !strings.Contains(result, "Global Two") {
+		t.Errorf("output missing Global Two from page 2:\n%s", result)
+	}
+}
+
 func TestConformance_TasksUnblock(t *testing.T) {
 	endpoints := loadSchemaOrSkip(t)
 	var violations []string

@@ -651,6 +651,12 @@ paths:
                     $ref: '#/components/schemas/JsonApiLinks'
                   meta:
                     $ref: '#/components/schemas/JsonApiPaginationMeta'
+        '400':
+          description: Invalid pagination parameter
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
 
   /api/platforms:
     get:
@@ -681,6 +687,12 @@ paths:
                     $ref: '#/components/schemas/JsonApiLinks'
                   meta:
                     $ref: '#/components/schemas/JsonApiPaginationMeta'
+        '400':
+          description: Invalid pagination parameter
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
 
   /api/task_kinds:
     get:
@@ -711,6 +723,12 @@ paths:
                     $ref: '#/components/schemas/JsonApiLinks'
                   meta:
                     $ref: '#/components/schemas/JsonApiPaginationMeta'
+        '400':
+          description: Invalid pagination parameter
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
     post:
       operationId: post-api-task-kinds
       summary: Creates a custom task kind scoped to the current account.
@@ -780,6 +798,12 @@ paths:
                     $ref: '#/components/schemas/JsonApiLinks'
                   meta:
                     $ref: '#/components/schemas/JsonApiPaginationMeta'
+        '400':
+          description: Invalid pagination parameter
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
     post:
       operationId: post-api-pipelines
       summary: Creates a custom pipeline scoped to the current account.
@@ -982,6 +1006,12 @@ paths:
                     $ref: '#/components/schemas/JsonApiLinks'
                   meta:
                     $ref: '#/components/schemas/JsonApiPaginationMeta'
+        '400':
+          description: Invalid pagination parameter
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
     post:
       operationId: post-api-projects
       summary: Creates a project.
@@ -1006,6 +1036,7 @@ paths:
                     pipeline_id: { type: integer }
                     failure_policy: { type: string }
                     fallback_agent_id: { type: integer }
+                    default_agent_id: { type: integer }
                     mcp_config: { type: object }
       responses:
         '201':
@@ -1087,6 +1118,7 @@ paths:
                     pipeline_id: { type: integer }
                     failure_policy: { type: string }
                     fallback_agent_id: { type: integer }
+                    default_agent_id: { type: integer }
                     mcp_config: { type: object }
       responses:
         '200':
@@ -1200,6 +1232,12 @@ paths:
                     $ref: '#/components/schemas/JsonApiLinks'
                   meta:
                     $ref: '#/components/schemas/JsonApiPaginationMeta'
+        '400':
+          description: Invalid pagination parameter
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
     post:
       operationId: post-api-tasks
       summary: Creates a task in a project.
@@ -1368,6 +1406,12 @@ paths:
                     $ref: '#/components/schemas/JsonApiLinks'
                   meta:
                     $ref: '#/components/schemas/JsonApiPaginationMeta'
+        '400':
+          description: Invalid pagination parameter
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
     post:
       operationId: post-api-task-recordings
       summary: Uploads a new recording for a task.
@@ -1696,6 +1740,12 @@ paths:
                     $ref: '#/components/schemas/JsonApiLinks'
                   meta:
                     $ref: '#/components/schemas/JsonApiPaginationMeta'
+        '400':
+          description: Invalid pagination parameter
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
     post:
       operationId: post-api-task-todos
       summary: Creates one or more todos for a task.
@@ -1812,6 +1862,12 @@ paths:
                     $ref: '#/components/schemas/JsonApiLinks'
                   meta:
                     $ref: '#/components/schemas/JsonApiPaginationMeta'
+        '400':
+          description: Invalid pagination parameter
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
 
   /api/tasks/{task_id}/activities:
     get:
@@ -1843,6 +1899,12 @@ paths:
                     $ref: '#/components/schemas/JsonApiLinks'
                   meta:
                     $ref: '#/components/schemas/JsonApiPaginationMeta'
+        '400':
+          description: Invalid pagination parameter
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
 
   /api/tasks/{task_id}/containers:
     get:
@@ -1874,6 +1936,12 @@ paths:
                     $ref: '#/components/schemas/JsonApiLinks'
                   meta:
                     $ref: '#/components/schemas/JsonApiPaginationMeta'
+        '400':
+          description: Invalid pagination parameter
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
 
   /api/tasks/{task_id}/cancellation:
     post:
@@ -2046,6 +2114,12 @@ paths:
                     $ref: '#/components/schemas/JsonApiLinks'
                   meta:
                     $ref: '#/components/schemas/JsonApiPaginationMeta'
+        '400':
+          description: Invalid pagination parameter
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
 
   /api/flow_registry_flows/{flow_registry_flow_id}/recordings:
     post:
@@ -2225,6 +2299,12 @@ paths:
                     $ref: '#/components/schemas/JsonApiLinks'
                   meta:
                     $ref: '#/components/schemas/JsonApiPaginationMeta'
+        '400':
+          description: Invalid pagination parameter
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
 
   /api/account_pipeline_defaults/{kind}:
     patch:

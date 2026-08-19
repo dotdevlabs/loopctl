@@ -26,11 +26,23 @@ type TaskAttrs struct {
 	Description           string   `json:"description"`
 	Status                string   `json:"status"`
 	Stage                 string   `json:"stage"`
+	CurrentState          string   `json:"current_state"`
 	PRNumber              int      `json:"pr_number"`
+	PRURL                 string   `json:"pr_url"`
+	PRMergedAt            string   `json:"pr_merged_at"`
+	MergeCommitSHA        string   `json:"merge_commit_sha"`
+	CIStatus              string   `json:"ci_status"`
+	CIStatusURL           string   `json:"ci_status_url"`
+	CodeReviewStatus      string   `json:"code_review_status"`
+	BlockedReason         string   `json:"blocked_reason"`
+	CompletedAt           string   `json:"completed_at"`
+	PickedUpAt            string   `json:"picked_up_at"`
+	PromptHash            string   `json:"prompt_hash"`
 	DependsOn             []string `json:"depends_on"`
 	DependenciesMet       bool     `json:"dependencies_met"`
 	BlockingDependencyIDs []string `json:"blocking_dependency_ids"`
 	CreatedAt             string   `json:"created_at"`
+	UpdatedAt             string   `json:"updated_at"`
 }
 
 // ActivityAttrs holds the attributes nested under JSON:API data.attributes for task activities.
@@ -81,7 +93,10 @@ func listCmd() *cobra.Command {
 			activeCtx := ctxutil.ActiveContextFrom(ctx)
 			r := ctxutil.RendererFrom(ctx)
 
-			path := "/api/tasks?project_id=" + url.QueryEscape(projectID)
+			path := "/api/tasks"
+			if projectID != "" {
+				path += "?project_id=" + url.QueryEscape(projectID)
+			}
 			col, err := apiclient.GetJSONAPICollectionAllPages[TaskAttrs](ctx, activeCtx, path)
 			if err != nil {
 				return err
@@ -102,8 +117,7 @@ func listCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&projectID, "project-id", "", "Project ID to filter tasks")
-	_ = cmd.MarkFlagRequired("project-id")
+	cmd.Flags().StringVar(&projectID, "project-id", "", "Project ID to filter tasks (optional; omit for account-wide listing)")
 	return cmd
 }
 
