@@ -883,7 +883,7 @@ paths:
             application/vnd.api+json:
               schema:
                 $ref: '#/components/schemas/JsonApiErrors'
-    patch:
+    patch: &pipeline-update-operation
       operationId: patch-api-pipeline
       summary: Updates a custom pipeline. When stages are provided, replaces all workflow stages atomically.
       parameters:
@@ -934,6 +934,10 @@ paths:
             application/vnd.api+json:
               schema:
                 $ref: '#/components/schemas/JsonApiErrors'
+
+    put:
+      <<: *pipeline-update-operation
+      operationId: put-api-pipeline
 
   /api/pipelines/{pipeline_id}/clone:
     post:
@@ -1096,7 +1100,7 @@ paths:
             application/vnd.api+json:
               schema:
                 $ref: '#/components/schemas/JsonApiErrors'
-    patch:
+    patch: &project-update-operation
       operationId: patch-api-project
       summary: Updates a project.
       parameters:
@@ -1156,8 +1160,12 @@ paths:
               schema:
                 $ref: '#/components/schemas/JsonApiErrors'
 
+    put:
+      <<: *project-update-operation
+      operationId: put-api-project
+
   /api/containers/{id}:
-    patch:
+    patch: &container-update-operation
       operationId: patch-api-container
       summary: Updates a container's agent-reported status fields.
       parameters:
@@ -1200,6 +1208,10 @@ paths:
             application/vnd.api+json:
               schema:
                 $ref: '#/components/schemas/JsonApiErrors'
+
+    put:
+      <<: *container-update-operation
+      operationId: put-api-container
 
   /api/tasks:
     get:
@@ -1310,7 +1322,7 @@ paths:
             application/vnd.api+json:
               schema:
                 $ref: '#/components/schemas/JsonApiErrors'
-    patch:
+    patch: &task-update-operation
       operationId: patch-api-task
       summary: Updates a task's title, description, implementation/verification criteria, or token usage counts.
       parameters:
@@ -1352,6 +1364,10 @@ paths:
             application/vnd.api+json:
               schema:
                 $ref: '#/components/schemas/JsonApiErrors'
+
+    put:
+      <<: *task-update-operation
+      operationId: put-api-task
 
   /api/tasks/{id}/logs:
     get:
@@ -1588,7 +1604,7 @@ paths:
                   gated: { type: boolean }
                   waiting_on: { type: array, items: { type: string } }
         '422':
-          description: Invalid state transition
+          description: Rejected completion, unapproved human-gated stage, or invalid state transition
 
   /api/tasks/{task_id}/bootstrap_failure:
     post:
@@ -1792,7 +1808,7 @@ paths:
                 $ref: '#/components/schemas/JsonApiErrors'
 
   /api/tasks/{task_id}/todos/{id}:
-    patch:
+    patch: &task-todo-update-operation
       operationId: patch-api-task-todo
       summary: Updates a todo's status, content, or active_form.
       parameters:
@@ -1831,6 +1847,10 @@ paths:
             application/vnd.api+json:
               schema:
                 $ref: '#/components/schemas/JsonApiErrors'
+
+    put:
+      <<: *task-todo-update-operation
+      operationId: put-api-task-todo
 
   /api/tasks/{task_id}/transitions:
     get:
@@ -2307,7 +2327,7 @@ paths:
                 $ref: '#/components/schemas/JsonApiErrors'
 
   /api/account_pipeline_defaults/{kind}:
-    patch:
+    patch: &account-pipeline-default-update-operation
       operationId: patch-api-account-pipeline-default
       summary: Sets or updates the default pipeline for a task kind on the account.
       parameters:
@@ -2352,6 +2372,9 @@ paths:
             application/vnd.api+json:
               schema:
                 $ref: '#/components/schemas/JsonApiErrors'
+    put:
+      <<: *account-pipeline-default-update-operation
+      operationId: put-api-account-pipeline-default
     delete:
       operationId: delete-api-account-pipeline-default
       summary: Clears the default pipeline for a task kind. Idempotent.
