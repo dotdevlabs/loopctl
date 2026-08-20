@@ -67,6 +67,8 @@ func NewCmd() *cobra.Command {
 	cmd.AddCommand(watchCmd())
 	cmd.AddCommand(cancelCmd())
 	cmd.AddCommand(unblockCmd())
+	cmd.AddCommand(commentsCmd())
+	cmd.AddCommand(todosCmd())
 	return cmd
 }
 

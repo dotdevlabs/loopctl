@@ -241,6 +241,179 @@ func TestCheckRequest_DeleteAccountPipelineDefault_NoBody(t *testing.T) {
 	}
 }
 
+func TestLoad_QueryParams(t *testing.T) {
+	endpoints, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	var tasksGet *EndpointAttrs
+	for i := range endpoints {
+		ep := &endpoints[i]
+		if ep.Method == "GET" && ep.Path == "/api/tasks" {
+			tasksGet = ep
+			break
+		}
+	}
+	if tasksGet == nil {
+		t.Fatal("GET /api/tasks not found in endpoints")
+	}
+	qpMap := make(map[string]QueryParam, len(tasksGet.QueryParams))
+	for _, qp := range tasksGet.QueryParams {
+		qpMap[qp.Name] = qp
+	}
+	for _, want := range []string{"project_id", "page[number]", "page[size]"} {
+		if _, ok := qpMap[want]; !ok {
+			t.Errorf("GET /api/tasks missing query param %q; got %v", want, tasksGet.QueryParams)
+		}
+	}
+}
+
+func TestLoad_IsPaginated(t *testing.T) {
+	endpoints, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	type want struct {
+		method    string
+		path      string
+		paginated bool
+	}
+	cases := []want{
+		{"GET", "/api/tasks", true},
+		{"GET", "/api/pipelines", true},
+		{"GET", "/api/tasks/:task_id/todos", true},
+		{"GET", "/api/tasks/:task_id/activities", true},
+		{"POST", "/api/tasks", false},
+		{"GET", "/api/tasks/:id", false},
+		{"PATCH", "/api/tasks/:id", false},
+	}
+	epMap := make(map[string]EndpointAttrs, len(endpoints))
+	for _, ep := range endpoints {
+		epMap[ep.Method+" "+ep.Path] = ep
+	}
+	for _, tc := range cases {
+		key := tc.method + " " + tc.path
+		ep, ok := epMap[key]
+		if !ok {
+			t.Errorf("endpoint %s not found", key)
+			continue
+		}
+		if ep.IsPaginated != tc.paginated {
+			t.Errorf("%s IsPaginated = %v; want %v", key, ep.IsPaginated, tc.paginated)
+		}
+	}
+}
+
+func TestLoad_PathParams(t *testing.T) {
+	endpoints, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	type want struct {
+		method string
+		path   string
+		params []string
+	}
+	cases := []want{
+		{"GET", "/api/tasks/:id", []string{"id"}},
+		{"POST", "/api/tasks/:task_id/cancellation", []string{"task_id"}},
+		{"PATCH", "/api/tasks/:task_id/todos/:id", []string{"task_id", "id"}},
+		{"GET", "/api/tasks", nil},
+	}
+	epMap := make(map[string]EndpointAttrs, len(endpoints))
+	for _, ep := range endpoints {
+		epMap[ep.Method+" "+ep.Path] = ep
+	}
+	for _, tc := range cases {
+		key := tc.method + " " + tc.path
+		ep, ok := epMap[key]
+		if !ok {
+			t.Errorf("endpoint %s not found", key)
+			continue
+		}
+		gotSet := make(map[string]bool, len(ep.PathParams))
+		for _, p := range ep.PathParams {
+			gotSet[p] = true
+		}
+		for _, want := range tc.params {
+			if !gotSet[want] {
+				t.Errorf("%s PathParams missing %q; got %v", key, want, ep.PathParams)
+			}
+		}
+		if len(tc.params) == 0 && len(ep.PathParams) != 0 {
+			t.Errorf("%s PathParams should be empty; got %v", key, ep.PathParams)
+		}
+	}
+}
+
+func TestCheckQuery_AllowedParam(t *testing.T) {
+	endpoints, _ := Load()
+	ep := FindEndpoint(endpoints, "GET", "/api/tasks")
+	if ep == nil {
+		t.Fatal("GET /api/tasks not found")
+	}
+	req, _ := http.NewRequest(http.MethodGet, "http://x/api/tasks?project_id=p1", nil)
+	violations := CheckQuery(req, ep)
+	if len(violations) != 0 {
+		t.Errorf("expected no violations for documented param; got: %v", violations)
+	}
+}
+
+func TestCheckQuery_UnknownParam(t *testing.T) {
+	endpoints, _ := Load()
+	ep := FindEndpoint(endpoints, "GET", "/api/tasks")
+	if ep == nil {
+		t.Fatal("GET /api/tasks not found")
+	}
+	req, _ := http.NewRequest(http.MethodGet, "http://x/api/tasks?undocumented_param=x", nil)
+	violations := CheckQuery(req, ep)
+	if len(violations) == 0 {
+		t.Fatal("expected violation for undocumented query param; got none")
+	}
+	found := false
+	for _, v := range violations {
+		if strings.Contains(v, "undocumented_param") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected 'undocumented_param' in violations; got: %v", violations)
+	}
+}
+
+func TestLoad_OperationID(t *testing.T) {
+	endpoints, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error: %v", err)
+	}
+	epMap := make(map[string]EndpointAttrs, len(endpoints))
+	for _, ep := range endpoints {
+		epMap[ep.Method+" "+ep.Path] = ep
+	}
+	cases := []struct {
+		method string
+		path   string
+		opID   string
+	}{
+		{"GET", "/api/tasks", "get-api-tasks"},
+		{"POST", "/api/tasks", "post-api-tasks"},
+		{"POST", "/api/tasks/:task_id/comments", "post-api-task-comments"},
+		{"GET", "/api/tasks/:task_id/todos", "get-api-task-todos"},
+	}
+	for _, tc := range cases {
+		key := tc.method + " " + tc.path
+		ep, ok := epMap[key]
+		if !ok {
+			t.Errorf("endpoint %s not found", key)
+			continue
+		}
+		if ep.OperationID != tc.opID {
+			t.Errorf("%s OperationID = %q; want %q", key, ep.OperationID, tc.opID)
+		}
+	}
+}
+
 func TestSchemaSourceSync(t *testing.T) {
 	token := os.Getenv("GITHUB_TOKEN")
 	if token == "" {
