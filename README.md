@@ -1112,6 +1112,29 @@ go test ./... -race
 go test ./... -coverprofile=coverage.out && go tool cover -html=coverage.out
 ```
 
+### API spec sync and contract gate
+
+The authoritative OpenAPI spec is committed at `internal/schema/testdata/api_spec.yaml` and kept in sync with the `dotdevlabs/loopcontrol` repository. The bidirectional contract gate (`TestBidirectionalCoverage`) runs on every `go test ./...` and fails when:
+
+- Any spec operation lacks a loopctl command **and** is not in the `Excluded` map with a reason
+- Any `Covered` or `Excluded` entry references a path no longer in the spec
+- A `Covered` entry claims a query parameter the spec does not document
+- A paginated spec operation is not declared `Paginated: true` in the manifest
+
+To update the local spec copy:
+
+```bash
+GITHUB_TOKEN=<token> ./scripts/sync_spec.sh          # update
+GITHUB_TOKEN=<token> ./scripts/sync_spec.sh --check  # verify in sync (CI uses this)
+```
+
+CI runs `--check` automatically when `GITHUB_TOKEN` is present. Without the token the check is skipped silently so local builds never fail due to network access.
+
+When adding a new loopctl command, update `internal/schema/coverage.go`:
+- Add a `Covered` entry for each API operation the command calls
+- Declare any non-pagination query parameters in `QueryParams`
+- Set `Paginated: true` for commands that follow `links.next` pagination
+
 **Module proxy**: `ctlkit` (`github.com/dotdevlabs/ctlkit`) is a public GitHub repo but is not indexed by the public Go module proxy. Set these env vars when building outside CI so Go fetches it directly and skips the checksum database:
 
 ```bash
