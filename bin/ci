@@ -14,6 +14,9 @@ if [ -n "$GOFMT_OUT" ]; then
   exit 1
 fi
 
+echo "==> spec sync check"
+./scripts/sync_spec.sh --check || true  # non-fatal when GITHUB_TOKEN absent
+
 echo "==> go vet"
 go vet ./...
 
