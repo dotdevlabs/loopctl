@@ -644,6 +644,103 @@ loopctl tasks watch <id> --json
 
 ---
 
+#### tasks comments create
+
+Post a comment on a task. Token counts are optional billing metadata.
+
+```bash
+loopctl tasks comments create <task-id> --body "Implementation complete."
+loopctl tasks comments create <task-id> --body "..." --input-tokens 1234 --output-tokens 567
+loopctl tasks comments create <task-id> --body "..." --json
+loopctl tasks comments create <task-id> --body "..." --dry-run
+```
+
+**Flags:**
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--body` | yes | Comment body text |
+| `--input-tokens` | no | Input token count for billing |
+| `--output-tokens` | no | Output token count for billing |
+
+**API:** `POST /api/tasks/:id/comments`
+
+---
+
+#### tasks todos list
+
+List todos for a task, optionally filtered by stage name. Follows pagination automatically.
+
+```bash
+loopctl tasks todos list <task-id>
+loopctl tasks todos list <task-id> --stage-name implementing
+loopctl tasks todos list <task-id> --json
+```
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--stage-name` | Filter todos by stage name |
+
+**API:** `GET /api/tasks/:id/todos`
+
+---
+
+#### tasks todos create
+
+Create one or more todos for a task. Use `--content` to create a single todo or `--bulk-json` to create multiple todos in one request.
+
+```bash
+# Single todo
+loopctl tasks todos create <task-id> --content "Write unit tests" --status pending --stage-name implementing
+
+# With active form text
+loopctl tasks todos create <task-id> --content "Deploy" --active-form "Deploying to staging..." --position 0
+
+# Bulk creation
+loopctl tasks todos create <task-id> --bulk-json '[{"content":"Step A","status":"pending"},{"content":"Step B","status":"pending"}]'
+```
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--content` | Todo content (required unless `--bulk-json`) |
+| `--status` | Todo status: `pending`, `in_progress`, or `completed` (default: `pending`) |
+| `--stage-name` | Stage name this todo belongs to |
+| `--active-form` | Active form description shown while working |
+| `--position` | Display position (0-indexed) |
+| `--bulk-json` | JSON array of todo objects for bulk creation |
+
+**API:** `POST /api/tasks/:id/todos`
+
+---
+
+#### tasks todos update
+
+Update a todo's status, content, or active-form text.
+
+```bash
+loopctl tasks todos update <task-id> <todo-id> --status in_progress
+loopctl tasks todos update <task-id> <todo-id> --status completed
+loopctl tasks todos update <task-id> <todo-id> --content "Revised description"
+loopctl tasks todos update <task-id> <todo-id> --active-form "Now deploying..."
+loopctl tasks todos update <task-id> <todo-id> --dry-run
+```
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--status` | New status: `pending`, `in_progress`, or `completed` |
+| `--content` | New content text |
+| `--active-form` | New active form description |
+
+**API:** `PATCH /api/tasks/:id/todos/:todo_id`
+
+---
+
 ### topup
 
 Fund your LoopControl account. When the account balance is insufficient, the API returns HTTP 402 with the available payment products and rails. `loopctl topup` settles the payment automatically when a wallet is configured, or prints a Stripe hosted-checkout link for manual payment in a browser.
