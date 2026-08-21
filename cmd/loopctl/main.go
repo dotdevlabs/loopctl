@@ -84,9 +84,10 @@ func loopWorkflows() []airef.Workflow {
 			},
 		},
 		{
-			Name:        "List a project's tasks as JSON",
-			Description: "Retrieve all tasks for a project in machine-readable JSON for scripting or agent ingestion.",
+			Name:        "List tasks as JSON",
+			Description: "Retrieve all account tasks as machine-readable JSON, or filter to one project. Pagination is followed automatically.",
 			Steps: []string{
+				`loopctl tasks list --json`,
 				`loopctl tasks list --project-id <project-id> --json`,
 			},
 		},

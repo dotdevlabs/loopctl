@@ -487,9 +487,13 @@ Manage LoopControl tasks.
 
 #### tasks list
 
-List tasks for a project. Output columns: `ID`, `KIND`, `TITLE`, `STAGE`, `STATUS`.
+List tasks across the entire account, or filter to a single project. Output columns: `ID`, `KIND`, `TITLE`, `STAGE`, `STATUS`. Pagination is followed automatically. `--json` and template output include the full index representation (all `TaskListAttributes` fields).
 
 ```bash
+# List all account tasks (global index)
+loopctl tasks list --json
+
+# Filter to one project
 loopctl tasks list --project-id <project-id>
 loopctl tasks list --project-id <project-id> --json
 ```
@@ -498,9 +502,9 @@ loopctl tasks list --project-id <project-id> --json
 
 | Flag | Required | Description |
 |------|----------|-------------|
-| `--project-id` | yes | Project ID to filter tasks |
+| `--project-id` | no | Project ID to filter tasks (omit for account-wide listing) |
 
-**API:** `GET /api/tasks?project_id=<project-id>`
+**API:** `GET /api/tasks` (global) or `GET /api/tasks?project_id=<project-id>` (filtered)
 
 #### tasks get
 
@@ -976,9 +980,13 @@ loopctl tasks watch <task-id>
 loopctl tasks watch <task-id> --json
 ```
 
-### List a project's tasks as JSON (for scripting or agents)
+### List tasks as JSON (for scripting or agents)
 
 ```bash
+# All account tasks — one call, all pages aggregated automatically
+loopctl tasks list --json
+
+# Filter to a single project
 loopctl tasks list --project-id <project-id> --json
 ```
 

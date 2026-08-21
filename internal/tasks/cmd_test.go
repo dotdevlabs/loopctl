@@ -1247,6 +1247,114 @@ func TestTasksUnblockDryRun(t *testing.T) {
 	}
 }
 
+func TestTasksListGlobal(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/tasks" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		if r.URL.RawQuery != "" {
+			t.Errorf("expected no query parameters for global list; got: %s", r.URL.RawQuery)
+		}
+		if r.Method != http.MethodGet {
+			t.Errorf("unexpected method: %s", r.Method)
+		}
+		if r.Header.Get("Authorization") != "Bearer test-token" {
+			t.Errorf("missing/wrong auth: %s", r.Header.Get("Authorization"))
+		}
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":[{"type":"tasks","id":"t1","attributes":{"project_id":"proj1","kind":"feature","title":"Global Task","stage":"planning","status":"open"}}]}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "test-token", false, &out)
+
+	cmd := listCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	// no --project-id flag set
+
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("global list failed: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "Global Task") {
+		t.Errorf("output missing task title:\n%s", got)
+	}
+	if !strings.Contains(got, "t1") {
+		t.Errorf("output missing task id:\n%s", got)
+	}
+}
+
+func TestTasksListOptionalProjectIDFilter(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.RawQuery != "project_id=proj42" {
+			t.Errorf("expected project_id=proj42 query; got: %s", r.URL.RawQuery)
+		}
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":[{"type":"tasks","id":"t2","attributes":{"project_id":"proj42","kind":"bug","title":"Filtered Task","stage":"implementing","status":"open"}}]}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := listCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("project-id", "proj42")
+
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("filtered list failed: %v", err)
+	}
+	if !strings.Contains(out.String(), "Filtered Task") {
+		t.Errorf("output missing filtered task title:\n%s", out.String())
+	}
+}
+
+func TestTasksListFullIndexFields(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":[{"type":"tasks","id":"t1","attributes":{`+
+			`"title":"T","kind":"feature","stage":"planning","status":"open",`+
+			`"current_state":"idle","pr_url":"https://github.com/org/repo/pull/5",`+
+			`"pr_merged_at":"2026-01-10T12:00:00Z","merge_commit_sha":"abc123",`+
+			`"ci_status":"success","ci_status_url":"https://ci.example.com/1",`+
+			`"code_review_status":"approved","blocked_reason":"",`+
+			`"completed_at":"","picked_up_at":"2026-01-09T08:00:00Z",`+
+			`"prompt_hash":"deadbeef","updated_at":"2026-01-10T12:01:00Z",`+
+			`"created_at":"2026-01-08T00:00:00Z"}}]}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", true, &out)
+
+	cmd := listCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("list full fields failed: %v", err)
+	}
+	got := out.String()
+	for _, field := range []string{
+		`"pr_url"`, `"ci_status"`, `"updated_at"`, `"prompt_hash"`,
+		`"current_state"`, `"picked_up_at"`, `"merge_commit_sha"`,
+		`"ci_status_url"`, `"code_review_status"`, `"pr_merged_at"`,
+	} {
+		if !strings.Contains(got, field) {
+			t.Errorf("JSON output missing field %s:\n%s", field, got)
+		}
+	}
+	if !strings.Contains(got, "deadbeef") {
+		t.Errorf("expected prompt_hash value in output:\n%s", got)
+	}
+	if !strings.Contains(got, "https://github.com/org/repo/pull/5") {
+		t.Errorf("expected pr_url value in output:\n%s", got)
+	}
+}
+
 func TestTasksCreateWatch_Timeout(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/vnd.api+json")
