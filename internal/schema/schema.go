@@ -37,12 +37,23 @@ type RequestBody struct {
 	Optional    []Field `json:"optional"`
 }
 
+// QueryParam describes a query parameter declared in the spec for an operation.
+type QueryParam struct {
+	Name     string `json:"name"`
+	Required bool   `json:"required"`
+	Type     string `json:"type"` // "string", "integer", "boolean"
+}
+
 // EndpointAttrs holds the machine-readable attributes for one API endpoint.
 type EndpointAttrs struct {
 	Method      string       `json:"http_method"`
 	Path        string       `json:"path"`
+	OperationID string       `json:"operation_id"`
 	Description string       `json:"description"`
+	PathParams  []string     `json:"path_params,omitempty"`
+	QueryParams []QueryParam `json:"query_params,omitempty"`
 	RequestBody *RequestBody `json:"-"`
+	IsPaginated bool         `json:"is_paginated"`
 }
 
 // OpenAPI YAML structure types (unexported).
@@ -60,9 +71,22 @@ type oaPathItem struct {
 }
 
 type oaOperation struct {
-	OperationID string         `yaml:"operationId"`
-	Summary     string         `yaml:"summary"`
-	RequestBody *oaRequestBody `yaml:"requestBody"`
+	OperationID string                     `yaml:"operationId"`
+	Summary     string                     `yaml:"summary"`
+	Parameters  []oaParameter              `yaml:"parameters"`
+	RequestBody *oaRequestBody             `yaml:"requestBody"`
+	Responses   map[string]oaResponseEntry `yaml:"responses"`
+}
+
+type oaParameter struct {
+	Name     string   `yaml:"name"`
+	In       string   `yaml:"in"` // "path", "query", "header"
+	Required bool     `yaml:"required"`
+	Schema   oaSchema `yaml:"schema"`
+}
+
+type oaResponseEntry struct {
+	Content map[string]oaMediaType `yaml:"content"`
 }
 
 type oaRequestBody struct {
@@ -101,6 +125,7 @@ func parseOpenAPI(data []byte) ([]EndpointAttrs, error) {
 	var endpoints []EndpointAttrs
 	for path, pathItem := range spec.Paths {
 		template := oaPathToTemplate(path)
+		pathParams := extractPathParams(path)
 		ops := []struct {
 			method string
 			op     *oaOperation
@@ -118,15 +143,64 @@ func parseOpenAPI(data []byte) ([]EndpointAttrs, error) {
 			ep := EndpointAttrs{
 				Method:      strings.ToUpper(o.method),
 				Path:        template,
+				OperationID: o.op.OperationID,
 				Description: o.op.Summary,
+				PathParams:  pathParams,
+			}
+			for _, p := range o.op.Parameters {
+				if p.In == "query" {
+					ep.QueryParams = append(ep.QueryParams, QueryParam{
+						Name:     p.Name,
+						Required: p.Required,
+						Type:     p.Schema.Type,
+					})
+				}
 			}
 			if o.op.RequestBody != nil {
 				ep.RequestBody = extractRequestBody(o.op.RequestBody)
 			}
+			ep.IsPaginated = responseIsPaginated(o.op.Responses)
 			endpoints = append(endpoints, ep)
 		}
 	}
 	return endpoints, nil
+}
+
+// extractPathParams returns the parameter names from OpenAPI path template segments like {task_id}.
+func extractPathParams(path string) []string {
+	matches := oaParamRE.FindAllStringSubmatch(path, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	params := make([]string, 0, len(matches))
+	for _, m := range matches {
+		params = append(params, m[1])
+	}
+	return params
+}
+
+// responseIsPaginated returns true when the 200 response schema requires both "links" and "meta".
+func responseIsPaginated(responses map[string]oaResponseEntry) bool {
+	entry, ok := responses["200"]
+	if !ok {
+		return false
+	}
+	for _, mt := range entry.Content {
+		schema := mt.Schema
+		hasLinks, hasMeta := false, false
+		for _, req := range schema.Required {
+			switch req {
+			case "links":
+				hasLinks = true
+			case "meta":
+				hasMeta = true
+			}
+		}
+		if hasLinks && hasMeta {
+			return true
+		}
+	}
+	return false
 }
 
 // extractRequestBody parses an OpenAPI requestBody into a RequestBody.
@@ -219,6 +293,25 @@ func FindEndpoint(endpoints []EndpointAttrs, method, path string) *EndpointAttrs
 		}
 	}
 	return nil
+}
+
+// CheckQuery validates that every query parameter in r.URL.Query() is documented
+// in the spec for this endpoint. Returns violation strings for any undocumented params.
+func CheckQuery(r *http.Request, ep *EndpointAttrs) []string {
+	if ep == nil {
+		return nil
+	}
+	allowed := make(map[string]bool, len(ep.QueryParams))
+	for _, qp := range ep.QueryParams {
+		allowed[qp.Name] = true
+	}
+	var violations []string
+	for key := range r.URL.Query() {
+		if !allowed[key] {
+			violations = append(violations, fmt.Sprintf("query param %q not documented in spec for %s %s", key, ep.Method, ep.Path))
+		}
+	}
+	return violations
 }
 
 // CheckRequest validates r against endpoints and returns a list of violation strings.

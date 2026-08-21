@@ -644,6 +644,103 @@ loopctl tasks watch <id> --json
 
 ---
 
+#### tasks comments create
+
+Post a comment on a task. Token counts are optional billing metadata.
+
+```bash
+loopctl tasks comments create <task-id> --body "Implementation complete."
+loopctl tasks comments create <task-id> --body "..." --input-tokens 1234 --output-tokens 567
+loopctl tasks comments create <task-id> --body "..." --json
+loopctl tasks comments create <task-id> --body "..." --dry-run
+```
+
+**Flags:**
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--body` | yes | Comment body text |
+| `--input-tokens` | no | Input token count for billing |
+| `--output-tokens` | no | Output token count for billing |
+
+**API:** `POST /api/tasks/:id/comments`
+
+---
+
+#### tasks todos list
+
+List todos for a task, optionally filtered by stage name. Follows pagination automatically.
+
+```bash
+loopctl tasks todos list <task-id>
+loopctl tasks todos list <task-id> --stage-name implementing
+loopctl tasks todos list <task-id> --json
+```
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--stage-name` | Filter todos by stage name |
+
+**API:** `GET /api/tasks/:id/todos`
+
+---
+
+#### tasks todos create
+
+Create one or more todos for a task. Use `--content` to create a single todo or `--bulk-json` to create multiple todos in one request.
+
+```bash
+# Single todo
+loopctl tasks todos create <task-id> --content "Write unit tests" --status pending --stage-name implementing
+
+# With active form text
+loopctl tasks todos create <task-id> --content "Deploy" --active-form "Deploying to staging..." --position 0
+
+# Bulk creation
+loopctl tasks todos create <task-id> --bulk-json '[{"content":"Step A","status":"pending"},{"content":"Step B","status":"pending"}]'
+```
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--content` | Todo content (required unless `--bulk-json`) |
+| `--status` | Todo status: `pending`, `in_progress`, or `completed` (default: `pending`) |
+| `--stage-name` | Stage name this todo belongs to |
+| `--active-form` | Active form description shown while working |
+| `--position` | Display position (0-indexed) |
+| `--bulk-json` | JSON array of todo objects for bulk creation |
+
+**API:** `POST /api/tasks/:id/todos`
+
+---
+
+#### tasks todos update
+
+Update a todo's status, content, or active-form text.
+
+```bash
+loopctl tasks todos update <task-id> <todo-id> --status in_progress
+loopctl tasks todos update <task-id> <todo-id> --status completed
+loopctl tasks todos update <task-id> <todo-id> --content "Revised description"
+loopctl tasks todos update <task-id> <todo-id> --active-form "Now deploying..."
+loopctl tasks todos update <task-id> <todo-id> --dry-run
+```
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--status` | New status: `pending`, `in_progress`, or `completed` |
+| `--content` | New content text |
+| `--active-form` | New active form description |
+
+**API:** `PATCH /api/tasks/:id/todos/:todo_id`
+
+---
+
 ### topup
 
 Fund your LoopControl account. When the account balance is insufficient, the API returns HTTP 402 with the available payment products and rails. `loopctl topup` settles the payment automatically when a wallet is configured, or prints a Stripe hosted-checkout link for manual payment in a browser.
@@ -1014,6 +1111,29 @@ go test ./... -race
 # Coverage report
 go test ./... -coverprofile=coverage.out && go tool cover -html=coverage.out
 ```
+
+### API spec sync and contract gate
+
+The authoritative OpenAPI spec is committed at `internal/schema/testdata/api_spec.yaml` and kept in sync with the `dotdevlabs/loopcontrol` repository. The bidirectional contract gate (`TestBidirectionalCoverage`) runs on every `go test ./...` and fails when:
+
+- Any spec operation lacks a loopctl command **and** is not in the `Excluded` map with a reason
+- Any `Covered` or `Excluded` entry references a path no longer in the spec
+- A `Covered` entry claims a query parameter the spec does not document
+- A paginated spec operation is not declared `Paginated: true` in the manifest
+
+To update the local spec copy:
+
+```bash
+GITHUB_TOKEN=<token> ./scripts/sync_spec.sh          # update
+GITHUB_TOKEN=<token> ./scripts/sync_spec.sh --check  # verify in sync (CI uses this)
+```
+
+CI runs `--check` automatically when `GITHUB_TOKEN` is present. Without the token the check is skipped silently so local builds never fail due to network access.
+
+When adding a new loopctl command, update `internal/schema/coverage.go`:
+- Add a `Covered` entry for each API operation the command calls
+- Declare any non-pagination query parameters in `QueryParams`
+- Set `Paginated: true` for commands that follow `links.next` pagination
 
 **Module proxy**: `ctlkit` (`github.com/dotdevlabs/ctlkit`) is a public GitHub repo but is not indexed by the public Go module proxy. Set these env vars when building outside CI so Go fetches it directly and skips the checksum database:
 
