@@ -81,6 +81,7 @@ func NewCmd() *cobra.Command {
 	cmd.AddCommand(unblockCmd())
 	cmd.AddCommand(commentsCmd())
 	cmd.AddCommand(todosCmd())
+	cmd.AddCommand(recordingsCmd())
 	return cmd
 }
 

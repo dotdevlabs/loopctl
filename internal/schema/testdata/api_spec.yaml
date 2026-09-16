@@ -1,7 +1,7 @@
 openapi: "3.0.3"
 info:
   title: LoopControl API
-  version: "1.0.0"
+  version: "1.1.0"
   description: API for managing containerized agent environments on a Kubernetes cluster.
 
 servers:
@@ -10,13 +10,259 @@ servers:
 security:
   - bearerAuth: []
 
+x-action-cable-machine-events:
+  channel: MachineEventsChannel
+  authentication: >-
+    Uses the same authenticated connection account as the HTTP API. Clients cannot
+    select an account ID. Subscriptions without task_id receive only that account's
+    events; subscriptions with task_id are accepted only when that task belongs to
+    the connection account.
+  subscriptions:
+    account:
+      parameters: {}
+      stream: "account:<authenticated-account-id>:machine_events"
+    task:
+      parameters:
+        task_id: { type: integer, format: int64, required: true }
+      stream: "task:<owned-task-id>:machine_events"
+      description: >-
+        Receives every event carrying the task_id, including related container and
+        agent-session events.
+  delivery: >-
+    Live frames use the MachineEvent envelope and are best-effort: frames can be missed,
+    duplicated, or observed out of cursor order when transactions commit concurrently.
+    Consumers reconnect through the replay endpoints using their last processed exclusive
+    cursor, order by cursor, and deduplicate by id or cursor. Only committed events are
+    replayable; a live subscription is not a substitute for catch-up.
+  compatibility: >-
+    TaskChannel continues to expose task:<id> and the deprecated task:<id>:events
+    stream. task:<id>:events remains an unversioned, non-replayable task snapshot with
+    optional Activity overlays for existing clients. Activity is a human audit feed
+    and does not define or persist the machine-event protocol.
+
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
+    deviceAuthorization:
+      type: http
+      scheme: bearer
+      description: >-
+        Attempt-specific, 15-minute signed callback credential issued only to the temporary
+        Codex device-authentication pod. It is not an account API token and cannot access
+        any other endpoint.
 
   schemas:
+    MachineEvent:
+      type: object
+      description: >-
+        Immutable schema-version-1 machine event. `cursor` is the global monotonically
+        increasing row order; `id` is the stable UUID used for deduplication. Payloads
+        are allowlisted and never contain credentials, prompts, transcripts, terminal
+        output, authorization headers, stream URLs, or raw error contexts.
+      required: [id, cursor, type, schema_version, occurred_at, account_id, data]
+      properties:
+        id: { type: string, format: uuid }
+        cursor: { type: integer, format: int64 }
+        type:
+          type: string
+          enum: [task.created, task.stage_changed, task.picked_up, task.released,
+            task.stage_completion_requested, task.stage_completion_accepted,
+            task.stage_completion_rejected, task.blocked, task.unblocked,
+            container.status_changed, container.deployment_changed, agent.assigned,
+            agent.session_started, agent.session_finished, agent.session_failed,
+            agent.session_stalled, agent.session_reaped, agent.session_restarted,
+            agent.stream_started, agent.stream_stopped]
+        schema_version: { type: integer, enum: [1] }
+        occurred_at: { type: string, format: date-time }
+        account_id: { type: integer, format: int64 }
+        project_id: { type: integer, format: int64, nullable: true }
+        task_id: { type: integer, format: int64, nullable: true }
+        container_id: { type: integer, format: int64, nullable: true }
+        agent_id: { type: integer, format: int64, nullable: true }
+        session_id: { type: string, format: uuid, nullable: true }
+        data:
+          oneOf:
+            - { $ref: '#/components/schemas/TaskStateEventData' }
+            - { $ref: '#/components/schemas/TaskStageChangedEventData' }
+            - { $ref: '#/components/schemas/TaskContainerEventData' }
+            - { $ref: '#/components/schemas/TaskCompletionEventData' }
+            - { $ref: '#/components/schemas/TaskBlockedEventData' }
+            - { $ref: '#/components/schemas/ContainerStatusEventData' }
+            - { $ref: '#/components/schemas/ContainerDeploymentEventData' }
+            - { $ref: '#/components/schemas/AgentEventData' }
+          description: >-
+            The selected shape is determined by `type`. Fields not applicable to a
+            particular event are omitted rather than set to null.
+
+    TaskStateEventData:
+      type: object
+      required: [stage, phase, terminal]
+      properties:
+        stage: { type: string }
+        phase: { type: string, enum: [active, paused, lifecycle] }
+        lifecycle_role: { type: string, nullable: true, enum: [ready, blocked, completed, rejected] }
+        terminal: { type: boolean }
+
+    TaskStageChangedEventData:
+      allOf:
+        - $ref: '#/components/schemas/TaskStateEventData'
+        - type: object
+          required: [transition_id, from_stage, to_stage]
+          properties:
+            transition_id: { type: integer, format: int64 }
+            from_stage: { type: string, nullable: true }
+            to_stage: { type: string }
+            actor:
+              type: object
+              required: [type, id]
+              properties:
+                type: { type: string, enum: [user] }
+                id: { type: integer, format: int64 }
+            rework:
+              type: object
+              additionalProperties: true
+              description: Allowlisted rework flags, reason codes, stage names, and counters.
+
+    TaskContainerEventData:
+      type: object
+      required: [container_id, reason]
+      properties:
+        container_id: { type: integer, format: int64 }
+        reason: { type: string }
+
+    TaskCompletionEventData:
+      type: object
+      required: [stage]
+      properties:
+        stage: { type: string, nullable: true }
+        result: { type: string }
+        has_summary: { type: boolean }
+        has_message: { type: boolean }
+        outcome: { type: string, enum: [advanced, awaiting_human_gate, waiting_on_requirements, rework, blocked, rejected] }
+        to_stage: { type: string }
+        gate: { type: string, enum: [human] }
+        waiting_on: { type: array, items: { type: string } }
+        reason: { type: string }
+        rework: { type: boolean }
+
+    TaskBlockedEventData:
+      type: object
+      required: [transition_id, reason]
+      properties:
+        transition_id: { type: integer, format: int64 }
+        reason: { type: string }
+
+    ContainerStatusEventData:
+      type: object
+      required: [transition_id, from, to]
+      properties:
+        transition_id: { type: integer, format: int64 }
+        from: { type: string }
+        to: { type: string }
+        reason: { type: string, nullable: true }
+        status_message: { type: string, nullable: true, maxLength: 500 }
+        error:
+          nullable: true
+          description: Redacted, bounded string or structured summary; never raw error context.
+
+    ContainerDeploymentEventData:
+      type: object
+      required: [changes]
+      properties:
+        changes:
+          type: object
+          description: Changed current_image, deployed_commit_sha, and/or target_commit_sha values.
+          additionalProperties:
+            type: object
+            required: [from, to]
+            properties:
+              from: { type: string, nullable: true }
+              to: { type: string, nullable: true }
+
+    AgentEventData:
+      type: object
+      required: [stage]
+      properties:
+        stage: { type: string }
+        resolution_source: { type: string, enum: [stage, project, account, fallback] }
+        exit_code: { type: integer }
+        reason: { type: string, maxLength: 80 }
+
+    AgentSessionStartedAttributes:
+      type: object
+      additionalProperties: false
+      required: [session_id, state, stage, task_id, container_id, agent_id]
+      properties:
+        session_id: { type: string, format: uuid }
+        state: { type: string, enum: [started] }
+        stage: { type: string }
+        task_id: { type: integer, format: int64 }
+        container_id: { type: integer, format: int64 }
+        agent_id: { type: integer, format: int64 }
+
+    AgentSessionFailedAttributes:
+      type: object
+      additionalProperties: false
+      required: [session_id, state, stage, task_id, container_id, agent_id]
+      properties:
+        session_id: { type: string, format: uuid }
+        state: { type: string, enum: [failed] }
+        stage: { type: string }
+        task_id: { type: integer, format: int64 }
+        container_id: { type: integer, format: int64 }
+        agent_id: { type: integer, format: int64 }
+
+    CredentialDeviceAuthorizationAttributes:
+      type: object
+      additionalProperties: false
+      required: [state, expires_at]
+      properties:
+        state:
+          type: string
+          enum: [starting, waiting, completed, failed, expired, superseded]
+        expires_at: { type: string, format: date-time }
+
+    CredentialDeviceAuthorizationResource:
+      type: object
+      additionalProperties: false
+      required: [type, id, attributes, links]
+      properties:
+        type: { type: string, enum: [credential_device_authorizations] }
+        id: { type: string, pattern: '^[0-9a-f]{32}$' }
+        attributes: { $ref: '#/components/schemas/CredentialDeviceAuthorizationAttributes' }
+        links:
+          type: object
+          additionalProperties: false
+          required: [self]
+          properties:
+            self: { type: string, format: uri }
+
+    Errors:
+      type: object
+      additionalProperties: false
+      required: [errors]
+      properties:
+        errors:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [title, detail]
+            properties:
+              title: { type: string }
+              detail: { type: string }
+              source: { type: object }
+
+    MachineEventPage:
+      type: object
+      required: [events, next_cursor, has_more]
+      properties:
+        events: { type: array, items: { $ref: '#/components/schemas/MachineEvent' } }
+        next_cursor: { type: integer, format: int64 }
+        has_more: { type: boolean }
+
     JsonApiResource:
       type: object
       required: [type, id, attributes, links]
@@ -58,13 +304,17 @@ components:
 
     JsonApiErrors:
       type: object
+      additionalProperties: false
       required: [errors]
       properties:
         errors:
           type: array
           items:
             type: object
+            additionalProperties: false
+            required: [status, title, detail]
             properties:
+              status: { type: string, pattern: '^[1-5][0-9][0-9]$' }
               title: { type: string }
               detail: { type: string }
               source: { type: object }
@@ -121,6 +371,60 @@ components:
         handler: { type: string, description: "Ruby constant of the handler class." }
         config:  { type: object }
 
+    PromptSections:
+      type: object
+      additionalProperties: false
+      description: >-
+        Section overrides. Absent keys inherit; text replaces; empty text or null
+        omits. Unknown keys are rejected. The template key aliases workflow_instructions.
+      properties:
+        stage_introduction: { type: string, nullable: true }
+        workflow_instructions: { type: string, nullable: true }
+        agent_instructions: { type: string, nullable: true }
+        signaling_completion: { type: string, nullable: true }
+        todo_guidance: { type: string, nullable: true }
+        important_notes: { type: string, nullable: true }
+        rules: { type: string, nullable: true }
+        decision_rules: { type: string, nullable: true }
+        lifecycle_safety: { type: string, nullable: true }
+        recovery_message: { type: string, nullable: true }
+        adjustment_pending: { type: string, nullable: true }
+        adjustment_previous: { type: string, nullable: true }
+        adjustment_generic: { type: string, nullable: true }
+        adjustment_conflict: { type: string, nullable: true }
+        adjustment_heading: { type: string, nullable: true }
+        adjustment_pending_heading: { type: string, nullable: true }
+        adjustment_previous_heading: { type: string, nullable: true }
+        task_header: { type: string, nullable: true }
+        attachments: { type: string, nullable: true }
+        acceptance_criteria: { type: string, nullable: true }
+        platform_guidance: { type: string, nullable: true }
+        plan_context: { type: string, nullable: true }
+        reference_material: { type: string, nullable: true }
+        success_conditions: { type: string, nullable: true }
+        failure_feedback: { type: string, nullable: true }
+        adjustments: { type: string, nullable: true }
+        todos: { type: string, nullable: true }
+        available_tools: { type: string, nullable: true }
+        adjustment_entry: { type: string, nullable: true }
+        adjustment_repeated_entry: { type: string, nullable: true }
+        todo_entry: { type: string, nullable: true }
+        template: { type: string, nullable: true }
+
+    PromptConfiguration:
+      type: object
+      additionalProperties: false
+      description: Database-owned Mustache sections and ordered slot names. Absent order inherits global order; an empty array renders nothing.
+      properties:
+        sections:
+          $ref: '#/components/schemas/PromptSections'
+        order:
+          type: array
+          uniqueItems: true
+          items:
+            type: string
+            enum: [stage_introduction, workflow_instructions, agent_instructions, signaling_completion, todo_guidance, important_notes, rules, decision_rules, lifecycle_safety, recovery_message, adjustment_pending, adjustment_previous, adjustment_generic, adjustment_conflict, adjustment_heading, adjustment_pending_heading, adjustment_previous_heading, task_header, attachments, acceptance_criteria, platform_guidance, plan_context, reference_material, success_conditions, failure_feedback, adjustments, todos, available_tools, adjustment_entry, adjustment_repeated_entry, todo_entry]
+
     PipelineStage:
       type: object
       description: A single workflow stage as returned in pipeline responses.
@@ -137,27 +441,36 @@ components:
         environment_id:             { type: string, nullable: true }
         advance_requirements:       { type: array, items: { type: object } }
         advance_notice:             { type: string, nullable: true }
-        branch_conditions:          { type: array, items: { type: object } }
         runs_in_container_override: { type: boolean, nullable: true }
-        prompt_sections:            { type: object }
+        prompt_sections:
+          $ref: '#/components/schemas/PromptSections'
+        prompt_configuration:
+          $ref: '#/components/schemas/PromptConfiguration'
         stage_triggers:
           type: array
           items:
             $ref: '#/components/schemas/PipelineStageTrigger'
         name:         { type: string, nullable: true, description: "Deprecated: same as custom_stage_name." }
         role:         { type: string, description: "Deprecated: always 'working'." }
-        instructions: { type: string, description: "Deprecated: same as prompt_sections.template." }
+        instructions: { type: string, description: "Deprecated: custom-stage instructions composed into the canonical prompt; same as prompt_sections.template." }
 
     PipelineStageInput:
       type: object
       description: >-
         Full stage attribute set for pipeline create/update. stage_type defaults to "custom".
-        For custom stages custom_stage_name (or legacy name) and a prompt template
-        (prompt_sections.template or legacy instructions) are required.
+        For custom stages custom_stage_name (or legacy name) and stage instructions
+        (prompt_sections.template or legacy instructions) are required. These instructions
+        replace the workflow section; the database template controls section inclusion and order.
       properties:
         stage_type:                 { type: string, description: "Stage type name. Defaults to 'custom'." }
         custom_stage_name:          { type: string }
-        prompt_sections:            { type: object }
+        prompt_sections:
+          $ref: '#/components/schemas/PromptSections'
+        prompt_configuration:
+          allOf:
+            - $ref: '#/components/schemas/PromptConfiguration'
+            - { type: object, minProperties: 1 }
+          description: "Optional nonempty configuration object. Omit to inherit defaults."
         gate:                       { type: string, enum: [automated, human] }
         on_failure:                 { type: string, enum: [rework, block] }
         max_rework_count:           { type: integer }
@@ -167,15 +480,6 @@ components:
         environment_id:             { type: integer }
         advance_requirements:       { type: array, items: { type: object } }
         advance_notice:             { type: string }
-        branch_conditions:
-          type: array
-          items:
-            type: object
-            properties:
-              field:         { type: string }
-              op:            { type: string, enum: [eq, ne, gt, lt, gte, lte, in, not_in] }
-              value:         {}
-              next_position: { type: integer }
         runs_in_container_override: { type: boolean, nullable: true }
         stage_triggers:
           type: array
@@ -183,7 +487,7 @@ components:
             $ref: '#/components/schemas/PipelineStageTrigger'
         name:         { type: string, description: "Deprecated: use custom_stage_name." }
         role:         { type: string, enum: [working], description: "Deprecated: use stage_type: 'custom'." }
-        instructions: { type: string, description: "Deprecated: use prompt_sections.template." }
+        instructions: { type: string, description: "Deprecated: use prompt_sections.template for custom-stage instructions composed into the canonical prompt." }
 
     PipelineAttributes:
       type: object
@@ -275,6 +579,7 @@ components:
         title: { type: string }
         kind: { type: string }
         prompt_hash: { type: string }
+        prompt_revision: { type: string, nullable: true }
         pr_number: { type: integer }
         pr_url: { type: string }
         description: { type: string }
@@ -282,7 +587,6 @@ components:
         merge_commit_sha: { type: string }
         ci_status: { type: string }
         ci_status_url: { type: string }
-        code_review_status: { type: string }
         blocked_reason: { type: string }
         completed_at: { type: string, format: date-time }
         picked_up_at: { type: string, format: date-time }
@@ -290,6 +594,9 @@ components:
         stage: { type: string }
         current_state: { type: string }
         status: { type: string }
+        phase: { type: string, enum: [active, paused, lifecycle] }
+        lifecycle_role: { type: string, nullable: true }
+        terminal: { type: boolean }
         depends_on:
           type: array
           items: { type: string }
@@ -306,10 +613,14 @@ components:
         title: { type: string }
         kind: { type: string }
         stage: { type: string }
+        phase: { type: string, enum: [active, paused, lifecycle] }
+        lifecycle_role: { type: string, nullable: true }
+        terminal: { type: boolean }
         current_state: { type: string }
         status: { type: string }
         project_id: { type: string }
         prompt_hash: { type: string }
+        prompt_revision: { type: string, nullable: true }
         pr_number: { type: integer }
         pr_url: { type: string }
         description: { type: string }
@@ -317,7 +628,6 @@ components:
         merge_commit_sha: { type: string }
         ci_status: { type: string }
         ci_status_url: { type: string }
-        code_review_status: { type: string }
         blocked_reason: { type: string }
         completed_at: { type: string, format: date-time }
         picked_up_at: { type: string, format: date-time }
@@ -337,6 +647,9 @@ components:
         title: { type: string }
         kind: { type: string }
         stage: { type: string }
+        phase: { type: string, enum: [active, paused, lifecycle] }
+        lifecycle_role: { type: string, nullable: true }
+        terminal: { type: boolean }
         project_id: { type: string }
         depends_on:
           type: array
@@ -352,25 +665,113 @@ components:
 
     RecordingAttributes:
       type: object
+      required: [recording_type, filename, started_at, ended_at, duration, size_bytes, file_available, deleted_at, content_url, container_id, stage_name, created_at]
       properties:
-        recording_type: { type: string }
+        recording_type: { type: string, enum: [asciinema, transcript] }
         filename: { type: string }
-        started_at: { type: string, format: date-time }
-        ended_at: { type: string, format: date-time }
-        duration: { type: integer }
-        size_bytes: { type: integer }
-        file_available: { type: boolean }
-        deleted_at: { type: string, format: date-time }
-        content_url: { type: string }
-        container_id: { type: string }
-        stage_name: { type: string }
+        started_at: { type: string, format: date-time, nullable: true }
+        ended_at: { type: string, format: date-time, nullable: true }
+        duration: { type: integer, nullable: true, description: Elapsed whole seconds when both timestamps exist. }
+        size_bytes: { type: integer, nullable: true }
+        file_available:
+          type: boolean
+          description: Attachment metadata exists and deleted_at is absent. Not a storage health probe; retention races or storage loss can make a discovered link fail.
+        deleted_at: { type: string, format: date-time, nullable: true }
+        content_url:
+          type: string
+          nullable: true
+          description: Relative URI reference for authenticated raw content of an available transcript or asciinema. Resolve against the API origin and reuse authentication. Null for unavailable or unsupported content. Never a public storage URL.
+          example: /api/tasks/1432/recordings/43922/content
+        container_id: { type: string, nullable: true }
+        stage_name: { type: string, nullable: true }
         created_at: { type: string, format: date-time }
 
-    RecordingCreateResponseAttributes:
+    RecordingResource:
       type: object
+      required: [type, id, attributes, links]
       properties:
-        recording_type: { type: string }
+        type: { type: string, enum: [task_recordings] }
+        id: { type: string }
+        attributes: { $ref: '#/components/schemas/RecordingAttributes' }
+        links:
+          type: object
+          required: [self]
+          properties:
+            self: { type: string, format: uri }
+
+    RecordingDocument:
+      type: object
+      required: [data]
+      properties:
+        data: { $ref: '#/components/schemas/RecordingResource' }
+
+    RecordingCollection:
+      type: object
+      required: [data, links, meta]
+      properties:
+        data:
+          type: array
+          items: { $ref: '#/components/schemas/RecordingResource' }
+        links:
+          type: object
+          required: [self, first, prev, next, last]
+          properties:
+            self: { type: string, format: uri }
+            first: { type: string, format: uri }
+            prev: { type: string, format: uri, nullable: true }
+            next: { type: string, format: uri, nullable: true }
+            last: { type: string, format: uri }
+        meta:
+          type: object
+          required: [total_count, page_count, current_page, per_page]
+          properties:
+            total_count: { type: integer, minimum: 0 }
+            page_count: { type: integer, minimum: 1 }
+            current_page: { type: integer, minimum: 1 }
+            per_page: { type: integer, minimum: 1, maximum: 100 }
+
+    RecordingUpload:
+      type: object
+      required: [recording_type, filename]
+      description: Requires an attached multipart file or a nonblank path. Path-only ingestion remains supported; it does not expose filesystem content for download.
+      properties:
+        recording_type: { type: string, enum: [asciinema, transcript] }
         filename: { type: string }
+        started_at: { type: string, format: date-time, nullable: true }
+        ended_at: { type: string, format: date-time, nullable: true }
+        size_bytes: { type: integer, nullable: true }
+        path: { type: string }
+        stage: { type: string, nullable: true }
+
+    RecordingMultipartUpload:
+      allOf:
+        - $ref: '#/components/schemas/RecordingUpload'
+        - type: object
+          properties:
+            file: { type: string, format: binary }
+
+    RecordingScopedNotFound:
+      type: object
+      required: [errors]
+      properties:
+        errors:
+          type: array
+          minItems: 1
+          maxItems: 1
+          items:
+            type: object
+            required: [title, detail]
+            properties:
+              title: { type: string, enum: [Error] }
+              detail: { type: string, enum: [The requested resource was not found] }
+
+    RecordingContentError:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          enum: [Recording content not found, Recording file has been deleted, Recording type does not support content]
 
     CommentAttributes:
       type: object
@@ -422,6 +823,20 @@ components:
 
     ActivityAttributes:
       type: object
+      description: >-
+        Task-scoped activity records include billing.invariant_detected,
+        billing.invariant_corrected, billing.audit_required, and billing.usage_corrected.
+        Billing findings carry incident_key, task_id, container_id, period_id, session_id,
+        reason, cutoff, outcome, and error in metadata. Nullable identities and cutoffs
+        indicate missing historical evidence. pause_pending and retry_pending remain
+        unresolved; corrected means the corrective lifecycle outcome was observed.
+        invoice_hold withholds uncertain usage from invoice preparation; superseded
+        means a newer invocation owns the container and must not receive an old pause.
+        Correction records may include source_id and source_allocations linking original
+        debits to append-only compensations. Existing operator corrections can be adopted
+        without changing spending power. Account-level sweep heartbeats and ledger holds
+        are visible in the admin billing dashboard; they are not task execution evidence.
+        Billing activities do not refresh task execution liveness.
       properties:
         action: { type: string }
         details: { type: string }
@@ -551,6 +966,286 @@ components:
         api_token_name: { type: string }
 
 paths:
+  /api/events:
+    get:
+      operationId: get-api-events
+      summary: Replay committed account machine events
+      description: >-
+        Returns events for the authenticated account in ascending cursor order. `after`
+        is exclusive; reconnect with the last processed cursor. Limit is capped at 100.
+        An empty page returns the supplied cursor. Live ActionCable delivery is best-effort;
+        frames can be missed or duplicated and must be reconciled with this durable replay
+        log. Subscribe to MachineEventsChannel without task_id; the server derives
+        `account:<authenticated-account-id>:machine_events` and never trusts a supplied
+        account ID.
+      parameters:
+        - { name: after, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 100 } }
+      responses:
+        '200':
+          description: Ordered committed events
+          content: { application/json: { schema: { $ref: '#/components/schemas/MachineEventPage' } } }
+        '401': { description: Authentication required }
+        '400': { description: Invalid cursor }
+
+  /api/tasks/{task_id}/events:
+    get:
+      operationId: get-api-task-events
+      summary: Replay committed events carrying an owned task ID
+      description: >-
+        Same exclusive-cursor contract as account replay, restricted to the authenticated
+        account's task. Includes related container and agent-session events whose envelope
+        carries task_id. MachineEventsChannel with task_id streams
+        `task:<owned-task-id>:machine_events`; foreign tasks are rejected.
+      parameters:
+        - { name: task_id, in: path, required: true, schema: { type: integer } }
+        - { name: after, in: query, schema: { type: integer, minimum: 0, default: 0 } }
+        - { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 100 } }
+      responses:
+        '200':
+          description: Ordered task-bearing events
+          content: { application/json: { schema: { $ref: '#/components/schemas/MachineEventPage' } } }
+        '400': { description: Invalid cursor }
+        '401': { description: Authentication required }
+        '404': { description: Task not owned by authenticated account }
+
+  /api/containers/{container_id}/agent_sessions:
+    post:
+      operationId: post-api-container-agent-session
+      summary: Claim a preassigned agent invocation
+      description: >-
+        Claims the exact AgentSession UUID assigned by LoopControl before the agent starts and
+        projected into the container at /task/agent-session-id. The endpoint never creates or
+        selects an AgentSession. The UUID must belong to the authenticated account, container,
+        attached task, and selected agent; the task must be in an
+        active container-backed stage with no lifecycle role and no unapproved human gate;
+        the selected agent must still own the container; and the session must be assigned
+        or already started. Unapproved gates and changed agent ownership return 404.
+        The session must carry the current persisted pipeline transition identity.
+        Legacy sessions with no transition identity and sessions from earlier invocations
+        of the same stage return 404. Claiming alone creates no billable execution entitlement.
+        A valid assignment can be claimed before the container database status synchronizes to running.
+        Claiming an assigned session changes it to started and emits agent.session_started.
+        Repeating the claim for that same started session is idempotent and emits no duplicate event.
+      parameters:
+        - { name: container_id, in: path, required: true, schema: { type: integer } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [agent_session_id]
+              properties:
+                agent_session_id:
+                  type: string
+                  format: uuid
+                  description: Exact UUID projected into the container at /task/agent-session-id.
+      responses:
+        '201':
+          description: The preassigned session was claimed or had already been claimed.
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/JsonApiResource'
+                      - type: object
+                        properties:
+                          attributes:
+                            $ref: '#/components/schemas/AgentSessionStartedAttributes'
+        '400':
+          description: The required agent_session_id parameter is missing
+          content:
+            application/vnd.api+json:
+              schema: { $ref: '#/components/schemas/Errors' }
+        '401': { description: The bearer token is missing or invalid }
+        '404':
+          description: The container or session is not visible, or its account, task, agent, state, or persisted pipeline transition does not match the current invocation
+          content:
+            application/vnd.api+json:
+              schema: { $ref: '#/components/schemas/Errors' }
+
+  /api/agent_sessions/{id}:
+    patch: &agent-session-update-operation
+      operationId: patch-api-agent-session
+      summary: Report invocation failure
+      description: >-
+        Accepts state failed, an optional integer exit_code, and an optional
+        reason string. The service derives a bounded, redacted summary and safe reason
+        code; retries are idempotent. Successful stage completion is reported only through
+        POST /api/tasks/{task_id}/stage_completion.
+      parameters:
+        - { name: id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [state]
+              properties:
+                state: { type: string, enum: [failed] }
+                exit_code: { type: integer, nullable: true }
+                reason: { type: string, nullable: true, description: Bounded reason converted to a safe machine-readable code and redacted summary. }
+      responses:
+        '200':
+          description: Failed agent session
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/JsonApiResource'
+                      - type: object
+                        properties:
+                          attributes:
+                            $ref: '#/components/schemas/AgentSessionFailedAttributes'
+        '422':
+          description: State is not failed
+          content:
+            application/vnd.api+json:
+              schema: { $ref: '#/components/schemas/JsonApiErrors' }
+        '404': { description: Session not visible to authenticated account/agent }
+
+    put:
+      <<: *agent-session-update-operation
+      operationId: put-api-agent-session
+
+  /api/agent_sessions/{agent_session_id}/stream:
+    patch: &agent-session-stream-update-operation
+      operationId: patch-api-agent-session-stream
+      summary: Report live invocation stream availability
+      description: Emits agent.stream_started/stopped; URLs are never present in machine events.
+      parameters:
+        - { name: agent_session_id, in: path, required: true, schema: { type: string, format: uuid } }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [available]
+              properties:
+                available: { type: boolean }
+      responses:
+        '200':
+          description: Current availability
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [session_id, available]
+                properties:
+                  session_id: { type: string, format: uuid }
+                  available: { type: boolean }
+        '404': { description: Session not visible to authenticated account/agent }
+
+    put:
+      <<: *agent-session-stream-update-operation
+      operationId: put-api-agent-session-stream
+
+  /api/credential_device_authorizations/{id}:
+    patch:
+      operationId: patch-api-credential-device-authorization
+      summary: Update a Codex device-authorization attempt
+      description: >-
+        Called only by the temporary Codex device-authentication pod. `waiting` publishes
+        the one-time user code, `completed` atomically stores the base64-encoded Codex
+        auth.json in the existing OpenAI credential set, and `failed` ends the attempt
+        without changing that credential. Expired, completed, failed, or superseded
+        attempts cannot replace a credential. The attempt is represented by
+        a signed 15-minute callback token and an expiring cache entry; it is not persisted.
+      security:
+        - deviceAuthorization: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Random nonce identifying the cached credential device-authorization attempt
+          schema: { type: string, pattern: '^[0-9a-f]{32}$' }
+      requestBody:
+        required: true
+        content:
+          application/vnd.api+json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [data]
+              properties:
+                data:
+                  type: object
+                  additionalProperties: false
+                  required: [type, id, attributes]
+                  properties:
+                    type: { type: string, enum: [credential_device_authorizations] }
+                    id: { type: string, pattern: '^[0-9a-f]{32}$' }
+                    attributes:
+                      oneOf:
+                        - type: object
+                          additionalProperties: false
+                          required: [state, user_code]
+                          properties:
+                            state: { type: string, enum: [waiting] }
+                            user_code:
+                              type: string
+                              pattern: '^[A-Z0-9]{4,}(-[A-Z0-9]{4,})+$'
+                              maxLength: 64
+                        - type: object
+                          additionalProperties: false
+                          required: [state, auth_config]
+                          properties:
+                            state: { type: string, enum: [completed] }
+                            auth_config:
+                              type: string
+                              format: byte
+                              minLength: 4
+                              maxLength: 1048576
+                              description: Base64-encoded, non-empty JSON object containing the completed authorization credentials.
+                        - type: object
+                          additionalProperties: false
+                          required: [state]
+                          properties:
+                            state: { type: string, enum: [failed] }
+      responses:
+        '200':
+          description: Current device-authorization state
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data]
+                properties:
+                  data: { $ref: '#/components/schemas/CredentialDeviceAuthorizationResource' }
+        '400':
+          description: Missing or unknown JSON:API member
+          content:
+            application/vnd.api+json:
+              schema: { $ref: '#/components/schemas/Errors' }
+        '401':
+          description: Missing, invalid, or expired device-authorization callback credential
+          content:
+            application/vnd.api+json:
+              schema: { $ref: '#/components/schemas/Errors' }
+        '404':
+          description: Device authorization not found, inactive, or resource type or ID does not match
+          content:
+            application/vnd.api+json:
+              schema: { $ref: '#/components/schemas/Errors' }
+        '422':
+          description: Invalid state, user code, auth config, or inactive authorization
+          content:
+            application/vnd.api+json:
+              schema: { $ref: '#/components/schemas/Errors' }
+
   /status:
     get:
       operationId: get-status
@@ -831,8 +1526,14 @@ paths:
                       type: array
                       items:
                         $ref: '#/components/schemas/PipelineStageInput'
-                      description: "Ordered workflow stages. Full attribute set; all fields optional except name/instructions for custom stages."
+                      description: "Ordered workflow stages. Full attribute set; custom stages require custom_stage_name (or name) and stage instructions in prompt_sections.template (or instructions)."
       responses:
+        '400':
+          description: Required parameters are missing or have an invalid shape
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
         '201':
           description: Created pipeline
           content:
@@ -907,6 +1608,12 @@ paths:
                         $ref: '#/components/schemas/PipelineStageInput'
                       description: "Ordered workflow stages. Replaces all existing atomically. Send empty array to clear."
       responses:
+        '400':
+          description: Required parameters are missing or have an invalid shape
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
         '200':
           description: Updated pipeline
           content:
@@ -1180,6 +1887,10 @@ paths:
                 stream_url: { type: string }
                 deployed_commit_sha: { type: string }
                 deployed_commit_message: { type: string }
+                session_id:
+                  type: string
+                  format: uuid
+                  description: Correlates a stream_url availability change with its invocation.
       responses:
         '200':
           description: Updated container
@@ -1395,134 +2106,162 @@ paths:
   /api/tasks/{task_id}/recordings:
     get:
       operationId: get-api-task-recordings
-      summary: Lists recordings attached to a task.
+      summary: Lists task recordings with authenticated content links.
+      description: >-
+        Account/task scoped; ordered by started_at descending. Bearer or X-Api-Token authentication,
+        with an existing signed browser session as fallback. Pagination applies only to metadata.
+        page must be an object; number/size must contain decimal digits when nonblank.
+        Omitted number/size default to 1/20; zero clamps to 1, size above 100 clamps to 100.
+        Blank values clamp to 1. Negative, fractional, nonnumeric or nested values return 400.
+        prev/next links are null at page boundaries; out-of-range pages return an empty data array.
       parameters:
         - { name: task_id, in: path, required: true, schema: { type: string } }
-        - { name: "page[number]", in: query, schema: { type: integer, default: 1 } }
-        - { name: "page[size]", in: query, schema: { type: integer, default: 20, minimum: 1, maximum: 100 } }
+        - { name: 'page[number]', in: query, required: false, schema: { type: integer, default: 1, minimum: 0 } }
+        - { name: 'page[size]', in: query, required: false, schema: { type: integer, default: 20, minimum: 0 }, description: Normalized to 1 through 100. }
       responses:
         '200':
-          description: Paginated list of recordings
+          description: Paginated recording metadata; content_url is relative to the authenticated API origin.
           content:
             application/vnd.api+json:
-              schema:
-                type: object
-                required: [data, links, meta]
-                properties:
-                  data:
-                    type: array
-                    items:
-                      allOf:
-                        - $ref: '#/components/schemas/JsonApiResource'
-                        - type: object
-                          properties:
-                            attributes:
-                              $ref: '#/components/schemas/RecordingAttributes'
-                  links:
-                    $ref: '#/components/schemas/JsonApiLinks'
-                  meta:
-                    $ref: '#/components/schemas/JsonApiPaginationMeta'
+              schema: { $ref: '#/components/schemas/RecordingCollection' }
         '400':
-          description: Invalid pagination parameter
+          description: Invalid pagination shape or number/size. Error source.parameter identifies page, page[number] or page[size].
           content:
             application/vnd.api+json:
-              schema:
-                $ref: '#/components/schemas/JsonApiErrors'
+              schema: { $ref: '#/components/schemas/JsonApiErrors' }
+        '401':
+          description: No usable token or authenticated session. Empty response body, no redirect.
+        '404':
+          description: Task unknown or outside authenticated account.
+          content:
+            application/vnd.api+json:
+              schema: { $ref: '#/components/schemas/RecordingScopedNotFound' }
     post:
       operationId: post-api-task-recordings
-      summary: Uploads a new recording for a task.
+      summary: Uploads recording metadata and optionally an attached file.
+      description: >-
+        Account/task scoped. Bearer or X-Api-Token authentication, with an existing signed browser
+        session as fallback. Accepts multipart attachment uploads or JSON path-only metadata.
+        A nonblank filename and supported recording_type plus an attached file or path are required.
+        Response uses the same complete recording resource as show, including content_url.
       parameters:
         - { name: task_id, in: path, required: true, schema: { type: string } }
       requestBody:
+        required: true
         content:
           multipart/form-data:
-            schema:
-              type: object
-              properties:
-                recording_type: { type: string }
-                filename: { type: string }
-                started_at: { type: string }
-                ended_at: { type: string }
-                size_bytes: { type: integer }
-                path: { type: string }
-                stage: { type: string }
-                file:
-                  type: string
-                  format: binary
+            schema: { $ref: '#/components/schemas/RecordingMultipartUpload' }
+          application/json:
+            schema: { $ref: '#/components/schemas/RecordingUpload' }
       responses:
         '201':
-          description: Created recording
+          description: Created recording metadata; attached supported content is immediately discoverable.
           content:
             application/vnd.api+json:
-              schema:
-                type: object
-                required: [data]
-                properties:
-                  data:
-                    allOf:
-                      - $ref: '#/components/schemas/JsonApiResource'
-                      - type: object
-                        properties:
-                          attributes:
-                            $ref: '#/components/schemas/RecordingCreateResponseAttributes'
+              schema: { $ref: '#/components/schemas/RecordingDocument' }
+        '401':
+          description: No usable token or authenticated session. Empty response body, no redirect.
+        '404':
+          description: Task unknown or outside authenticated account.
+          content:
+            application/vnd.api+json:
+              schema: { $ref: '#/components/schemas/RecordingScopedNotFound' }
         '422':
-          description: Validation failed
+          description: Validation failed, including unsupported/missing type, blank filename or no attached file/path.
           content:
             application/vnd.api+json:
-              schema:
-                $ref: '#/components/schemas/JsonApiErrors'
+              schema: { $ref: '#/components/schemas/JsonApiErrors' }
 
   /api/tasks/{task_id}/recordings/{id}:
     get:
       operationId: get-api-task-recording
-      summary: Returns a single recording.
+      summary: Returns recording metadata with an authenticated content link when available.
+      description: Account/task scoped. Bearer or X-Api-Token authentication, with an existing signed browser session as fallback. Resolve content_url against the API origin and reuse authentication.
       parameters:
         - { name: task_id, in: path, required: true, schema: { type: string } }
         - { name: id, in: path, required: true, schema: { type: string } }
       responses:
         '200':
-          description: Recording record
+          description: Recording metadata.
           content:
             application/vnd.api+json:
-              schema:
-                type: object
-                required: [data]
-                properties:
-                  data:
-                    allOf:
-                      - $ref: '#/components/schemas/JsonApiResource'
-                      - type: object
-                        properties:
-                          attributes:
-                            $ref: '#/components/schemas/RecordingAttributes'
+              schema: { $ref: '#/components/schemas/RecordingDocument' }
+        '401':
+          description: No usable token or authenticated session. Empty response body, no redirect.
         '404':
-          description: Not found
+          description: Task or recording unknown or outside the authenticated account/task.
           content:
             application/vnd.api+json:
-              schema:
-                $ref: '#/components/schemas/JsonApiErrors'
+              schema: { $ref: '#/components/schemas/RecordingScopedNotFound' }
 
   /api/tasks/{task_id}/recordings/{recording_id}/content:
     get:
       operationId: get-api-task-recording-content
-      summary: Streams the raw content of an asciinema recording.
+      summary: Returns complete original transcript JSONL or asciinema bytes.
+      description: >-
+        Account/task scoped. Bearer or X-Api-Token authentication, with an existing signed browser
+        session as fallback for playback. Authentication and scoped lookup precede content checks.
+        Returns the original attached bytes synchronously, regardless of Accept, without JSON:API wrapping,
+        parsing, normalization, truncation, range handling or public download redirects.
+        Transcripts always use application/x-ndjson. Asciinema preserves the stored MIME only for application/json, application/x-asciicast,
+        application/octet-stream and text/plain, falling back to application/json when absent or
+        outside this safe allowlist. Executable historical MIME never enables inline HTML or SVG.
+        Unsupported legacy type is checked before deletion, then attachment/storage availability.
+        file_available is not a storage health probe: a previously discovered link can return 404/410.
+        Unexpected storage outages are not translated to missing-file errors and have no recovery guarantee.
       parameters:
         - { name: task_id, in: path, required: true, schema: { type: string } }
         - { name: recording_id, in: path, required: true, schema: { type: string } }
       responses:
         '200':
-          description: Raw recording bytes
+          description: Exact raw bytes, including every JSONL record or asciinema event.
+          headers:
+            Content-Disposition:
+              description: Inline delivery retains browser playback.
+              schema: { type: string, enum: [inline] }
+            Cache-Control:
+              description: Private response that must not be stored.
+              schema: { type: string, example: 'private, no-store' }
+            X-Content-Type-Options:
+              schema: { type: string, enum: [nosniff] }
           content:
+            application/x-ndjson:
+              schema: { type: string, format: binary }
+            application/json:
+              schema: { type: string, format: binary }
+            application/x-asciicast:
+              schema: { type: string, format: binary }
             application/octet-stream:
-              schema:
-                type: string
-                format: binary
+              schema: { type: string, format: binary }
+            text/plain:
+              schema: { type: string, format: binary }
+        '401':
+          description: No usable token or authenticated session. Empty response body, no redirect.
         '404':
-          description: Recording or file not found
+          description: Scoped lookup failed, or attachment/physical storage object is absent. No filesystem fallback.
+          content:
+            application/vnd.api+json:
+              schema:
+                oneOf:
+                  - { $ref: '#/components/schemas/RecordingScopedNotFound' }
+                  - { $ref: '#/components/schemas/RecordingContentError' }
+              examples:
+                scoped:
+                  value: { errors: [{ title: Error, detail: The requested resource was not found }] }
+                missing:
+                  value: { error: Recording content not found }
         '410':
-          description: Recording file has been deleted
+          description: Deleted recording file, whether still attached or already purged.
+          content:
+            application/vnd.api+json:
+              schema: { $ref: '#/components/schemas/RecordingContentError' }
+              example: { error: Recording file has been deleted }
         '422':
-          description: Recording type does not support content streaming
+          description: Unsupported legacy recording type.
+          content:
+            application/vnd.api+json:
+              schema: { $ref: '#/components/schemas/RecordingContentError' }
+              example: { error: Recording type does not support content }
 
   /api/tasks/{task_id}/images/{id}:
     get:
@@ -1542,69 +2281,86 @@ paths:
         '404':
           description: Image not found
 
-  /api/tasks/{task_id}/completion:
-    post:
-      operationId: post-api-task-completion
-      summary: Marks a task stage complete (legacy completion endpoint).
-      parameters:
-        - { name: task_id, in: path, required: true, schema: { type: string } }
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                result: { type: string }
-                message: { type: string }
-                summary: { type: string }
-      responses:
-        '200':
-          description: Completion result. Not JSON:API format.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status: { type: string }
-                  stage: { type: string }
-        '422':
-          description: Invalid state transition
-
   /api/tasks/{task_id}/stage_completion:
     post:
       operationId: post-api-task-stage-completion
-      summary: Advances a task through its pipeline.
+      summary: Advances, fails, or blocks a task at its current pipeline stage.
       parameters:
-        - { name: task_id, in: path, required: true, schema: { type: string } }
+        - { name: task_id, in: path, required: true, schema: { type: integer, minimum: 1 } }
       requestBody:
+        required: true
         content:
           application/json:
             schema:
               type: object
+              additionalProperties: false
+              required: [agent_session_id]
+              description: Credential revisions are resolved from the current agent session's server-side snapshot; credential_revision is not accepted from callers.
               properties:
-                result: { type: string }
+                agent_session_id: { type: string, format: uuid, description: UUID claimed by the current agent process. It must belong to this task and authenticated agent. }
+                result: { type: string, enum: [passed, failed, blocked], default: passed }
                 message: { type: string }
                 summary: { type: string }
-                flow_run_ids: { type: array, items: { type: integer } }
+                blocked_reason: { type: string, minLength: 1, description: Required when result is blocked. }
+                credential_set_id: { type: string, description: Credential identity from the current agent session snapshot. Required when blocked_reason is credential_authentication_failed. }
                 noop_reason: { type: string }
                 local_head_sha: { type: string }
+                remote_head_sha: { type: string }
                 working_tree_clean: { type: boolean }
+                working_tree_status: { type: string }
+                branch_diff_files: { type: array, items: { type: string } }
                 input_tokens: { type: integer }
                 output_tokens: { type: integer }
+              oneOf:
+                - properties:
+                    result: { type: string, enum: [passed, failed], default: passed }
+                - required: [result, blocked_reason]
+                  properties:
+                    result: { type: string, enum: [blocked] }
+                    blocked_reason:
+                      type: string
+                      minLength: 1
+                      not: { enum: [credential_authentication_failed] }
+                - required: [result, blocked_reason, credential_set_id]
+                  properties:
+                    result: { type: string, enum: [blocked] }
+                    blocked_reason: { type: string, enum: [credential_authentication_failed] }
       responses:
         '200':
-          description: Stage advance result. Not JSON:API format.
+          description: Obsolete invocation acknowledged with the task's current state.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 type: object
+                required: [data]
                 properties:
-                  status: { type: string }
-                  stage: { type: string }
-                  gated: { type: boolean }
-                  waiting_on: { type: array, items: { type: string } }
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/JsonApiResource'
+                      - type: object
+                        properties:
+                          attributes:
+                            $ref: '#/components/schemas/TaskShowAttributes'
+        '201':
+          description: Task after the accepted stage result.
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    allOf:
+                      - $ref: '#/components/schemas/JsonApiResource'
+                      - type: object
+                        properties:
+                          attributes:
+                            $ref: '#/components/schemas/TaskShowAttributes'
         '422':
-          description: Rejected completion, unapproved human-gated stage, or invalid state transition
+          description: Guard-rejected completion or invalid state transition. Rejected submissions make no writes and can be retried by the active session.
+          content:
+            application/vnd.api+json:
+              schema: { $ref: '#/components/schemas/JsonApiErrors' }
 
   /api/tasks/{task_id}/bootstrap_failure:
     post:
@@ -1658,7 +2414,7 @@ paths:
   /api/tasks/{task_id}/prompt_sync:
     post:
       operationId: post-api-task-prompt-sync
-      summary: Called by a container whose local prompt hash doesn't match the server's.
+      summary: Requests repair when a container's mounted prompt revision or hash doesn't match the server's.
       parameters:
         - { name: task_id, in: path, required: true, schema: { type: string } }
       requestBody:
@@ -1668,6 +2424,7 @@ paths:
               type: object
               properties:
                 local_hash: { type: string }
+                prompt_revision: { type: string }
       responses:
         '200':
           description: Sync acknowledged. Not JSON:API format.
@@ -1678,6 +2435,18 @@ paths:
                 properties:
                   status: { type: string }
                   stage: { type: string }
+                  expected_revision: { type: string, nullable: true }
+                  expected_hash: { type: string }
+        '409':
+          description: The reported prompt revision is stale. The response supplies the current expected revision and hash.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [stale] }
+                  stage: { type: string }
+                  expected_revision: { type: string, nullable: true }
                   expected_hash: { type: string }
         '422':
           description: Task has no container
@@ -1728,7 +2497,15 @@ paths:
   /api/tasks/{task_id}/todos:
     get:
       operationId: get-api-task-todos
-      summary: Lists todos for a task, ordered chronologically.
+      summary: Lists saved todos for a task, ordered by position then ID.
+      description: >-
+        Available in every task lifecycle state, with or without an assigned container.
+        Omitted or blank stage_name returns all saved stages. A supplied nonblank string
+        matches the exact stored stage name, including historical stages absent from the
+        current pipeline; unknown names return an empty list. Arrays and objects are invalid.
+        Pagination links preserve the stage filter. Page numbers of zero clamp to one;
+        page sizes clamp to 1–100. Negative, nonnumeric, or structured pagination values
+        are invalid; page itself must be an object.
       parameters:
         - { name: task_id, in: path, required: true, schema: { type: string } }
         - { name: stage_name, in: query, schema: { type: string } }
@@ -1757,7 +2534,19 @@ paths:
                   meta:
                     $ref: '#/components/schemas/JsonApiPaginationMeta'
         '400':
-          description: Invalid pagination parameter
+          description: Invalid pagination parameter or non-string stage_name
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
+        '404':
+          description: Task not found in the authenticated account
           content:
             application/vnd.api+json:
               schema:
@@ -2087,22 +2876,6 @@ paths:
                   draft_count: { type: integer }
         '404':
           description: Draft not found
-
-  /api/planning_sessions/{planning_session_id}/completion:
-    post:
-      operationId: post-api-planning-session-completion
-      summary: Marks a planning session as completed and advances the associated task.
-      parameters:
-        - { name: planning_session_id, in: path, required: true, schema: { type: string } }
-      responses:
-        '200':
-          description: Completion acknowledgement. Not JSON:API format.
-          content:
-            application/json:
-              schema:
-                type: object
-                properties:
-                  status: { type: string }
 
   /api/projects/{project_slug}/flow_registry_flows:
     get:
