@@ -823,6 +823,20 @@ components:
 
     ActivityAttributes:
       type: object
+      description: >-
+        Task-scoped activity records include billing.invariant_detected,
+        billing.invariant_corrected, billing.audit_required, and billing.usage_corrected.
+        Billing findings carry incident_key, task_id, container_id, period_id, session_id,
+        reason, cutoff, outcome, and error in metadata. Nullable identities and cutoffs
+        indicate missing historical evidence. pause_pending and retry_pending remain
+        unresolved; corrected means the corrective lifecycle outcome was observed.
+        invoice_hold withholds uncertain usage from invoice preparation; superseded
+        means a newer invocation owns the container and must not receive an old pause.
+        Correction records may include source_id and source_allocations linking original
+        debits to append-only compensations. Existing operator corrections can be adopted
+        without changing spending power. Account-level sweep heartbeats and ledger holds
+        are visible in the admin billing dashboard; they are not task execution evidence.
+        Billing activities do not refresh task execution liveness.
       properties:
         action: { type: string }
         details: { type: string }
@@ -1004,7 +1018,12 @@ paths:
         projected into the container at /task/agent-session-id. The endpoint never creates or
         selects an AgentSession. The UUID must belong to the authenticated account, container,
         attached task, and selected agent; the task must be in an
-        active container-backed stage; and the session must be assigned or already started.
+        active container-backed stage with no lifecycle role and no unapproved human gate;
+        the selected agent must still own the container; and the session must be assigned
+        or already started. Unapproved gates and changed agent ownership return 404.
+        The session must carry the current persisted pipeline transition identity.
+        Legacy sessions with no transition identity and sessions from earlier invocations
+        of the same stage return 404. Claiming alone creates no billable execution entitlement.
         A valid assignment can be claimed before the container database status synchronizes to running.
         Claiming an assigned session changes it to started and emits agent.session_started.
         Repeating the claim for that same started session is idempotent and emits no duplicate event.
@@ -1046,7 +1065,7 @@ paths:
               schema: { $ref: '#/components/schemas/Errors' }
         '401': { description: The bearer token is missing or invalid }
         '404':
-          description: The container or session is not visible or the session cannot be claimed for the current container, task, and agent
+          description: The container or session is not visible, or its account, task, agent, state, or persisted pipeline transition does not match the current invocation
           content:
             application/vnd.api+json:
               schema: { $ref: '#/components/schemas/Errors' }
