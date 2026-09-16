@@ -107,5 +107,15 @@ func loopWorkflows() []airef.Workflow {
 				`loopctl tasks cancel <task-id>`,
 			},
 		},
+		{
+			Name:        "Inspect task recordings",
+			Description: "List recordings for a task, inspect metadata, and retrieve raw content (JSONL transcript or asciinema).",
+			Steps: []string{
+				`loopctl tasks recordings list <task-id>`,
+				`loopctl tasks recordings get <task-id> <recording-id>`,
+				`loopctl tasks recordings content <task-id> <recording-id>`,
+				`loopctl tasks recordings content <task-id> <recording-id> --output session.cast`,
+			},
+		},
 	}
 }

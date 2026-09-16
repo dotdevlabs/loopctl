@@ -745,6 +745,58 @@ loopctl tasks todos update <task-id> <todo-id> --dry-run
 
 ---
 
+#### tasks recordings list
+
+List all recordings attached to a task. Pagination is followed automatically.
+
+```bash
+loopctl tasks recordings list <task-id>
+loopctl tasks recordings list <task-id> --json
+```
+
+**API:** `GET /api/tasks/:task_id/recordings`
+
+---
+
+#### tasks recordings get
+
+Inspect the metadata of a single recording.
+
+```bash
+loopctl tasks recordings get <task-id> <recording-id>
+loopctl tasks recordings get <task-id> <recording-id> --json
+```
+
+**API:** `GET /api/tasks/:task_id/recordings/:id`
+
+---
+
+#### tasks recordings content
+
+Retrieve the raw binary content of a recording (JSONL transcript or asciinema cast). Writes exact bytes to stdout or to an explicit output file; no truncation, re-encoding, or status text is mixed into stdout. Diagnostics go to stderr.
+
+```bash
+# Stream raw content to stdout
+loopctl tasks recordings content <task-id> <recording-id>
+
+# Save to a file (errors on existing file — no silent overwrite)
+loopctl tasks recordings content <task-id> <recording-id> --output session.cast
+loopctl tasks recordings content <task-id> <recording-id> --output transcript.jsonl
+
+# Preview the URL without downloading
+loopctl tasks recordings content <task-id> <recording-id> --dry-run
+```
+
+**Flags:**
+
+| Flag | Short | Description |
+|------|-------|-------------|
+| `--output` | `-o` | Write content to this file path instead of stdout. Errors if the file already exists. |
+
+**API:** `GET /api/tasks/:task_id/recordings/:recording_id/content`
+
+---
+
 ### topup
 
 Fund your LoopControl account. When the account balance is insufficient, the API returns HTTP 402 with the available payment products and rails. `loopctl topup` settles the payment automatically when a wallet is configured, or prints a Stripe hosted-checkout link for manual payment in a browser.

@@ -902,3 +902,78 @@ func statusToCode(status int) clierror.ErrorCode {
 		return clierror.CodeServerError
 	}
 }
+
+// GetRawContent GETs path and streams the raw response body to dst.
+// It uses a redirect-safe client that drops the Authorization header when
+// redirected to a different host (preventing credential forwarding to CDN/S3).
+// On non-2xx it returns a CLIError; body bytes are never logged to verbose.
+func GetRawContent(ctx context.Context, activeCtx *config.Context, path string, dst io.Writer) error {
+	fullURL := strings.TrimRight(activeCtx.BaseURL, "/") + path
+	originalHost := hostOf(fullURL)
+
+	client := &http.Client{
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 10 {
+				return fmt.Errorf("too many redirects")
+			}
+			if req.URL.Host != originalHost {
+				req.Header.Del("Authorization")
+			}
+			return nil
+		},
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
+	if err != nil {
+		return fmt.Errorf("building request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+activeCtx.Token)
+	req.Header.Set("User-Agent", browserUserAgent)
+
+	resp, err := client.Do(req) //#nosec G107 -- URL is constructed from trusted config
+	if err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return fmt.Errorf("request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	vw := verboseFrom(ctx)
+	if vw != nil {
+		fmt.Fprintf(vw, "> %s %s\n", http.MethodGet, fullURL)
+		fmt.Fprintf(vw, "< %d %s\n", resp.StatusCode, http.StatusText(resp.StatusCode))
+	}
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		if _, err := io.Copy(dst, resp.Body); err != nil {
+			return fmt.Errorf("reading content: %w", err)
+		}
+		return nil
+	}
+
+	errBody, _ := io.ReadAll(resp.Body)
+	switch resp.StatusCode {
+	case http.StatusNotFound:
+		return clierror.New(clierror.CodeNotFound, extractJSONAPIOrFlatError(errBody, resp.StatusCode), "")
+	case http.StatusGone:
+		msg := extractJSONAPIOrFlatError(errBody, resp.StatusCode)
+		if msg == http.StatusText(http.StatusGone) {
+			msg = "recording file has been deleted"
+		}
+		return clierror.New(clierror.CodeNotFound, msg, "")
+	case http.StatusUnprocessableEntity:
+		return clierror.New(clierror.CodeBadRequest, extractJSONAPIOrFlatError(errBody, resp.StatusCode), "")
+	default:
+		return errorRespJSONAPI(errBody, resp.StatusCode)
+	}
+}
+
+// hostOf extracts the host (host:port) from a URL string, or returns "" on parse error.
+func hostOf(rawURL string) string {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return ""
+	}
+	return u.Host
+}
