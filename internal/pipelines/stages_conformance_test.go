@@ -80,24 +80,21 @@ func TestConformance_StagesAdd_AllAttrs(t *testing.T) {
 	_ = cmd.Flags().Set("role", "implementing")
 	_ = cmd.Flags().Set("stage-type", "custom")
 	_ = cmd.Flags().Set("custom-stage-name", "my-custom")
-	_ = cmd.Flags().Set("template", "my-template")
 	_ = cmd.Flags().Set("instructions", "do the thing")
-	_ = cmd.Flags().Set("gate", "manual")
-	_ = cmd.Flags().Set("agent", "my-agent")
+	_ = cmd.Flags().Set("gate", "automated")
 	_ = cmd.Flags().Set("advance-notice", "5m")
 	_ = cmd.Flags().Set("position", "2")
 	_ = cmd.Flags().Set("runs-in-container", "true")
-	_ = cmd.Flags().Set("on-failure", `{"max_rework_count":3}`)
-	_ = cmd.Flags().Set("prompt-sections", `[{"key":"k","value":"v"}]`)
-	_ = cmd.Flags().Set("stage-triggers", `["trigger1"]`)
+	_ = cmd.Flags().Set("on-failure", "rework")
+	_ = cmd.Flags().Set("max-rework-count", "3")
+	_ = cmd.Flags().Set("prompt-sections", `{"template":"my-template"}`)
+	_ = cmd.Flags().Set("stage-triggers", `[{"timing":"before_entry","handler":"MyHandler","config":{}}]`)
 	_ = cmd.Flags().Set("advance-requirements", `["req1"]`)
-	_ = cmd.Flags().Set("branch-conditions", `["cond1"]`)
-	_ = cmd.Flags().Set("environment", `{"KEY":"VALUE"}`)
 
 	_ = cmd.RunE(cmd, []string{"p1"})
 
 	if len(violations) != 0 {
-		t.Errorf("conformance violations for stages add with all attrs (spec defines stages as open objects): %v", violations)
+		t.Errorf("conformance violations for stages add with all spec-compliant attrs: %v", violations)
 	}
 }
 

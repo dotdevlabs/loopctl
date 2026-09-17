@@ -221,18 +221,15 @@ func TestStagesAdd_AllFlags(t *testing.T) {
 		"role":                 "implementing",
 		"stage-type":           "custom",
 		"custom-stage-name":    "my-custom",
-		"template":             "my-template",
 		"instructions":         "do the thing",
-		"gate":                 "manual",
-		"agent":                "my-agent",
+		"gate":                 "automated",
 		"advance-notice":       "5m",
 		"position":             "2",
-		"on-failure":           `{"max_rework_count":3}`,
-		"prompt-sections":      `[{"key":"k","value":"v"}]`,
-		"stage-triggers":       `["trigger1"]`,
+		"on-failure":           "rework",
+		"max-rework-count":     "3",
+		"prompt-sections":      `{"template":"my-template"}`,
+		"stage-triggers":       `[{"timing":"before_entry","handler":"MyHandler","config":{}}]`,
 		"advance-requirements": `["req1"]`,
-		"branch-conditions":    `["cond1"]`,
-		"environment":          `{"KEY":"VALUE"}`,
 	}
 	for k, v := range flags {
 		if err := cmd.Flags().Set(k, v); err != nil {
@@ -266,10 +263,10 @@ func TestStagesAdd_AllFlags(t *testing.T) {
 	stage := stages[0]
 
 	for _, key := range []string{
-		"name", "role", "stage_type", "custom_stage_name", "template",
-		"instructions", "gate", "agent", "advance_notice", "position",
-		"runs_in_container", "on_failure", "prompt_sections", "stage_triggers",
-		"advance_requirements", "branch_conditions", "environment",
+		"name", "role", "stage_type", "custom_stage_name",
+		"instructions", "gate", "advance_notice", "position",
+		"runs_in_container_override", "on_failure", "max_rework_count",
+		"prompt_sections", "stage_triggers", "advance_requirements",
 	} {
 		if _, ok := stage[key]; !ok {
 			t.Errorf("stage missing field %q; got keys: %v", key, mapKeys(stage))
@@ -350,16 +347,16 @@ func TestStagesAdd_BadJSONFlag(t *testing.T) {
 	if err := cmd.Flags().Set("name", "my-stage"); err != nil {
 		t.Fatal(err)
 	}
-	if err := cmd.Flags().Set("on-failure", "not-valid-json"); err != nil {
+	if err := cmd.Flags().Set("prompt-sections", "not-valid-json"); err != nil {
 		t.Fatal(err)
 	}
 
 	err := cmd.RunE(cmd, []string{"pipe1"})
 	if err == nil {
-		t.Fatal("expected error for invalid --on-failure JSON")
+		t.Fatal("expected error for invalid --prompt-sections JSON")
 	}
 	if called {
-		t.Error("HTTP call should not be made when --on-failure JSON is invalid")
+		t.Error("HTTP call should not be made when --prompt-sections JSON is invalid")
 	}
 }
 
@@ -475,7 +472,10 @@ func TestStagesAdd_OnFailure(t *testing.T) {
 	if err := cmd.Flags().Set("name", "my-stage"); err != nil {
 		t.Fatal(err)
 	}
-	if err := cmd.Flags().Set("on-failure", `{"max_rework_count":3,"rework_to_position":0}`); err != nil {
+	if err := cmd.Flags().Set("on-failure", "rework"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Flags().Set("max-rework-count", "3"); err != nil {
 		t.Fatal(err)
 	}
 	if err := cmd.RunE(cmd, []string{"p1"}); err != nil {
@@ -493,6 +493,9 @@ func TestStagesAdd_OnFailure(t *testing.T) {
 	}
 	if _, ok := stages[0]["on_failure"]; !ok {
 		t.Error("stage missing 'on_failure' field; got keys: " + strings.Join(mapStringKeys(stages[0]), ", "))
+	}
+	if _, ok := stages[0]["max_rework_count"]; !ok {
+		t.Error("stage missing 'max_rework_count' field; got keys: " + strings.Join(mapStringKeys(stages[0]), ", "))
 	}
 }
 

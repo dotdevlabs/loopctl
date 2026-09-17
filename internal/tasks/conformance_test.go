@@ -338,6 +338,59 @@ func TestConformance_TasksUnblock(t *testing.T) {
 	}
 }
 
+func TestConformance_TasksListFilteredPaginates(t *testing.T) {
+	endpoints := loadSchemaOrSkip(t)
+	var page1Violations, page2Violations []string
+	var page2Query string
+
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		if r.URL.RawQuery == "project_id=proj1" {
+			page1Violations = schema.CheckRequest(r, endpoints)
+			_, _ = fmt.Fprintf(w,
+				`{"data":[{"type":"tasks","id":"t1","attributes":{"kind":"feature","title":"Task One","stage":"planning","status":"open"}}],"links":{"next":"%s/api/tasks?project_id=proj1&page%%5Bnumber%%5D=2"},"meta":{"total_pages":2,"total_count":2,"page_number":1,"page_size":20}}`,
+				"http://"+r.Host)
+		} else {
+			page2Query = r.URL.RawQuery
+			page2Violations = schema.CheckRequest(r, endpoints)
+			_, _ = fmt.Fprint(w,
+				`{"data":[{"type":"tasks","id":"t2","attributes":{"kind":"feature","title":"Task Two","stage":"implementing","status":"open"}}],"links":{},"meta":{"total_pages":2,"total_count":2,"page_number":2,"page_size":20}}`)
+		}
+	}))
+	defer ts.Close()
+
+	var out strings.Builder
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+	cmd := listCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("project-id", "proj1")
+
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("filtered list with pagination failed: %v", err)
+	}
+
+	if len(page1Violations) != 0 {
+		t.Errorf("conformance violations on page 1: %v", page1Violations)
+	}
+	if len(page2Violations) != 0 {
+		t.Errorf("conformance violations on page 2: %v", page2Violations)
+	}
+
+	// Verify the second page request still carries the project_id filter.
+	if !strings.Contains(page2Query, "project_id=proj1") {
+		t.Errorf("page 2 request dropped the project_id filter; got query: %q", page2Query)
+	}
+
+	result := out.String()
+	if !strings.Contains(result, "Task One") {
+		t.Errorf("output missing Task One from page 1:\n%s", result)
+	}
+	if !strings.Contains(result, "Task Two") {
+		t.Errorf("output missing Task Two from page 2:\n%s", result)
+	}
+}
+
 func TestConformance_TasksWatchUsesLinksself(t *testing.T) {
 	var requestedPaths []string
 	var taskCallIdx int32

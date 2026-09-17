@@ -82,6 +82,7 @@ func NewCmd() *cobra.Command {
 	cmd.AddCommand(commentsCmd())
 	cmd.AddCommand(todosCmd())
 	cmd.AddCommand(recordingsCmd())
+	cmd.AddCommand(transitionsCmd())
 	return cmd
 }
 
@@ -111,10 +112,11 @@ func listCmd() *cobra.Command {
 				{Header: "TITLE"},
 				{Header: "STAGE"},
 				{Header: "STATUS"},
+				{Header: "BLOCKED_REASON"},
 			}
 			rows := make([][]string, len(col.Data))
 			for i, t := range col.Data {
-				rows[i] = []string{t.ID, t.Attributes.Kind, t.Attributes.Title, t.Attributes.Stage, t.Attributes.Status}
+				rows[i] = []string{t.ID, t.Attributes.Kind, t.Attributes.Title, t.Attributes.Stage, t.Attributes.Status, t.Attributes.BlockedReason}
 			}
 			return r.Render(cols, rows, col)
 		},
@@ -147,9 +149,10 @@ func getCmd() *cobra.Command {
 				{Header: "TITLE"},
 				{Header: "STAGE"},
 				{Header: "STATUS"},
+				{Header: "BLOCKED_REASON"},
 				{Header: "DEPENDENCIES_MET"},
 			}
-			rows := [][]string{{res.ID, t.Kind, t.Title, t.Stage, t.Status, fmt.Sprintf("%v", t.DependenciesMet)}}
+			rows := [][]string{{res.ID, t.Kind, t.Title, t.Stage, t.Status, t.BlockedReason, fmt.Sprintf("%v", t.DependenciesMet)}}
 			return r.Render(cols, rows, res)
 		},
 	}
