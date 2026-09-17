@@ -15,29 +15,21 @@ import (
 // StageInput holds all pipeline stage attributes per the published API contract.
 // All fields except Name use omitempty so only explicitly-set attributes are sent.
 type StageInput struct {
-	Name                string          `json:"name"`
-	Role                string          `json:"role,omitempty"`
-	StageType           string          `json:"stage_type,omitempty"`
-	CustomStageName     string          `json:"custom_stage_name,omitempty"`
-	Template            string          `json:"template,omitempty"`
-	Instructions        string          `json:"instructions,omitempty"`
-	Gate                string          `json:"gate,omitempty"`
-	Agent               string          `json:"agent,omitempty"`
-	AdvanceNotice       string          `json:"advance_notice,omitempty"`
-	RunsInContainer     *bool           `json:"runs_in_container,omitempty"`
-	Position            *int            `json:"position,omitempty"`
-	OnFailure           *OnFailureAttrs `json:"on_failure,omitempty"`
-	PromptSections      json.RawMessage `json:"prompt_sections,omitempty"`
-	StageTriggers       json.RawMessage `json:"stage_triggers,omitempty"`
-	AdvanceRequirements json.RawMessage `json:"advance_requirements,omitempty"`
-	BranchConditions    json.RawMessage `json:"branch_conditions,omitempty"`
-	Environment         json.RawMessage `json:"environment,omitempty"`
-}
-
-// OnFailureAttrs holds the on_failure sub-object attributes.
-type OnFailureAttrs struct {
-	MaxReworkCount   int  `json:"max_rework_count,omitempty"`
-	ReworkToPosition *int `json:"rework_to_position,omitempty"`
+	Name                    string          `json:"name"`
+	Role                    string          `json:"role,omitempty"`
+	StageType               string          `json:"stage_type,omitempty"`
+	CustomStageName         string          `json:"custom_stage_name,omitempty"`
+	Instructions            string          `json:"instructions,omitempty"`
+	Gate                    string          `json:"gate,omitempty"`
+	AdvanceNotice           string          `json:"advance_notice,omitempty"`
+	OnFailure               string          `json:"on_failure,omitempty"`
+	MaxReworkCount          *int            `json:"max_rework_count,omitempty"`
+	ReworkToPosition        *int            `json:"rework_to_position,omitempty"`
+	RunsInContainerOverride *bool           `json:"runs_in_container_override,omitempty"`
+	Position                *int            `json:"position,omitempty"`
+	PromptSections          json.RawMessage `json:"prompt_sections,omitempty"`
+	StageTriggers           json.RawMessage `json:"stage_triggers,omitempty"`
+	AdvanceRequirements     json.RawMessage `json:"advance_requirements,omitempty"`
 }
 
 // stageDisplayAttrs is used for table rendering of a stage.
@@ -112,19 +104,17 @@ func stagesAddCmd() *cobra.Command {
 		role               string
 		stageType          string
 		customStageName    string
-		template           string
 		instructions       string
 		gate               string
-		agent              string
 		advanceNotice      string
 		position           int
+		onFailure          string
+		maxReworkCount     int
+		reworkToPosition   int
 		runsInContainer    bool
-		onFailureJSON      string
 		promptSectionsJSON string
 		stageTriggersJSON  string
 		advanceReqJSON     string
-		branchCondJSON     string
-		environmentJSON    string
 	)
 
 	cmd := &cobra.Command{
@@ -152,17 +142,11 @@ func stagesAddCmd() *cobra.Command {
 			if cmd.Flags().Changed("custom-stage-name") {
 				stage.CustomStageName = customStageName
 			}
-			if cmd.Flags().Changed("template") {
-				stage.Template = template
-			}
 			if cmd.Flags().Changed("instructions") {
 				stage.Instructions = instructions
 			}
 			if cmd.Flags().Changed("gate") {
 				stage.Gate = gate
-			}
-			if cmd.Flags().Changed("agent") {
-				stage.Agent = agent
 			}
 			if cmd.Flags().Changed("advance-notice") {
 				stage.AdvanceNotice = advanceNotice
@@ -171,19 +155,23 @@ func stagesAddCmd() *cobra.Command {
 				p := position
 				stage.Position = &p
 			}
+			if cmd.Flags().Changed("on-failure") {
+				stage.OnFailure = onFailure
+			}
+			if cmd.Flags().Changed("max-rework-count") {
+				v := maxReworkCount
+				stage.MaxReworkCount = &v
+			}
+			if cmd.Flags().Changed("rework-to-position") {
+				v := reworkToPosition
+				stage.ReworkToPosition = &v
+			}
 			if cmd.Flags().Changed("runs-in-container") {
 				b := runsInContainer
-				stage.RunsInContainer = &b
+				stage.RunsInContainerOverride = &b
 			}
 
 			// Validate and set JSON fields.
-			if cmd.Flags().Changed("on-failure") {
-				var of OnFailureAttrs
-				if err := json.Unmarshal([]byte(onFailureJSON), &of); err != nil {
-					return fmt.Errorf("--on-failure: invalid JSON: %w", err)
-				}
-				stage.OnFailure = &of
-			}
 			if cmd.Flags().Changed("prompt-sections") {
 				raw, err := validateJSON(promptSectionsJSON, "--prompt-sections")
 				if err != nil {
@@ -204,20 +192,6 @@ func stagesAddCmd() *cobra.Command {
 					return err
 				}
 				stage.AdvanceRequirements = raw
-			}
-			if cmd.Flags().Changed("branch-conditions") {
-				raw, err := validateJSON(branchCondJSON, "--branch-conditions")
-				if err != nil {
-					return err
-				}
-				stage.BranchConditions = raw
-			}
-			if cmd.Flags().Changed("environment") {
-				raw, err := validateJSON(environmentJSON, "--environment")
-				if err != nil {
-					return err
-				}
-				stage.Environment = raw
 			}
 
 			activeCtx := ctxutil.ActiveContextFrom(ctx)
@@ -251,19 +225,17 @@ func stagesAddCmd() *cobra.Command {
 	cmd.Flags().StringVar(&role, "role", "", "Stage role (planning, implementing, reviewing, etc.)")
 	cmd.Flags().StringVar(&stageType, "stage-type", "", "stage_type for custom stage types")
 	cmd.Flags().StringVar(&customStageName, "custom-stage-name", "", "custom_stage_name (custom type only)")
-	cmd.Flags().StringVar(&template, "template", "", "Template (custom type only)")
-	cmd.Flags().StringVar(&instructions, "instructions", "", "Instructions / prompt text")
-	cmd.Flags().StringVar(&gate, "gate", "", "Advance gate (e.g. manual, ci_pass)")
-	cmd.Flags().StringVar(&agent, "agent", "", "Agent slug override")
+	cmd.Flags().StringVar(&instructions, "instructions", "", "Instructions / prompt text (deprecated: use --prompt-sections)")
+	cmd.Flags().StringVar(&gate, "gate", "", "Advance gate (automated or human)")
 	cmd.Flags().StringVar(&advanceNotice, "advance-notice", "", "Advance notice value")
 	cmd.Flags().IntVar(&position, "position", 0, "Explicit position override")
-	cmd.Flags().BoolVar(&runsInContainer, "runs-in-container", false, "runs_in_container override")
-	cmd.Flags().StringVar(&onFailureJSON, "on-failure", "", `JSON: {"max_rework_count":3,"rework_to_position":0}`)
-	cmd.Flags().StringVar(&promptSectionsJSON, "prompt-sections", "", "JSON array of prompt section objects")
-	cmd.Flags().StringVar(&stageTriggersJSON, "stage-triggers", "", "JSON array of trigger strings")
+	cmd.Flags().StringVar(&onFailure, "on-failure", "", "Failure mode: rework or block")
+	cmd.Flags().IntVar(&maxReworkCount, "max-rework-count", 0, "Maximum number of rework iterations")
+	cmd.Flags().IntVar(&reworkToPosition, "rework-to-position", 0, "Stage position to rework to")
+	cmd.Flags().BoolVar(&runsInContainer, "runs-in-container", false, "runs_in_container_override flag")
+	cmd.Flags().StringVar(&promptSectionsJSON, "prompt-sections", "", "JSON object of prompt section overrides")
+	cmd.Flags().StringVar(&stageTriggersJSON, "stage-triggers", "", "JSON array of stage trigger objects")
 	cmd.Flags().StringVar(&advanceReqJSON, "advance-requirements", "", "JSON array of requirement strings")
-	cmd.Flags().StringVar(&branchCondJSON, "branch-conditions", "", "JSON array of branch condition strings")
-	cmd.Flags().StringVar(&environmentJSON, "environment", "", "JSON object of environment key/value pairs")
 	_ = cmd.MarkFlagRequired("name")
 	return cmd
 }
@@ -273,19 +245,17 @@ func stagesUpdateCmd() *cobra.Command {
 		role               string
 		stageType          string
 		customStageName    string
-		template           string
 		instructions       string
 		gate               string
-		agent              string
 		advanceNotice      string
 		position           int
+		onFailure          string
+		maxReworkCount     int
+		reworkToPosition   int
 		runsInContainer    bool
-		onFailureJSON      string
 		promptSectionsJSON string
 		stageTriggersJSON  string
 		advanceReqJSON     string
-		branchCondJSON     string
-		environmentJSON    string
 	)
 
 	cmd := &cobra.Command{
@@ -299,10 +269,10 @@ func stagesUpdateCmd() *cobra.Command {
 
 			// Validate at least one flag changed before any HTTP call.
 			flagNames := []string{
-				"role", "stage-type", "custom-stage-name", "template", "instructions",
-				"gate", "agent", "advance-notice", "position", "runs-in-container",
-				"on-failure", "prompt-sections", "stage-triggers", "advance-requirements",
-				"branch-conditions", "environment",
+				"role", "stage-type", "custom-stage-name", "instructions",
+				"gate", "advance-notice", "position", "on-failure",
+				"max-rework-count", "rework-to-position", "runs-in-container",
+				"prompt-sections", "stage-triggers", "advance-requirements",
 			}
 			anyChanged := false
 			for _, f := range flagNames {
@@ -316,18 +286,10 @@ func stagesUpdateCmd() *cobra.Command {
 			}
 
 			// Validate JSON flags before any HTTP call.
-			if cmd.Flags().Changed("on-failure") {
-				var of OnFailureAttrs
-				if err := json.Unmarshal([]byte(onFailureJSON), &of); err != nil {
-					return fmt.Errorf("--on-failure: invalid JSON: %w", err)
-				}
-			}
 			for flagName, val := range map[string]string{
 				"prompt-sections":      promptSectionsJSON,
 				"stage-triggers":       stageTriggersJSON,
 				"advance-requirements": advanceReqJSON,
-				"branch-conditions":    branchCondJSON,
-				"environment":          environmentJSON,
 			} {
 				if cmd.Flags().Changed(flagName) {
 					if _, err := validateJSON(val, "--"+flagName); err != nil {
@@ -376,17 +338,11 @@ func stagesUpdateCmd() *cobra.Command {
 				if cmd.Flags().Changed("custom-stage-name") {
 					stageMap["custom_stage_name"] = customStageName
 				}
-				if cmd.Flags().Changed("template") {
-					stageMap["template"] = template
-				}
 				if cmd.Flags().Changed("instructions") {
 					stageMap["instructions"] = instructions
 				}
 				if cmd.Flags().Changed("gate") {
 					stageMap["gate"] = gate
-				}
-				if cmd.Flags().Changed("agent") {
-					stageMap["agent"] = agent
 				}
 				if cmd.Flags().Changed("advance-notice") {
 					stageMap["advance_notice"] = advanceNotice
@@ -394,13 +350,17 @@ func stagesUpdateCmd() *cobra.Command {
 				if cmd.Flags().Changed("position") {
 					stageMap["position"] = position
 				}
-				if cmd.Flags().Changed("runs-in-container") {
-					stageMap["runs_in_container"] = runsInContainer
-				}
 				if cmd.Flags().Changed("on-failure") {
-					var of OnFailureAttrs
-					_ = json.Unmarshal([]byte(onFailureJSON), &of)
-					stageMap["on_failure"] = of
+					stageMap["on_failure"] = onFailure
+				}
+				if cmd.Flags().Changed("max-rework-count") {
+					stageMap["max_rework_count"] = maxReworkCount
+				}
+				if cmd.Flags().Changed("rework-to-position") {
+					stageMap["rework_to_position"] = reworkToPosition
+				}
+				if cmd.Flags().Changed("runs-in-container") {
+					stageMap["runs_in_container_override"] = runsInContainer
 				}
 				if cmd.Flags().Changed("prompt-sections") {
 					var v any
@@ -416,16 +376,6 @@ func stagesUpdateCmd() *cobra.Command {
 					var v any
 					_ = json.Unmarshal([]byte(advanceReqJSON), &v)
 					stageMap["advance_requirements"] = v
-				}
-				if cmd.Flags().Changed("branch-conditions") {
-					var v any
-					_ = json.Unmarshal([]byte(branchCondJSON), &v)
-					stageMap["branch_conditions"] = v
-				}
-				if cmd.Flags().Changed("environment") {
-					var v any
-					_ = json.Unmarshal([]byte(environmentJSON), &v)
-					stageMap["environment"] = v
 				}
 
 				newRaw, err := json.Marshal(stageMap)
@@ -454,19 +404,17 @@ func stagesUpdateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&role, "role", "", "Stage role (planning, implementing, reviewing, etc.)")
 	cmd.Flags().StringVar(&stageType, "stage-type", "", "stage_type for custom stage types")
 	cmd.Flags().StringVar(&customStageName, "custom-stage-name", "", "custom_stage_name (custom type only)")
-	cmd.Flags().StringVar(&template, "template", "", "Template (custom type only)")
-	cmd.Flags().StringVar(&instructions, "instructions", "", "Instructions / prompt text")
-	cmd.Flags().StringVar(&gate, "gate", "", "Advance gate (e.g. manual, ci_pass)")
-	cmd.Flags().StringVar(&agent, "agent", "", "Agent slug override")
+	cmd.Flags().StringVar(&instructions, "instructions", "", "Instructions / prompt text (deprecated: use --prompt-sections)")
+	cmd.Flags().StringVar(&gate, "gate", "", "Advance gate (automated or human)")
 	cmd.Flags().StringVar(&advanceNotice, "advance-notice", "", "Advance notice value")
 	cmd.Flags().IntVar(&position, "position", 0, "Explicit position override")
-	cmd.Flags().BoolVar(&runsInContainer, "runs-in-container", false, "runs_in_container override")
-	cmd.Flags().StringVar(&onFailureJSON, "on-failure", "", `JSON: {"max_rework_count":3,"rework_to_position":0}`)
-	cmd.Flags().StringVar(&promptSectionsJSON, "prompt-sections", "", "JSON array of prompt section objects")
-	cmd.Flags().StringVar(&stageTriggersJSON, "stage-triggers", "", "JSON array of trigger strings")
+	cmd.Flags().StringVar(&onFailure, "on-failure", "", "Failure mode: rework or block")
+	cmd.Flags().IntVar(&maxReworkCount, "max-rework-count", 0, "Maximum number of rework iterations")
+	cmd.Flags().IntVar(&reworkToPosition, "rework-to-position", 0, "Stage position to rework to")
+	cmd.Flags().BoolVar(&runsInContainer, "runs-in-container", false, "runs_in_container_override flag")
+	cmd.Flags().StringVar(&promptSectionsJSON, "prompt-sections", "", "JSON object of prompt section overrides")
+	cmd.Flags().StringVar(&stageTriggersJSON, "stage-triggers", "", "JSON array of stage trigger objects")
 	cmd.Flags().StringVar(&advanceReqJSON, "advance-requirements", "", "JSON array of requirement strings")
-	cmd.Flags().StringVar(&branchCondJSON, "branch-conditions", "", "JSON array of branch condition strings")
-	cmd.Flags().StringVar(&environmentJSON, "environment", "", "JSON object of environment key/value pairs")
 	return cmd
 }
 

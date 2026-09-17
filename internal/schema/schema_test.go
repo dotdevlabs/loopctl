@@ -200,15 +200,25 @@ func TestCheckRequest_StageFields_NoViolation(t *testing.T) {
 	}
 }
 
-// TestCheckRequest_StageFields_AnyKeyAllowed verifies that unknown stage item keys
-// produce no violations (spec defines items as open objects with no properties).
-func TestCheckRequest_StageFields_AnyKeyAllowed(t *testing.T) {
+// TestCheckRequest_StageFields_UnknownKeyViolation verifies that unknown stage item keys
+// produce violations now that the spec defines stage item properties explicitly.
+func TestCheckRequest_StageFields_UnknownKeyViolation(t *testing.T) {
 	endpoints, _ := Load()
 	body := `{"pipeline":{"name":"x","stages":[{"name":"plan","role":"planning","instructions":"i","arbitrary_key":"x"}]}}`
 	req, _ := http.NewRequest(http.MethodPost, "http://x/api/pipelines", strings.NewReader(body))
 	violations := CheckRequest(req, endpoints)
-	if len(violations) != 0 {
-		t.Errorf("expected no violations for arbitrary stage keys (spec is permissive); got: %v", violations)
+	if len(violations) == 0 {
+		t.Errorf("expected violation for arbitrary_key in stage items (spec now defines item properties); got none")
+	}
+	found := false
+	for _, v := range violations {
+		if strings.Contains(v, "arbitrary_key") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected 'arbitrary_key' in violations; got: %v", violations)
 	}
 }
 

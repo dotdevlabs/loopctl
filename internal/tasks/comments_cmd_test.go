@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/dotdevlabs/ctlkit/pkg/config"
@@ -153,3 +154,136 @@ func TestCommentsCreate_JSON(t *testing.T) {
 
 // cobra_required_annotation is the annotation key cobra uses for required flags.
 const cobra_required_annotation = "cobra_annotation_bash_completion_one_required_flag"
+
+const commentListResp = `{"data":[` +
+	`{"type":"comments","id":"c1","attributes":{"body":"First comment","comment_type":"user","created_at":"2026-01-01T00:00:00Z"}},` +
+	`{"type":"comments","id":"c2","attributes":{"body":"Second comment","comment_type":"agent","created_at":"2026-01-02T00:00:00Z"}}` +
+	`],"links":{},"meta":{}}`
+
+func TestCommentsList(t *testing.T) {
+	var gotPath, gotMethod string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		gotMethod = r.Method
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, commentListResp)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+	cmd := commentsListCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	if err := cmd.RunE(cmd, []string{"t1"}); err != nil {
+		t.Fatalf("comments list failed: %v", err)
+	}
+	if gotMethod != http.MethodGet {
+		t.Errorf("expected GET; got %s", gotMethod)
+	}
+	if gotPath != "/api/tasks/t1/comments" {
+		t.Errorf("expected /api/tasks/t1/comments; got %s", gotPath)
+	}
+	got := out.String()
+	if !strings.Contains(got, "c1") {
+		t.Errorf("output missing c1:\n%s", got)
+	}
+	if !strings.Contains(got, "First comment") {
+		t.Errorf("output missing comment body:\n%s", got)
+	}
+	if !strings.Contains(got, "user") {
+		t.Errorf("output missing comment_type 'user':\n%s", got)
+	}
+	if !strings.Contains(got, "c2") {
+		t.Errorf("output missing c2:\n%s", got)
+	}
+}
+
+func TestCommentsListJSON(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, commentListResp)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", true, &out)
+	cmd := commentsListCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	if err := cmd.RunE(cmd, []string{"t1"}); err != nil {
+		t.Fatalf("comments list JSON failed: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, `"data"`) {
+		t.Errorf("expected JSON envelope with data; got:\n%s", got)
+	}
+	if !strings.Contains(got, `"comment_type"`) {
+		t.Errorf("expected comment_type in JSON output; got:\n%s", got)
+	}
+}
+
+func TestCommentsList_Paginated(t *testing.T) {
+	var requestCount int32
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt32(&requestCount, 1)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		if n == 1 {
+			_, _ = fmt.Fprintf(w,
+				`{"data":[{"type":"comments","id":"c1","attributes":{"body":"First","comment_type":"user","created_at":"2026-01-01T00:00:00Z"}}],"links":{"next":"%s/api/tasks/t1/comments?page%%5Bnumber%%5D=2"},"meta":{}}`,
+				"http://"+r.Host)
+		} else {
+			_, _ = fmt.Fprint(w, `{"data":[{"type":"comments","id":"c2","attributes":{"body":"Second","comment_type":"agent","created_at":"2026-01-02T00:00:00Z"}}],"links":{},"meta":{}}`)
+		}
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+	cmd := commentsListCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	if err := cmd.RunE(cmd, []string{"t1"}); err != nil {
+		t.Fatalf("comments list paginated failed: %v", err)
+	}
+	if got := atomic.LoadInt32(&requestCount); got != 2 {
+		t.Errorf("expected 2 requests (pagination); got %d", got)
+	}
+	got := out.String()
+	if !strings.Contains(got, "c1") {
+		t.Errorf("output missing c1:\n%s", got)
+	}
+	if !strings.Contains(got, "c2") {
+		t.Errorf("output missing c2:\n%s", got)
+	}
+}
+
+func TestCommentsList_LongBodyTruncated(t *testing.T) {
+	longBody := strings.Repeat("x", 80)
+	resp := fmt.Sprintf(`{"data":[{"type":"comments","id":"c1","attributes":{"body":%q,"comment_type":"user","created_at":"2026-01-01T00:00:00Z"}}],"links":{},"meta":{}}`, longBody)
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, resp)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+	cmd := commentsListCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	if err := cmd.RunE(cmd, []string{"t1"}); err != nil {
+		t.Fatalf("comments list failed: %v", err)
+	}
+	got := out.String()
+	if strings.Contains(got, longBody) {
+		t.Errorf("expected body to be truncated in table output; got full body in:\n%s", got)
+	}
+	if !strings.Contains(got, "...") {
+		t.Errorf("expected truncation ellipsis in output; got:\n%s", got)
+	}
+}

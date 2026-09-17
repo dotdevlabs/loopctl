@@ -49,6 +49,8 @@ var Covered = map[OperationKey]OperationCoverage{
 	{Method: "GET", Path: "/api/tasks/:task_id/recordings"}:                       {Command: "tasks recordings list", Paginated: true},
 	{Method: "GET", Path: "/api/tasks/:task_id/recordings/:id"}:                   {Command: "tasks recordings get"},
 	{Method: "GET", Path: "/api/tasks/:task_id/recordings/:recording_id/content"}: {Command: "tasks recordings content"},
+	{Method: "GET", Path: "/api/tasks/:task_id/comments"}:                         {Command: "tasks comments list", Paginated: true},
+	{Method: "GET", Path: "/api/tasks/:task_id/transitions"}:                      {Command: "tasks transitions list", Paginated: true},
 }
 
 // Excluded maps operations intentionally not covered by loopctl with the reason.
@@ -65,7 +67,7 @@ var Excluded = map[OperationKey]string{
 	{Method: "POST", Path: "/api/tasks/:task_id/bootstrap_failure"}:                      "container-internal: agent container reports bootstrap failures",
 	{Method: "POST", Path: "/api/tasks/:task_id/pull_request"}:                           "called by loopcontrol agent infrastructure, not a direct loopctl user command",
 	{Method: "POST", Path: "/api/tasks/:task_id/prompt_sync"}:                            "container-internal: agent container syncs prompt hash",
-	{Method: "GET", Path: "/api/tasks/:task_id/transitions"}:                             "audit history; not yet implemented in loopctl",
+	{Method: "GET", Path: "/api/tasks/:task_id/comments/:id"}:                            "single-comment fetch; not yet implemented in loopctl",
 	{Method: "GET", Path: "/api/tasks/:task_id/containers"}:                              "ops monitoring; not yet implemented in loopctl",
 	{Method: "POST", Path: "/api/tasks/:task_id/restart"}:                                "ops operation; not yet implemented in loopctl",
 	{Method: "GET", Path: "/api/planning_sessions/:planning_session_id/drafts"}:          "planning-agent-internal; not a human/script operation",

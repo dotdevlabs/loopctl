@@ -165,16 +165,26 @@ func TestConformance_PipelinesUpdate_WithStages(t *testing.T) {
 	}
 }
 
-// TestConformance_StageFieldsPermissive verifies that stage items accept any keys.
-// The spec defines stages as array of type: object with no properties, so any
-// key in a stage item is valid and must not trigger a conformance violation.
-func TestConformance_StageFieldsPermissive(t *testing.T) {
+// TestConformance_StageFieldsStrict verifies that unknown stage item keys produce violations.
+// The spec now defines stages items with explicit properties and additionalProperties: false,
+// so unknown keys in a stage item trigger a conformance violation.
+func TestConformance_StageFieldsStrict(t *testing.T) {
 	endpoints := loadSchemaOrSkip(t)
 	body := `{"pipeline":{"name":"x","stages":[{"name":"plan","role":"planning","instructions":"i","arbitrary_key":"x"}]}}`
 	req, _ := http.NewRequest(http.MethodPost, "http://x/api/pipelines", strings.NewReader(body))
 	violations := schema.CheckRequest(req, endpoints)
-	if len(violations) != 0 {
-		t.Errorf("spec defines stages items as open objects — arbitrary stage keys must not produce violations; got: %v", violations)
+	if len(violations) == 0 {
+		t.Errorf("spec defines stages items with additionalProperties: false — unknown keys must produce violations; got none")
+	}
+	found := false
+	for _, v := range violations {
+		if strings.Contains(v, "arbitrary_key") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("expected 'arbitrary_key' in violations; got: %v", violations)
 	}
 }
 

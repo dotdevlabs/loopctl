@@ -15,6 +15,7 @@ import (
 // CommentAttrs holds the attributes for a task comment.
 type CommentAttrs struct {
 	Body         string `json:"body"`
+	CommentType  string `json:"comment_type"`
 	InputTokens  int    `json:"input_tokens"`
 	OutputTokens int    `json:"output_tokens"`
 	CreatedAt    string `json:"created_at"`
@@ -26,8 +27,45 @@ func commentsCmd() *cobra.Command {
 		Use:   "comments",
 		Short: "Manage task comments",
 	}
+	cmd.AddCommand(commentsListCmd())
 	cmd.AddCommand(commentsCreateCmd())
 	return cmd
+}
+
+func commentsListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "list <task-id>",
+		Short: "List comments on a task",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			activeCtx := ctxutil.ActiveContextFrom(ctx)
+			r := ctxutil.RendererFrom(ctx)
+
+			path := "/api/tasks/" + url.PathEscape(args[0]) + "/comments"
+			col, err := apiclient.GetJSONAPICollectionAllPages[CommentAttrs](ctx, activeCtx, path)
+			if err != nil {
+				return err
+			}
+
+			cols := []output.Column{
+				{Header: "ID"},
+				{Header: "BODY"},
+				{Header: "COMMENT_TYPE"},
+				{Header: "CREATED_AT"},
+			}
+			rows := make([][]string, len(col.Data))
+			for i, c := range col.Data {
+				a := c.Attributes
+				truncated := a.Body
+				if len(truncated) > 60 {
+					truncated = truncated[:57] + "..."
+				}
+				rows[i] = []string{c.ID, truncated, a.CommentType, a.CreatedAt}
+			}
+			return r.Render(cols, rows, col)
+		},
+	}
 }
 
 func commentsCreateCmd() *cobra.Command {
