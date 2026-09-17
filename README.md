@@ -487,7 +487,7 @@ Manage LoopControl tasks.
 
 #### tasks list
 
-List tasks across the entire account, or filter to a single project. Output columns: `ID`, `KIND`, `TITLE`, `STAGE`, `STATUS`. Pagination is followed automatically. `--json` and template output include the full index representation (all `TaskListAttributes` fields).
+List tasks across the entire account, or filter to a single project. Output columns: `ID`, `KIND`, `TITLE`, `STAGE`, `STATUS`, `BLOCKED_REASON`. Pagination is followed automatically; when `--project-id` is set, the filter is preserved across all pages. `--json` and template output include the full index representation (all `TaskListAttributes` fields).
 
 ```bash
 # List all account tasks (global index)
@@ -508,7 +508,7 @@ loopctl tasks list --project-id <project-id> --json
 
 #### tasks get
 
-Get a task by ID. Output columns: `ID`, `KIND`, `TITLE`, `STAGE`, `STATUS`, `DEPENDENCIES_MET`.
+Get a task by ID. Output columns: `ID`, `KIND`, `TITLE`, `STAGE`, `STATUS`, `BLOCKED_REASON`, `DEPENDENCIES_MET`.
 
 ```bash
 loopctl tasks get <id>
@@ -648,6 +648,21 @@ loopctl tasks watch <id> --json
 
 ---
 
+#### tasks comments list
+
+List comments on a task. Pagination is followed automatically.
+
+```bash
+loopctl tasks comments list <task-id>
+loopctl tasks comments list <task-id> --json
+```
+
+Output columns: `ID`, `BODY` (truncated to 60 characters), `COMMENT_TYPE`, `CREATED_AT`.
+
+**API:** `GET /api/tasks/:task_id/comments`
+
+---
+
 #### tasks comments create
 
 Post a comment on a task. Token counts are optional billing metadata.
@@ -668,6 +683,21 @@ loopctl tasks comments create <task-id> --body "..." --dry-run
 | `--output-tokens` | no | Output token count for billing |
 
 **API:** `POST /api/tasks/:id/comments`
+
+---
+
+#### tasks transitions list
+
+List the stage transitions for a task. Pagination is followed automatically.
+
+```bash
+loopctl tasks transitions list <task-id>
+loopctl tasks transitions list <task-id> --json
+```
+
+Output columns: `ID`, `FROM_STAGE`, `TO_STAGE`, `CUSTOM_STAGE_NAME`, `CREATED_AT`.
+
+**API:** `GET /api/tasks/:task_id/transitions`
 
 ---
 
