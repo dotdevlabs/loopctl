@@ -5,6 +5,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/dotdevlabs/loopctl/internal/schema"
@@ -102,15 +103,17 @@ func TestConformance_StagesUpdate(t *testing.T) {
 	endpoints := loadSchemaOrSkip(t)
 	var violations []string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/vnd.api+json")
-		if r.Method == http.MethodGet {
-			_, _ = fmt.Fprint(w, pipelineWithStagesResponse("p1", "x", []map[string]any{
-				{"name": "plan", "role": "planning"},
-			}))
-		} else {
-			violations = schema.CheckRequest(r, endpoints)
-			_, _ = fmt.Fprint(w, pipelineNoStagesResponse("p1", "x"))
+		if r.Method != http.MethodPatch {
+			t.Errorf("expected PATCH; got %s", r.Method)
 		}
+		if r.URL.Path != "/api/pipelines/p1/stages/s1" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		violations = schema.CheckRequest(r, endpoints)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, stageResourceResponse("s1", map[string]any{
+			"role": "reviewing", "stage_type": "ai", "gate": "automated", "position": 1,
+		}))
 	}))
 	defer ts.Close()
 
@@ -119,10 +122,93 @@ func TestConformance_StagesUpdate(t *testing.T) {
 	cmd.SetContext(ctx)
 	cmd.SetOut(io.Discard)
 	_ = cmd.Flags().Set("role", "reviewing")
-	_ = cmd.RunE(cmd, []string{"p1", "plan"})
+	_ = cmd.RunE(cmd, []string{"p1", "s1"})
 
 	if len(violations) != 0 {
 		t.Errorf("conformance violations for stages update: %v", violations)
+	}
+}
+
+func TestConformance_StagesUpdate_NullName(t *testing.T) {
+	endpoints := loadSchemaOrSkip(t)
+	var violations []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		violations = schema.CheckRequest(r, endpoints)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		// Built-in stage returns name: null.
+		_, _ = fmt.Fprint(w, stageResourceResponse("s1", map[string]any{
+			"name": nil, "role": "reviewing", "stage_type": "ai", "gate": "automated", "position": 1,
+		}))
+	}))
+	defer ts.Close()
+
+	ctx := makeCtx(t, ts.URL, "tok", false, io.Discard)
+	cmd := stagesUpdateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(io.Discard)
+	_ = cmd.Flags().Set("role", "reviewing")
+	err := cmd.RunE(cmd, []string{"p1", "s1"})
+	if err != nil {
+		t.Fatalf("update with null name returned error: %v", err)
+	}
+	if len(violations) != 0 {
+		t.Errorf("conformance violations for stages update null name: %v", violations)
+	}
+}
+
+func TestConformance_StagesUpdate_Error404(t *testing.T) {
+	endpoints := loadSchemaOrSkip(t)
+	var violations []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		violations = schema.CheckRequest(r, endpoints)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = fmt.Fprint(w, `{"errors":[{"status":"404","detail":"stage not found by id"}]}`)
+	}))
+	defer ts.Close()
+
+	ctx := makeCtx(t, ts.URL, "tok", false, io.Discard)
+	cmd := stagesUpdateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(io.Discard)
+	_ = cmd.Flags().Set("role", "reviewing")
+	err := cmd.RunE(cmd, []string{"p1", "s1"})
+	if err == nil {
+		t.Fatal("expected error on 404")
+	}
+	if !strings.Contains(err.Error(), "stage not found by id") {
+		t.Errorf("expected detail in error; got: %v", err)
+	}
+	if len(violations) != 0 {
+		t.Errorf("conformance violations for stages update 404: %v", violations)
+	}
+}
+
+func TestConformance_StagesUpdate_Error422(t *testing.T) {
+	endpoints := loadSchemaOrSkip(t)
+	var violations []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		violations = schema.CheckRequest(r, endpoints)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = fmt.Fprint(w, `{"errors":[{"status":"422","detail":"gate must be automated or manual"}]}`)
+	}))
+	defer ts.Close()
+
+	ctx := makeCtx(t, ts.URL, "tok", false, io.Discard)
+	cmd := stagesUpdateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(io.Discard)
+	_ = cmd.Flags().Set("role", "reviewing")
+	err := cmd.RunE(cmd, []string{"p1", "s1"})
+	if err == nil {
+		t.Fatal("expected error on 422")
+	}
+	if !strings.Contains(err.Error(), "gate must be automated or manual") {
+		t.Errorf("expected detail in error; got: %v", err)
+	}
+	if len(violations) != 0 {
+		t.Errorf("conformance violations for stages update 422: %v", violations)
 	}
 }
 

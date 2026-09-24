@@ -499,20 +499,34 @@ func TestStagesAdd_OnFailure(t *testing.T) {
 	}
 }
 
+// stageResourceResponse returns a JSON:API pipeline_stages single-resource response.
+func stageResourceResponse(id string, attrs map[string]any) string {
+	attrsJSON, _ := json.Marshal(attrs)
+	return fmt.Sprintf(
+		`{"data":{"type":"pipeline_stages","id":%q,"attributes":%s}}`,
+		id, attrsJSON,
+	)
+}
+
 // ---- Update tests ----
 
-func TestStagesUpdate_ByName(t *testing.T) {
+func TestStagesUpdate_ByID(t *testing.T) {
+	var reqCount int
 	var gotBody []byte
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/vnd.api+json")
-		if r.Method == http.MethodGet {
-			_, _ = fmt.Fprint(w, pipelineWithStagesResponse("p1", "x", []map[string]any{
-				{"name": "plan", "role": "planning", "instructions": "old instructions"},
-			}))
-		} else {
-			gotBody, _ = io.ReadAll(r.Body)
-			_, _ = fmt.Fprint(w, pipelineNoStagesResponse("p1", "x"))
+		reqCount++
+		if r.Method != http.MethodPatch {
+			t.Errorf("expected PATCH; got %s", r.Method)
 		}
+		if r.URL.Path != "/api/pipelines/p1/stages/s1" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		gotBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, stageResourceResponse("s1", map[string]any{
+			"role": "implementing", "stage_type": "ai", "gate": "automated",
+			"position": 1, "instructions": "new instructions",
+		}))
 	}))
 	defer ts.Close()
 
@@ -524,39 +538,32 @@ func TestStagesUpdate_ByName(t *testing.T) {
 	if err := cmd.Flags().Set("instructions", "new instructions"); err != nil {
 		t.Fatal(err)
 	}
-	if err := cmd.RunE(cmd, []string{"p1", "plan"}); err != nil {
+	if err := cmd.RunE(cmd, []string{"p1", "s1"}); err != nil {
 		t.Fatalf("stages update failed: %v", err)
+	}
+	if reqCount != 1 {
+		t.Errorf("expected exactly 1 PATCH request; got %d", reqCount)
 	}
 
 	var top map[string]json.RawMessage
 	_ = json.Unmarshal(gotBody, &top)
-	var pipeline map[string]json.RawMessage
-	_ = json.Unmarshal(top["pipeline"], &pipeline)
-	var stages []map[string]json.RawMessage
-	_ = json.Unmarshal(pipeline["stages"], &stages)
-
-	if len(stages) != 1 {
-		t.Fatalf("expected 1 stage; got %d", len(stages))
-	}
+	var stage map[string]json.RawMessage
+	_ = json.Unmarshal(top["pipeline_stage"], &stage)
 	var instructions string
-	_ = json.Unmarshal(stages[0]["instructions"], &instructions)
+	_ = json.Unmarshal(stage["instructions"], &instructions)
 	if instructions != "new instructions" {
 		t.Errorf("expected instructions='new instructions'; got %q", instructions)
 	}
 }
 
-func TestStagesUpdate_OnlyChangedFlags(t *testing.T) {
+func TestStagesUpdate_OnlyChangedFlagsInBody(t *testing.T) {
 	var gotBody []byte
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
 		w.Header().Set("Content-Type", "application/vnd.api+json")
-		if r.Method == http.MethodGet {
-			_, _ = fmt.Fprint(w, pipelineWithStagesResponse("p1", "x", []map[string]any{
-				{"name": "plan", "role": "planning", "gate": "auto"},
-			}))
-		} else {
-			gotBody, _ = io.ReadAll(r.Body)
-			_, _ = fmt.Fprint(w, pipelineNoStagesResponse("p1", "x"))
-		}
+		_, _ = fmt.Fprint(w, stageResourceResponse("s1", map[string]any{
+			"gate": "manual", "stage_type": "ai", "position": 1,
+		}))
 	}))
 	defer ts.Close()
 
@@ -568,76 +575,35 @@ func TestStagesUpdate_OnlyChangedFlags(t *testing.T) {
 	if err := cmd.Flags().Set("gate", "manual"); err != nil {
 		t.Fatal(err)
 	}
-	if err := cmd.RunE(cmd, []string{"p1", "plan"}); err != nil {
+	if err := cmd.RunE(cmd, []string{"p1", "s1"}); err != nil {
 		t.Fatalf("stages update failed: %v", err)
 	}
 
 	var top map[string]json.RawMessage
 	_ = json.Unmarshal(gotBody, &top)
-	var pipeline map[string]json.RawMessage
-	_ = json.Unmarshal(top["pipeline"], &pipeline)
-	var stages []map[string]json.RawMessage
-	_ = json.Unmarshal(pipeline["stages"], &stages)
+	var stage map[string]json.RawMessage
+	_ = json.Unmarshal(top["pipeline_stage"], &stage)
 
-	// "role" was in the original stage, should still be there.
-	if _, ok := stages[0]["role"]; !ok {
-		t.Error("stage should preserve 'role' from original; got keys: " + strings.Join(mapStringKeys(stages[0]), ", "))
+	// Only "gate" should appear — no other flags were set.
+	if len(stage) != 1 {
+		t.Errorf("expected only 1 key in pipeline_stage body; got %d: %v", len(stage), mapStringKeys(stage))
+	}
+	if _, ok := stage["gate"]; !ok {
+		t.Error("pipeline_stage body missing 'gate' key")
 	}
 	var gate string
-	_ = json.Unmarshal(stages[0]["gate"], &gate)
+	_ = json.Unmarshal(stage["gate"], &gate)
 	if gate != "manual" {
 		t.Errorf("expected gate='manual'; got %q", gate)
 	}
 }
 
-func TestStagesUpdate_PreservesUnknownFields(t *testing.T) {
-	var gotBody []byte
+func TestStagesUpdate_NullName(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/vnd.api+json")
-		if r.Method == http.MethodGet {
-			// Stage has server-generated fields not in StageInput.
-			_, _ = fmt.Fprint(w, pipelineWithStagesResponse("p1", "x", []map[string]any{
-				{"name": "plan", "role": "planning", "server_id": "srv-123", "created_at": "2024-01-01"},
-			}))
-		} else {
-			gotBody, _ = io.ReadAll(r.Body)
-			_, _ = fmt.Fprint(w, pipelineNoStagesResponse("p1", "x"))
-		}
-	}))
-	defer ts.Close()
-
-	var out bytes.Buffer
-	ctx := makeCtx(t, ts.URL, "tok", false, &out)
-	cmd := stagesUpdateCmd()
-	cmd.SetContext(ctx)
-	cmd.SetOut(&out)
-	if err := cmd.Flags().Set("gate", "manual"); err != nil {
-		t.Fatal(err)
-	}
-	if err := cmd.RunE(cmd, []string{"p1", "plan"}); err != nil {
-		t.Fatalf("stages update failed: %v", err)
-	}
-
-	var top map[string]json.RawMessage
-	_ = json.Unmarshal(gotBody, &top)
-	var pipeline map[string]json.RawMessage
-	_ = json.Unmarshal(top["pipeline"], &pipeline)
-	var stages []map[string]json.RawMessage
-	_ = json.Unmarshal(pipeline["stages"], &stages)
-
-	if _, ok := stages[0]["server_id"]; !ok {
-		t.Error("stage should preserve unknown 'server_id' field from server")
-	}
-	if _, ok := stages[0]["created_at"]; !ok {
-		t.Error("stage should preserve unknown 'created_at' field from server")
-	}
-}
-
-func TestStagesUpdate_NotFound(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/vnd.api+json")
-		_, _ = fmt.Fprint(w, pipelineWithStagesResponse("p1", "x", []map[string]any{
-			{"name": "plan", "role": "planning"},
+		// Built-in stage: name is null.
+		_, _ = fmt.Fprint(w, stageResourceResponse("s1", map[string]any{
+			"name": nil, "role": "implementing", "stage_type": "ai", "gate": "automated", "position": 2,
 		}))
 	}))
 	defer ts.Close()
@@ -650,13 +616,58 @@ func TestStagesUpdate_NotFound(t *testing.T) {
 	if err := cmd.Flags().Set("role", "reviewing"); err != nil {
 		t.Fatal(err)
 	}
-
-	err := cmd.RunE(cmd, []string{"p1", "nonexistent-stage"})
-	if err == nil {
-		t.Fatal("expected error for nonexistent stage")
+	if err := cmd.RunE(cmd, []string{"p1", "s1"}); err != nil {
+		t.Fatalf("update with null name failed: %v", err)
 	}
-	if !strings.Contains(err.Error(), "not found") {
-		t.Errorf("expected 'not found' in error; got: %v", err)
+}
+
+func TestStagesUpdate_Error404(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = fmt.Fprint(w, `{"errors":[{"status":"404","detail":"stage not found"}]}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+	cmd := stagesUpdateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	if err := cmd.Flags().Set("role", "reviewing"); err != nil {
+		t.Fatal(err)
+	}
+	err := cmd.RunE(cmd, []string{"p1", "s1"})
+	if err == nil {
+		t.Fatal("expected error on 404")
+	}
+	if !strings.Contains(err.Error(), "stage not found") {
+		t.Errorf("expected 'stage not found' in error; got: %v", err)
+	}
+}
+
+func TestStagesUpdate_Error422(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = fmt.Fprint(w, `{"errors":[{"status":"422","detail":"gate is not valid"}]}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+	cmd := stagesUpdateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	if err := cmd.Flags().Set("gate", "invalid-gate"); err != nil {
+		t.Fatal(err)
+	}
+	err := cmd.RunE(cmd, []string{"p1", "s1"})
+	if err == nil {
+		t.Fatal("expected error on 422")
+	}
+	if !strings.Contains(err.Error(), "gate is not valid") {
+		t.Errorf("expected '422' detail in error; got: %v", err)
 	}
 }
 
@@ -677,14 +688,18 @@ func TestStagesUpdate_DryRun(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := cmd.RunE(cmd, []string{"p1", "plan"}); err != nil {
+	if err := cmd.RunE(cmd, []string{"p1", "s1"}); err != nil {
 		t.Fatalf("stages update dry-run failed: %v", err)
 	}
 	if called {
 		t.Error("dry-run should not make HTTP calls")
 	}
-	if !strings.Contains(out.String(), "dry-run") {
-		t.Errorf("expected dry-run in output; got:\n%s", out.String())
+	got := out.String()
+	if !strings.Contains(got, "dry-run") {
+		t.Errorf("expected dry-run in output; got:\n%s", got)
+	}
+	if !strings.Contains(got, "stages/s1") {
+		t.Errorf("expected 'stages/s1' in dry-run output; got:\n%s", got)
 	}
 }
 
@@ -701,7 +716,7 @@ func TestStagesUpdate_NoFlags(t *testing.T) {
 	cmd.SetContext(ctx)
 	cmd.SetOut(&out)
 
-	err := cmd.RunE(cmd, []string{"p1", "plan"})
+	err := cmd.RunE(cmd, []string{"p1", "s1"})
 	if err == nil {
 		t.Fatal("expected error when no flags provided")
 	}
@@ -874,37 +889,6 @@ func TestStagesAdd_GetPipelineError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "server error on GET") {
 		t.Errorf("expected GET error detail in error; got: %v", err)
-	}
-}
-
-func TestStagesUpdate_GetPipelineError(t *testing.T) {
-	var patchCalled bool
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodGet {
-			w.Header().Set("Content-Type", "application/vnd.api+json")
-			w.WriteHeader(http.StatusNotFound)
-			_, _ = fmt.Fprint(w, `{"errors":[{"status":"404","detail":"pipeline not found on GET"}]}`)
-		} else {
-			patchCalled = true
-		}
-	}))
-	defer ts.Close()
-
-	var out bytes.Buffer
-	ctx := makeCtx(t, ts.URL, "tok", false, &out)
-	cmd := stagesUpdateCmd()
-	cmd.SetContext(ctx)
-	cmd.SetOut(&out)
-	if err := cmd.Flags().Set("role", "reviewing"); err != nil {
-		t.Fatal(err)
-	}
-
-	err := cmd.RunE(cmd, []string{"p1", "plan"})
-	if err == nil {
-		t.Fatal("expected error on GET failure")
-	}
-	if patchCalled {
-		t.Error("PATCH should not be called if GET fails")
 	}
 }
 

@@ -275,9 +275,9 @@ At least one flag must be provided. Output columns on success: `ID`, `NAME`, `KI
 
 #### pipelines stages
 
-Manage the individual stages of a pipeline. These commands expose the full stage attribute set per the published API contract. Because there is no dedicated stages endpoint, each write command performs a read-modify-write: it GETs the current pipeline, applies your changes, and PATCHes the full updated stages array atomically.
+Manage the individual stages of a pipeline. These commands expose the full stage attribute set per the published API contract. `stages add` and `stages remove` perform a read-modify-write: they GET the current pipeline, apply changes, and PATCH the full updated stages array atomically. `stages update` addresses a stage directly by its `id` via the single-stage PATCH endpoint.
 
-> **Note:** Two concurrent `stages add` (or `update`/`remove`) calls can overwrite each other — this is inherent to the API design (no conditional PATCH). For safe concurrent edits, serialize your calls.
+> **Note:** Two concurrent `stages add` (or `stages remove`) calls can overwrite each other — this is inherent to the read-modify-write design (no conditional PATCH). For safe concurrent edits, serialize your calls.
 
 ##### pipelines stages list
 
@@ -355,27 +355,27 @@ Output columns on success: `ID`, `NAME`, `KIND`. Use `--json` for the full pipel
 
 ##### pipelines stages update
 
-Update an existing stage by name. Only the flags you provide are changed — other fields are preserved, including any server-generated fields.
+Update an existing stage by its `id`. Only the flags you provide are changed — other fields are preserved on the server. Use `pipelines stages list <pipeline-id>` to discover stage IDs.
 
 ```bash
 # Change instructions
-loopctl pipelines stages update <pipeline-id> <stage-name> \
+loopctl pipelines stages update <pipeline-id> <stage-id> \
   --instructions "Updated prompt text."
 
 # Change gate and add failure policy
-loopctl pipelines stages update <pipeline-id> review \
+loopctl pipelines stages update <pipeline-id> <stage-id> \
   --gate ci_pass \
   --on-failure '{"max_rework_count":3}'
 
 # Preview without making API calls
-loopctl pipelines stages update <pipeline-id> review --gate manual --dry-run
+loopctl pipelines stages update <pipeline-id> <stage-id> --gate manual --dry-run
 ```
 
-Accepts the same flags as `stages add` except `--name` (the stage is identified by the `<stage-name>` positional argument). At least one flag must be provided. If two stages share the same name, the first match is updated.
+Accepts the same flags as `stages add` except `--name` (the stage is identified by the `<stage-id>` positional argument). At least one flag must be provided.
 
-Output columns on success: `ID`, `NAME`, `KIND`. Use `--json` for the full pipeline resource.
+Output columns on success: `POSITION`, `NAME`, `ROLE`, `STAGE_TYPE`, `GATE`, `AGENT`. Use `--json` for the full stage resource.
 
-**APIs:** `GET /api/pipelines/:id` then `PATCH /api/pipelines/:id`
+**API:** `PATCH /api/pipelines/:pipeline_id/stages/:id`
 
 ##### pipelines stages remove
 
@@ -1115,8 +1115,8 @@ loopctl pipelines stages add <pipeline-id> \
   --gate manual \
   --on-failure '{"max_rework_count":2,"rework_to_position":1}'
 
-# Update a stage's instructions and gate in place
-loopctl pipelines stages update <pipeline-id> review \
+# Update a stage's instructions and gate in place (use stage id, not name)
+loopctl pipelines stages update <pipeline-id> <stage-id> \
   --instructions "Updated review instructions." \
   --gate ci_pass
 
@@ -1125,7 +1125,7 @@ loopctl pipelines stages remove <pipeline-id> review
 
 # Preview any write without making API calls
 loopctl pipelines stages add <pipeline-id> --name review --dry-run
-loopctl pipelines stages update <pipeline-id> review --gate manual --dry-run
+loopctl pipelines stages update <pipeline-id> <stage-id> --gate manual --dry-run
 loopctl pipelines stages remove <pipeline-id> review --dry-run
 ```
 
@@ -1177,7 +1177,7 @@ loopctl tasks create --project-id p1 --kind bug --title "Fix it" --description "
 loopctl pipelines create --name "My Workflow" --dry-run
 loopctl pipelines update <id> --name "Renamed" --dry-run
 loopctl pipelines stages add <pipeline-id> --name review --dry-run
-loopctl pipelines stages update <pipeline-id> review --gate manual --dry-run
+loopctl pipelines stages update <pipeline-id> <stage-id> --gate manual --dry-run
 loopctl pipelines stages remove <pipeline-id> review --dry-run
 loopctl task-kinds create --name my-kind --dry-run
 loopctl task-kinds set-default-pipeline <kind-name> --pipeline-id <integer-pipeline-id> --dry-run

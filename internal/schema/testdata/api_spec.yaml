@@ -93,6 +93,7 @@ components:
           - agent.session_restarted
           - agent.stream_started
           - agent.stream_stopped
+          - provider.capacity_observed
         schema_version:
           type: integer
           enum:
@@ -128,6 +129,7 @@ components:
           - "$ref": "#/components/schemas/ContainerStatusEventData"
           - "$ref": "#/components/schemas/ContainerDeploymentEventData"
           - "$ref": "#/components/schemas/AgentEventData"
+          - "$ref": "#/components/schemas/ProviderCapacityEventData"
       additionalProperties: false
     TaskStateEventData:
       type: object
@@ -1186,6 +1188,187 @@ components:
           description: 'Deprecated: use prompt_sections.template for custom-stage
             instructions composed into the canonical prompt.'
       additionalProperties: false
+    PipelineStagePatchInput:
+      type: object
+      description: Partial stage attribute set for single-stage in-place update. Only
+        supplied attributes are changed; omitted fields are preserved.
+      properties:
+        stage_type:
+          type: string
+          description: Stage type name. Defaults to 'custom'.
+        custom_stage_name:
+          type: string
+        prompt_sections:
+          "$ref": "#/components/schemas/PromptSections"
+        prompt_configuration:
+          description: Database-owned Mustache sections and ordered slot names. Absent
+            order inherits global order; an empty array renders nothing.
+          type: object
+          additionalProperties: false
+          properties:
+            sections:
+              "$ref": "#/components/schemas/PromptSections"
+            order:
+              type: array
+              uniqueItems: true
+              items:
+                type: string
+                enum:
+                - stage_introduction
+                - workflow_instructions
+                - agent_instructions
+                - signaling_completion
+                - todo_guidance
+                - important_notes
+                - rules
+                - decision_rules
+                - lifecycle_safety
+                - recovery_message
+                - adjustment_pending
+                - adjustment_previous
+                - adjustment_generic
+                - adjustment_conflict
+                - adjustment_heading
+                - adjustment_pending_heading
+                - adjustment_previous_heading
+                - task_header
+                - attachments
+                - acceptance_criteria
+                - platform_guidance
+                - plan_context
+                - reference_material
+                - success_conditions
+                - failure_feedback
+                - adjustments
+                - todos
+                - available_tools
+                - adjustment_entry
+                - adjustment_repeated_entry
+                - todo_entry
+        gate:
+          type: string
+          enum:
+          - automated
+          - human
+        on_failure:
+          type: string
+          enum:
+          - rework
+          - block
+        max_rework_count:
+          type: integer
+        rework_to_position:
+          type: integer
+        position:
+          type: integer
+        agent_id:
+          type: integer
+        environment_id:
+          type: integer
+        advance_requirements:
+          type: array
+          items:
+            type: string
+        advance_notice:
+          type: string
+        runs_in_container_override:
+          type: boolean
+          nullable: true
+        stage_triggers:
+          type: array
+          items:
+            "$ref": "#/components/schemas/PipelineStageTriggerInput"
+        name:
+          type: string
+          description: 'Deprecated: use custom_stage_name.'
+        instructions:
+          type: string
+          description: 'Deprecated: use prompt_sections.template for custom-stage
+            instructions composed into the canonical prompt.'
+      additionalProperties: false
+    PipelineStageAttributes:
+      type: object
+      description: Attributes of a single pipeline stage returned from the stage update
+        endpoint.
+      properties:
+        stage_type:
+          type: string
+          nullable: true
+        custom_stage_name:
+          type: string
+          nullable: true
+        gate:
+          type: string
+          enum:
+          - automated
+          - human
+        on_failure:
+          type: string
+          enum:
+          - rework
+          - block
+        max_rework_count:
+          type: integer
+          nullable: true
+        rework_to_position:
+          type: integer
+          nullable: true
+        position:
+          type: integer
+        agent_id:
+          type: string
+          nullable: true
+        environment_id:
+          type: string
+          nullable: true
+        advance_requirements:
+          type: array
+          items:
+            type: string
+        advance_notice:
+          type: string
+          nullable: true
+        runs_in_container_override:
+          type: boolean
+          nullable: true
+        prompt_sections:
+          "$ref": "#/components/schemas/PromptSections"
+        prompt_configuration:
+          "$ref": "#/components/schemas/PromptConfiguration"
+        stage_triggers:
+          type: array
+          items:
+            "$ref": "#/components/schemas/PipelineStageTrigger"
+        name:
+          type: string
+          nullable: true
+          description: 'Deprecated: same as custom_stage_name.'
+        role:
+          type: string
+          description: 'Deprecated: always ''working''.'
+        instructions:
+          type: string
+          description: 'Deprecated: custom-stage instructions; same as prompt_sections.template.'
+      additionalProperties: false
+      required:
+      - stage_type
+      - custom_stage_name
+      - gate
+      - on_failure
+      - max_rework_count
+      - rework_to_position
+      - position
+      - agent_id
+      - environment_id
+      - advance_requirements
+      - advance_notice
+      - runs_in_container_override
+      - prompt_sections
+      - prompt_configuration
+      - stage_triggers
+      - name
+      - role
+      - instructions
     PipelineAttributes:
       type: object
       properties:
@@ -1275,6 +1458,13 @@ components:
     ProjectAttributes:
       type: object
       properties:
+        failure_policy:
+          type: string
+          enum:
+          - fail_fast
+          - fallback_to_default
+          - hold_for_retry
+          description: Policy for agent failures only. Infrastructure start failures always use bounded replacement with backoff.
         name:
           type: string
         display_name:
@@ -1306,6 +1496,7 @@ components:
           format: date-time
       additionalProperties: false
       required:
+      - failure_policy
       - name
       - display_name
       - git_repo_url
@@ -1469,6 +1660,8 @@ components:
         updated_at:
           type: string
           format: date-time
+        provider_capacity:
+          "$ref": "#/components/schemas/TaskProviderCapacity"
       additionalProperties: false
       required:
       - title
@@ -1497,6 +1690,7 @@ components:
       - blocking_dependency_ids
       - created_at
       - updated_at
+      - provider_capacity
     TaskShowAttributes:
       type: object
       properties:
@@ -1578,6 +1772,8 @@ components:
         updated_at:
           type: string
           format: date-time
+        provider_capacity:
+          "$ref": "#/components/schemas/TaskProviderCapacity"
       additionalProperties: false
       required:
       - title
@@ -1606,6 +1802,7 @@ components:
       - blocking_dependency_ids
       - created_at
       - updated_at
+      - provider_capacity
     TaskCreateResponseAttributes:
       type: object
       properties:
@@ -2468,6 +2665,293 @@ components:
           additionalProperties: true
           x-loopcontrol-open-reason: free_form
       additionalProperties: false
+    ProviderCapacityObservation:
+      description: Latest safe observation when used as credential capacity. Null means
+        no observation exists for the current credential revision; unknown is an
+        observed unconfirmed result, not available capacity.
+      type: object
+      properties:
+        id: &1
+          type: integer
+        provider: &2
+          type: string
+          enum:
+          - codex
+        credential_set_id: &3
+          type: integer
+        status: &4
+          type: string
+          enum:
+          - available
+          - nearing_limit
+          - exhausted
+          - unknown
+        observed_at: &5
+          description: Server receipt time of the immutable observation.
+          type: string
+          format: date-time
+        age_seconds: &6
+          description: Nonnegative rounded age at response serialization.
+          type: integer
+          minimum: 0
+        stale: &7
+          description: True when the observation is older than fifteen minutes.
+          type: boolean
+        bucket_id: &8
+          type: string
+          nullable: true
+          enum:
+          -
+          - default
+          - primary
+          - secondary
+          - codex
+        used_percent: &9
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 100
+        resets_at: &10
+          description: Reported reset time; passing this time does not prove availability.
+          type: string
+          nullable: true
+          format: date-time
+        reached_limit_type: &11
+          type: string
+          nullable: true
+          enum:
+          -
+          - rate_limit_reached
+          - workspace_owner_credits_depleted
+          - workspace_member_credits_depleted
+          - workspace_owner_usage_limit_reached
+          - workspace_member_usage_limit_reached
+          - usage_limit
+        source: &12
+          type: string
+          enum:
+          - preflight
+          - runtime
+          - recheck
+        diagnostic: &13
+          type: string
+          enum:
+          - none
+          - timeout
+          - unavailable
+          - unsupported
+          - malformed
+          - provider_error
+          - runtime_limit
+      additionalProperties: false
+      required:
+      - id
+      - provider
+      - credential_set_id
+      - status
+      - observed_at
+      - age_seconds
+      - stale
+      - bucket_id
+      - used_percent
+      - resets_at
+      - reached_limit_type
+      - source
+      - diagnostic
+      nullable: true
+    TaskProviderCapacity:
+      description: Outer fields preserve the historical blocking observation when
+        present, otherwise the current observation. The current field independently
+        reports the latest observation for that credential's current revision, or
+        null. The whole value is null when neither observation exists.
+      type: object
+      properties:
+        id: *1
+        provider: *2
+        credential_set_id: *3
+        status: *4
+        observed_at: *5
+        age_seconds: *6
+        stale: *7
+        bucket_id: *8
+        used_percent: *9
+        resets_at: *10
+        reached_limit_type: *11
+        source: *12
+        diagnostic: *13
+        current:
+          "$ref": "#/components/schemas/ProviderCapacityObservation"
+      additionalProperties: false
+      required:
+      - id
+      - provider
+      - credential_set_id
+      - status
+      - observed_at
+      - age_seconds
+      - stale
+      - bucket_id
+      - used_percent
+      - resets_at
+      - reached_limit_type
+      - source
+      - diagnostic
+      - current
+      nullable: true
+    CredentialCapacityResource:
+      type: object
+      properties:
+        id: &14
+          type: string
+        type:
+          type: string
+          enum:
+          - credential_sets
+        attributes:
+          type: object
+          properties:
+            name: *14
+            service: *14
+            capacity:
+              "$ref": "#/components/schemas/ProviderCapacityObservation"
+            affected_blocked_tasks:
+              description: Tasks still blocked for agent_quota_exhausted by this
+                credential, including observations from earlier credential revisions.
+              type: array
+              items:
+                type: object
+                properties:
+                  id: *14
+                  title: *14
+                additionalProperties: false
+                required:
+                - id
+                - title
+          additionalProperties: false
+          required:
+          - name
+          - service
+          - capacity
+          - affected_blocked_tasks
+      additionalProperties: false
+      required:
+      - id
+      - type
+      - attributes
+    ProviderCapacityReport:
+      type: object
+      properties:
+        status: *4
+        source:
+          type: string
+          enum:
+          - preflight
+          - runtime
+        observed_at: *5
+        bucket_id: *8
+        used_percent: *9
+        resets_at:
+          oneOf:
+          - type: integer
+            minimum: 0
+            nullable: true
+          - type: string
+            format: date-time
+          description: Collector Unix timestamp in seconds, or an ISO 8601 timestamp;
+            null when unavailable.
+        reached_limit_type: *11
+        diagnostic: *13
+        observation_id:
+          type: string
+          format: uuid
+        agent_session_id:
+          type: string
+          format: uuid
+        phase:
+          type: string
+          enum:
+          - collecting
+      additionalProperties: false
+      required: []
+    ProviderCapacityEventData:
+      type: object
+      properties:
+        id:
+          type: integer
+        provider:
+          type: string
+          enum:
+          - codex
+        credential_set_id:
+          type: integer
+        status:
+          type: string
+          enum:
+          - available
+          - nearing_limit
+          - exhausted
+          - unknown
+        observed_at:
+          type: string
+          format: date-time
+        bucket_id:
+          type: string
+          nullable: true
+          enum:
+          -
+          - default
+          - primary
+          - secondary
+          - codex
+        used_percent:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 100
+        resets_at:
+          type: string
+          nullable: true
+          format: date-time
+        reached_limit_type:
+          type: string
+          nullable: true
+          enum:
+          -
+          - rate_limit_reached
+          - workspace_owner_credits_depleted
+          - workspace_member_credits_depleted
+          - workspace_owner_usage_limit_reached
+          - workspace_member_usage_limit_reached
+          - usage_limit
+        source:
+          type: string
+          enum:
+          - preflight
+          - runtime
+          - recheck
+        diagnostic:
+          type: string
+          enum:
+          - none
+          - timeout
+          - unavailable
+          - unsupported
+          - malformed
+          - provider_error
+          - runtime_limit
+      additionalProperties: false
+      required:
+      - id
+      - provider
+      - credential_set_id
+      - status
+      - observed_at
+      - bucket_id
+      - used_percent
+      - resets_at
+      - reached_limit_type
+      - source
+      - diagnostic
   responses:
     BadRequest:
       description: Invalid request parameter.
@@ -2915,6 +3399,200 @@ paths:
           operation: require
           arguments:
           - ":agent_session_id"
+  "/api/containers/{container_id}/provider_capacity_snapshots":
+    post:
+      operationId: post-api-container-provider-capacity-snapshot
+      summary: Record a normalized provider-capacity observation
+      description: Account and agent scoped. Only normalized safe fields are accepted;
+        raw provider payloads and credentials are discarded. Exhausted observations
+        block the current task before launch, while unknown initial observations permit
+        launch.
+      parameters:
+      - name: container_id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                provider_capacity_snapshot:
+                  "$ref": "#/components/schemas/ProviderCapacityReport"
+              additionalProperties: false
+              required:
+              - provider_capacity_snapshot
+      responses:
+        '202':
+          description: Safe account-scoped response
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                properties:
+                  snapshot:
+                    "$ref": "#/components/schemas/ProviderCapacityObservation"
+                  decision:
+                    type: object
+                    properties:
+                      launch:
+                        type: boolean
+                      blocked:
+                        type: boolean
+                    additionalProperties: false
+                    required:
+                    - launch
+                    - blocked
+                additionalProperties: false
+                required:
+                - snapshot
+                - decision
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+      x-loopcontrol-contract:
+        scenarios:
+          success:
+            status: 202
+            setup:
+            - capacity_session
+            body: &15
+              provider_capacity_snapshot:
+                observation_id: 11111111-1111-4111-8111-111111111111
+                agent_session_id:
+                  fixture:
+                    resource: agent_session
+                status: unknown
+                source: preflight
+                diagnostic: timeout
+                resets_at: 1800000000
+            media_type: application/vnd.api+json
+          collecting:
+            status: 202
+            setup:
+            - capacity_session
+            body:
+              provider_capacity_snapshot:
+                agent_session_id:
+                  fixture:
+                    resource: agent_session
+                phase: collecting
+                observation_id: 11111111-1111-4111-8111-111111111111
+            media_type: application/vnd.api+json
+          missing_body:
+            status: 400
+            setup:
+            - capacity_session
+            body: *15
+            omit_body_field:
+            - provider_capacity_snapshot
+            request_media_type: application/json
+            invalid_request: Required report envelope omitted
+          unauthorized:
+            status: 401
+            setup:
+            - unauthenticated
+            authentication: none
+            body:
+              provider_capacity_snapshot:
+                agent_session_id: 11111111-1111-4111-8111-111111111111
+          missing:
+            status: 404
+            setup:
+            - capacity_session
+            path:
+              container_id: '0'
+            body: *15
+        input_constraints:
+        - field: ''
+          operation: require
+          arguments:
+          - ":provider_capacity_snapshot"
+  "/api/credential_sets":
+    get:
+      operationId: get-api-credential-sets
+      summary: List account credentials with current safe capacity and affected blocked
+        tasks
+      responses:
+        '200':
+          description: Safe account-scoped response
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      "$ref": "#/components/schemas/CredentialCapacityResource"
+                additionalProperties: false
+                required:
+                - data
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+      x-loopcontrol-contract:
+        scenarios:
+          success:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+          unauthorized:
+            status: 401
+            setup:
+            - unauthenticated
+            authentication: none
+  "/api/credential_sets/{id}":
+    get:
+      operationId: get-api-credential-set
+      summary: Read one account credential's current safe capacity
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: Safe account-scoped response
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    "$ref": "#/components/schemas/CredentialCapacityResource"
+                additionalProperties: false
+                required:
+                - data
+        '401':
+          "$ref": "#/components/responses/Unauthorized"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+      x-loopcontrol-contract:
+        scenarios:
+          success:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+          unauthorized:
+            status: 401
+            setup:
+            - unauthenticated
+            authentication: none
+          missing:
+            status: 404
+            setup:
+            - authenticated
+            path:
+              id: '0'
   "/api/agent_sessions/{id}":
     patch:
       operationId: patch-api-agent-session
@@ -2955,7 +3633,7 @@ paths:
       responses:
         '200':
           description: Failed agent session
-          content: &1
+          content: &16
             application/vnd.api+json:
               schema:
                 type: object
@@ -2991,18 +3669,18 @@ paths:
                 additionalProperties: false
         '422':
           description: State is not failed
-          content: &2
+          content: &17
             application/vnd.api+json:
               schema:
                 "$ref": "#/components/schemas/JsonApiErrors"
           "$ref": "#/components/responses/UnprocessableEntity"
-        '404': &3
+        '404': &18
           "$ref": "#/components/responses/NotFound"
-        '401': &4
+        '401': &19
           "$ref": "#/components/responses/Unauthorized"
         '400':
           "$ref": "#/components/responses/BadRequest"
-      x-loopcontrol-contract: &5
+      x-loopcontrol-contract: &20
         scenarios:
           success:
             status: 200
@@ -3122,16 +3800,16 @@ paths:
       responses:
         '200':
           description: Failed agent session
-          content: *1
+          content: *16
         '422':
           description: State is not failed
-          content: *2
+          content: *17
           "$ref": "#/components/responses/UnprocessableEntity"
-        '404': *3
-        '401': *4
+        '404': *18
+        '401': *19
         '400':
           "$ref": "#/components/responses/BadRequest"
-      x-loopcontrol-contract: *5
+      x-loopcontrol-contract: *20
     parameters:
     - name: id
       in: path
@@ -3150,7 +3828,7 @@ paths:
     patch:
       operationId: patch-api-agent-session-stream
       summary: Report live invocation stream availability.
-      requestBody: &6
+      requestBody: &21
         required: true
         content:
           application/json:
@@ -3164,7 +3842,7 @@ paths:
               x-loopcontrol-input-policy: Unknown top-level input keys are tolerated
                 and discarded. Listed properties define the consumed input vocabulary,
                 enforced independently by source and runtime observation.
-      responses: &7
+      responses: &22
         '200':
           description: Current stream availability.
           content:
@@ -3175,7 +3853,7 @@ paths:
           "$ref": "#/components/responses/Unauthorized"
         '404':
           "$ref": "#/components/responses/NotFound"
-      x-loopcontrol-contract: &8
+      x-loopcontrol-contract: &23
         scenarios:
           success:
             status: 200
@@ -3229,9 +3907,9 @@ paths:
     put:
       operationId: put-api-agent-session-stream
       summary: Report live invocation stream availability.
-      requestBody: *6
-      responses: *7
-      x-loopcontrol-contract: *8
+      requestBody: *21
+      responses: *22
+      x-loopcontrol-contract: *23
   "/api/credential_device_authorizations/{id}":
     patch:
       operationId: patch-api-credential-device-authorization
@@ -5390,7 +6068,7 @@ paths:
                   advance_requirements:
                   - pr_url
                   runs_in_container_override: false
-                  prompt_sections: &9
+                  prompt_sections: &24
                     stage_introduction: Contract text
                     workflow_instructions: Contract text
                     agent_instructions: Contract text
@@ -5424,7 +6102,7 @@ paths:
                     todo_entry: Contract text
                     template: Contract text
                   prompt_configuration:
-                    sections: *9
+                    sections: *24
                     order:
                     - task_header
                   stage_triggers:
@@ -6009,7 +6687,7 @@ paths:
                 and discarded. Listed properties define the consumed input vocabulary,
                 enforced independently by source and runtime observation.
       responses:
-        '400': &11
+        '400': &26
           description: Required parameters are missing or have an invalid shape
           content:
             application/vnd.api+json:
@@ -6142,7 +6820,7 @@ paths:
                   advance_requirements:
                   - pr_url
                   runs_in_container_override: false
-                  prompt_sections: &10
+                  prompt_sections: &25
                     stage_introduction: Contract text
                     workflow_instructions: Contract text
                     agent_instructions: Contract text
@@ -6176,7 +6854,7 @@ paths:
                     todo_entry: Contract text
                     template: Contract text
                   prompt_configuration:
-                    sections: *10
+                    sections: *25
                     order:
                     - task_header
                   stage_triggers:
@@ -6280,6 +6958,37 @@ paths:
                 kind: release
                 contract_unknown_input: discarded
             request_media_type: application/json
+          active_task_refusal:
+            status: 422
+            setup:
+            - active_task_on_pipeline
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: id
+                  identity: contract
+            body:
+              pipeline:
+                stages:
+                - name: New Stage
+                  instructions: Do new thing.
+          terminal_task_allowance:
+            status: 200
+            setup:
+            - terminal_task_on_pipeline
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: id
+                  identity: contract
+            body:
+              pipeline:
+                name: Contract stages
+                stages:
+                - name: New Stage
+                  instructions: Do new thing.
         input_constraints:
         - field: ''
           operation: require
@@ -6656,7 +7365,7 @@ paths:
                 and discarded. Listed properties define the consumed input vocabulary,
                 enforced independently by source and runtime observation.
       responses:
-        '400': *11
+        '400': *26
         '200':
           description: Updated pipeline
           content:
@@ -6784,7 +7493,7 @@ paths:
                   advance_requirements:
                   - pr_url
                   runs_in_container_override: false
-                  prompt_sections: &12
+                  prompt_sections: &27
                     stage_introduction: Contract text
                     workflow_instructions: Contract text
                     agent_instructions: Contract text
@@ -6818,7 +7527,7 @@ paths:
                     todo_entry: Contract text
                     template: Contract text
                   prompt_configuration:
-                    sections: *12
+                    sections: *27
                     order:
                     - task_header
                   stage_triggers:
@@ -6922,6 +7631,37 @@ paths:
                 kind: release
                 contract_unknown_input: discarded
             request_media_type: application/json
+          active_task_refusal:
+            status: 422
+            setup:
+            - active_task_on_pipeline
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: id
+                  identity: contract
+            body:
+              pipeline:
+                stages:
+                - name: New Stage
+                  instructions: Do new thing.
+          terminal_task_allowance:
+            status: 200
+            setup:
+            - terminal_task_on_pipeline
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: id
+                  identity: contract
+            body:
+              pipeline:
+                name: Contract stages
+                stages:
+                - name: New Stage
+                  instructions: Do new thing.
         input_constraints:
         - field: ''
           operation: require
@@ -6984,7 +7724,8 @@ paths:
         '401':
           description: Missing or invalid bearer token; the response body is empty.
         '422':
-          description: Source pipeline cannot be cloned because its persisted configuration is invalid.
+          description: Source pipeline cannot be cloned because its persisted configuration
+            is invalid.
           content:
             application/vnd.api+json:
               schema:
@@ -7045,6 +7786,228 @@ paths:
                   identity: contract
             authentication: browserSession
         input_constraints: []
+  "/api/pipelines/{pipeline_id}/stages/{id}":
+    patch:
+      operationId: patch-api-pipeline-stage
+      summary: Updates a single pipeline stage in place. Only supplied attributes
+        are changed; the stage id and all omitted fields are preserved.
+      description: Account-scoped; unknown pipeline or stage returns 404. The stage
+        id is preserved; only the attributes explicitly supplied in the request body
+        are changed. Bearer or X-Api-Token authentication required.
+      parameters:
+      - name: pipeline_id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Pipeline ID
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Stage ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                pipeline_stage:
+                  "$ref": "#/components/schemas/PipelineStagePatchInput"
+              required:
+              - pipeline_stage
+              additionalProperties: true
+              x-loopcontrol-open-reason: ignored_inputs
+              x-loopcontrol-input-policy: Unknown top-level input keys are tolerated
+                and discarded.
+      responses:
+        '200':
+          description: Updated stage
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: object
+                    required:
+                    - type
+                    - id
+                    - attributes
+                    properties:
+                      type:
+                        type: string
+                        enum:
+                        - pipeline_stages
+                      id:
+                        type: string
+                      attributes:
+                        "$ref": "#/components/schemas/PipelineStageAttributes"
+                    additionalProperties: false
+                additionalProperties: false
+        '400':
+          description: Missing or invalid envelope
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+        '401':
+          description: Missing or invalid bearer token; the response body is empty.
+        '404':
+          description: Pipeline or stage not found
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+        '422':
+          description: Validation failed
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+      x-loopcontrol-contract:
+        scenarios:
+          success:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              pipeline_id:
+                fixture:
+                  resource: id
+                  identity: contract
+              id:
+                fixture:
+                  resource: id
+                  identity: contract
+            body:
+              pipeline_stage:
+                custom_stage_name: Contract Updated Stage
+          stable_id:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              pipeline_id:
+                fixture:
+                  resource: id
+                  identity: contract
+              id:
+                fixture:
+                  resource: id
+                  identity: contract
+            body:
+              pipeline_stage:
+                gate: automated
+            assertions:
+            - pointer: /data/id
+              equals:
+                fixture:
+                  resource: pipeline_stage
+                  identity: contract
+          stage_fields:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              pipeline_id:
+                fixture:
+                  resource: id
+                  identity: contract
+              id:
+                fixture:
+                  resource: id
+                  identity: contract
+            body:
+              pipeline_stage:
+                prompt_configuration:
+                  sections: {}
+                  order: []
+          null_name:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              pipeline_id:
+                fixture:
+                  resource: pipeline
+                  identity: custom_feature_one
+              id:
+                fixture:
+                  resource: pipeline_stage
+                  identity: custom_planning
+            body:
+              pipeline_stage:
+                gate: automated
+            assertions:
+            - pointer: /data/attributes/name
+              equals: ~
+          unauthenticated:
+            status: 401
+            setup:
+            - unauthenticated
+            body:
+              pipeline_stage:
+                gate: automated
+          error_404:
+            status: 404
+            setup:
+            - documented_error
+            media_type: application/vnd.api+json
+            path:
+              pipeline_id: '999999999'
+              id: '999999999'
+            body:
+              pipeline_stage:
+                gate: automated
+          error_422:
+            status: 422
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              pipeline_id:
+                fixture:
+                  resource: id
+                  identity: contract
+              id:
+                fixture:
+                  resource: id
+                  identity: contract
+            body:
+              pipeline_stage:
+                gate: invalid_gate
+          error_400:
+            status: 400
+            setup:
+            - authenticated
+            path:
+              pipeline_id:
+                fixture:
+                  resource: id
+                  identity: contract
+              id:
+                fixture:
+                  resource: id
+                  identity: contract
+            body:
+              pipeline_stage:
+                gate: automated
+            omit_body_field: pipeline_stage
+            request_media_type: application/json
+        input_constraints:
+        - field: ''
+          operation: require
+          arguments:
+          - ":pipeline_stage"
   "/api/projects":
     get:
       operationId: get-api-projects
@@ -9961,7 +10924,7 @@ paths:
                       - start
                       - end
                       properties:
-                        limit: &13
+                        limit: &28
                           type: integer
                         start:
                           type: string
@@ -9975,7 +10938,7 @@ paths:
                       - limit
                       - duration
                       properties:
-                        limit: *13
+                        limit: *28
                         duration:
                           type: integer
                 additionalProperties: false
@@ -10022,7 +10985,7 @@ paths:
                     maxItems: 0
         '404':
           description: Resource not found in the authenticated account.
-          content: &15
+          content: &30
             application/vnd.api+json:
               schema:
                 type: object
@@ -16352,7 +17315,7 @@ paths:
           description: Provider authentication, availability or rate limit error.
           content:
             application/vnd.api+json:
-              schema: &14
+              schema: &29
                 type: object
                 additionalProperties: false
                 required:
@@ -16364,18 +17327,18 @@ paths:
           description: Provider authentication, availability or rate limit error.
           content:
             application/vnd.api+json:
-              schema: *14
+              schema: *29
           x-loopcontrol-empty-body: true
         '429':
           description: Provider authentication, availability or rate limit error.
           content:
             application/vnd.api+json:
-              schema: *14
+              schema: *29
         '502':
           description: Provider authentication, availability or rate limit error.
           content:
             application/vnd.api+json:
-              schema: *14
+              schema: *29
       x-loopcontrol-contract:
         scenarios:
           success:
@@ -16504,23 +17467,23 @@ paths:
           description: Provider authentication, availability or rate limit error.
           content:
             application/vnd.api+json:
-              schema: *14
+              schema: *29
           x-loopcontrol-empty-body: true
         '503':
           description: Provider authentication, availability or rate limit error.
           content:
             application/vnd.api+json:
-              schema: *14
+              schema: *29
         '429':
           description: Provider authentication, availability or rate limit error.
           content:
             application/vnd.api+json:
-              schema: *14
+              schema: *29
         '502':
           description: Provider authentication, availability or rate limit error.
           content:
             application/vnd.api+json:
-              schema: *14
+              schema: *29
       x-loopcontrol-contract:
         scenarios:
           success:
@@ -16892,23 +17855,23 @@ paths:
           description: Provider authentication, availability or rate limit error.
           content:
             application/vnd.api+json:
-              schema: *14
+              schema: *29
           x-loopcontrol-empty-body: true
         '503':
           description: Provider authentication, availability or rate limit error.
           content:
             application/vnd.api+json:
-              schema: *14
+              schema: *29
         '429':
           description: Provider authentication, availability or rate limit error.
           content:
             application/vnd.api+json:
-              schema: *14
+              schema: *29
         '502':
           description: Provider authentication, availability or rate limit error.
           content:
             application/vnd.api+json:
-              schema: *14
+              schema: *29
       x-loopcontrol-contract:
         scenarios:
           success:
@@ -17216,23 +18179,23 @@ paths:
           description: Provider authentication, availability or rate limit error.
           content:
             application/vnd.api+json:
-              schema: *14
+              schema: *29
           x-loopcontrol-empty-body: true
         '503':
           description: Provider authentication, availability or rate limit error.
           content:
             application/vnd.api+json:
-              schema: *14
+              schema: *29
         '429':
           description: Provider authentication, availability or rate limit error.
           content:
             application/vnd.api+json:
-              schema: *14
+              schema: *29
         '502':
           description: Provider authentication, availability or rate limit error.
           content:
             application/vnd.api+json:
-              schema: *14
+              schema: *29
       x-loopcontrol-contract:
         scenarios:
           success:
@@ -17379,23 +18342,23 @@ paths:
           description: Provider authentication, availability or rate limit error.
           content:
             application/vnd.api+json:
-              schema: *14
+              schema: *29
           x-loopcontrol-empty-body: true
         '503':
           description: Provider authentication, availability or rate limit error.
           content:
             application/vnd.api+json:
-              schema: *14
+              schema: *29
         '429':
           description: Provider authentication, availability or rate limit error.
           content:
             application/vnd.api+json:
-              schema: *14
+              schema: *29
         '502':
           description: Provider authentication, availability or rate limit error.
           content:
             application/vnd.api+json:
-              schema: *14
+              schema: *29
       x-loopcontrol-contract:
         scenarios:
           success:
@@ -18757,7 +19720,7 @@ paths:
           "$ref": "#/components/responses/BadRequest"
         '404':
           description: The requested account does not exist.
-          content: *15
+          content: *30
       x-loopcontrol-contract:
         scenarios:
           success:

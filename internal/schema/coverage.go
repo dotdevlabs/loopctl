@@ -28,6 +28,7 @@ var Covered = map[OperationKey]OperationCoverage{
 	{Method: "POST", Path: "/api/pipelines"}:                                      {Command: "pipelines create"},
 	{Method: "GET", Path: "/api/pipelines/:id"}:                                   {Command: "pipelines get"},
 	{Method: "PATCH", Path: "/api/pipelines/:id"}:                                 {Command: "pipelines update"},
+	{Method: "PATCH", Path: "/api/pipelines/:pipeline_id/stages/:id"}:             {Command: "pipelines stages update"},
 	{Method: "GET", Path: "/api/projects"}:                                        {Command: "projects list", Paginated: true},
 	{Method: "POST", Path: "/api/projects"}:                                       {Command: "projects create"},
 	{Method: "GET", Path: "/api/projects/:id"}:                                    {Command: "projects get"},
@@ -103,4 +104,8 @@ var Excluded = map[OperationKey]string{
 	{Method: "PUT", Path: "/api/tasks/:id"}:                       "PUT alias for PATCH /api/tasks/:id; loopctl uses PATCH",
 	{Method: "PUT", Path: "/api/tasks/:task_id/todos/:id"}:        "PUT alias for PATCH /api/tasks/:task_id/todos/:id; loopctl uses PATCH",
 	{Method: "PUT", Path: "/api/account_pipeline_defaults/:kind"}: "PUT alias for PATCH /api/account_pipeline_defaults/:kind; loopctl uses PATCH",
+	// New in API v1.2.0 — credential capacity and container capacity snapshots.
+	{Method: "GET", Path: "/api/credential_sets"}:                                       "credential capacity read; not yet implemented in loopctl",
+	{Method: "GET", Path: "/api/credential_sets/:id"}:                                   "credential capacity read; not yet implemented in loopctl",
+	{Method: "POST", Path: "/api/containers/:container_id/provider_capacity_snapshots"}: "container-internal: agent container records provider capacity observations",
 }
