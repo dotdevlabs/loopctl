@@ -42,6 +42,28 @@ func TestConformance_PlatformsList(t *testing.T) {
 	}
 }
 
+func TestConformance_PlatformsGet(t *testing.T) {
+	endpoints := loadSchemaOrSkip(t)
+	var violations []string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		violations = schema.CheckRequest(r, endpoints)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = fmt.Fprint(w, `{"errors":[{"status":"404","detail":"not found"}]}`)
+	}))
+	defer ts.Close()
+
+	ctx := makeCtx(t, ts.URL, "tok", false, io.Discard)
+	cmd := getCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(io.Discard)
+	_ = cmd.RunE(cmd, []string{"pf-absent"})
+
+	if len(violations) != 0 {
+		t.Errorf("conformance violations for platforms get: %v", violations)
+	}
+}
+
 func TestConformance_PlatformsListPaginates(t *testing.T) {
 	var requestCount int32
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

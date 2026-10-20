@@ -175,9 +175,39 @@ At least one flag must be provided. Output columns on success: `ID`, `NAME`, `PL
 
 ---
 
+### agents
+
+List and inspect LoopControl agents.
+
+#### agents list
+
+```bash
+loopctl agents list
+loopctl agents list --json
+```
+
+Output columns: `ID`, `NAME`, `SLUG`.
+
+**API:** `GET /api/agents`
+
+#### agents get
+
+Get an agent by ID. Shows the full attribute set including install and launch commands. Use `--json` to retrieve the complete resource including the credential schema (service, env var, file path, encoding) — never credential values.
+
+```bash
+loopctl agents get <id>
+loopctl agents get <id> --json
+```
+
+Output columns: `ID`, `NAME`, `SLUG`, `INSTALL_COMMAND`, `LAUNCH_COMMAND`.
+
+**API:** `GET /api/agents/:id`
+
+---
+
 ### platforms
 
-List available platforms. Use this to discover the platform names and IDs accepted by `projects create`.
+List and inspect available platforms. Use this to discover the platform names and IDs accepted by `projects create`.
 
 #### platforms list
 
@@ -186,9 +216,26 @@ loopctl platforms list
 loopctl platforms list --json
 ```
 
-Output columns: `ID`, `NAME`, `DISPLAY_NAME`.
+Output columns: `ID`, `NAME`, `DISPLAY_NAME`, `CONTAINER_IMAGE`, `NEEDS_DATABASE`, `PORT`, `BUILT_IN`.
+
+`NEEDS_DATABASE` and `PORT` are blank when the platform does not specify them. Use `--json` to retrieve the full resource including non-secret environment variables and required secret descriptors (env var name, secret name, key, optional flag) — never secret values.
 
 **API:** `GET /api/platforms`
+
+#### platforms get
+
+Get a platform by ID.
+
+```bash
+loopctl platforms get <id>
+loopctl platforms get <id> --json
+```
+
+Output columns: `ID`, `NAME`, `DISPLAY_NAME`, `CONTAINER_IMAGE`, `NEEDS_DATABASE`, `PORT`, `BUILT_IN`.
+
+Use `--json` to retrieve the full resource including non-secret environment variables and required secret descriptors — never secret values.
+
+**API:** `GET /api/platforms/:id`
 
 ---
 
@@ -1072,9 +1119,10 @@ loopctl tasks list --json
 loopctl tasks list --project-id <project-id> --json
 ```
 
-### Discover available platforms, pipelines, and task kinds
+### Discover available agents, platforms, pipelines, and task kinds
 
 ```bash
+loopctl agents list
 loopctl platforms list
 loopctl pipelines list
 loopctl task-kinds list
