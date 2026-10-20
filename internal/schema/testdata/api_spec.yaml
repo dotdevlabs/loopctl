@@ -700,6 +700,26 @@ components:
       additionalProperties: false
       required:
       - data
+    AgentCredentialSchemaEntry:
+      type: object
+      properties:
+        service:
+          type: string
+        env_var:
+          type: string
+          nullable: true
+        file_path:
+          type: string
+          nullable: true
+        encoding:
+          type: string
+          nullable: true
+      additionalProperties: false
+      required:
+      - service
+      - env_var
+      - file_path
+      - encoding
     AgentAttributes:
       type: object
       properties:
@@ -707,10 +727,50 @@ components:
           type: string
         slug:
           type: string
+        install_command:
+          type: string
+          nullable: true
+        launch_command:
+          type: string
+        credentials_schema:
+          type: array
+          items:
+            "$ref": "#/components/schemas/AgentCredentialSchemaEntry"
       additionalProperties: false
       required:
       - name
       - slug
+      - install_command
+      - launch_command
+      - credentials_schema
+    PlatformEnvironmentVariable:
+      type: object
+      properties:
+        name:
+          type: string
+        value:
+          type: string
+      additionalProperties: false
+      required:
+      - name
+      - value
+    PlatformRequiredSecret:
+      type: object
+      properties:
+        env_var:
+          type: string
+        name:
+          type: string
+        key:
+          type: string
+        optional:
+          type: boolean
+      additionalProperties: false
+      required:
+      - env_var
+      - name
+      - key
+      - optional
     PlatformAttributes:
       type: object
       properties:
@@ -728,6 +788,14 @@ components:
           nullable: true
         built_in:
           type: boolean
+        environment_variables:
+          type: array
+          items:
+            "$ref": "#/components/schemas/PlatformEnvironmentVariable"
+        required_secrets:
+          type: array
+          items:
+            "$ref": "#/components/schemas/PlatformRequiredSecret"
       additionalProperties: false
       required:
       - name
@@ -736,6 +804,8 @@ components:
       - needs_database
       - port
       - built_in
+      - environment_variables
+      - required_secrets
     TaskKindAttributes:
       type: object
       properties:
@@ -4802,6 +4872,108 @@ paths:
             query: {}
             authentication: browserSession
         input_constraints: []
+  "/api/agents/{id}":
+    get:
+      operationId: get-api-agent
+      summary: Returns a single agent.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Agent ID
+      responses:
+        '200':
+          description: Agent record
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: object
+                    required:
+                    - type
+                    - id
+                    - attributes
+                    - links
+                    properties:
+                      type:
+                        type: string
+                        enum:
+                        - agents
+                      id:
+                        type: string
+                      attributes:
+                        "$ref": "#/components/schemas/AgentAttributes"
+                      links:
+                        type: object
+                        required:
+                        - self
+                        properties:
+                          self:
+                            type: string
+                            nullable: true
+                        additionalProperties: false
+                    additionalProperties: false
+                additionalProperties: false
+        '404':
+          description: Agent not found
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+        '401':
+          description: Missing or invalid bearer token; the response body is empty.
+      x-loopcontrol-contract:
+        scenarios:
+          success:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: id
+                  identity: contract
+          error_404:
+            status: 404
+            setup:
+            - documented_error
+            media_type: application/vnd.api+json
+            path:
+              id: '999999999'
+          unauthenticated:
+            status: 401
+            setup:
+            - unauthenticated
+          authentication_apiKeyAuth:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: id
+                  identity: contract
+            authentication: apiKeyAuth
+          authentication_browserSession:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: id
+                  identity: contract
+            authentication: browserSession
+        input_constraints: []
   "/api/platforms":
     get:
       operationId: get-api-platforms
@@ -5008,6 +5180,108 @@ paths:
             - authenticated
             media_type: application/vnd.api+json
             query: {}
+            authentication: browserSession
+        input_constraints: []
+  "/api/platforms/{id}":
+    get:
+      operationId: get-api-platform
+      summary: Returns a single platform.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Platform ID
+      responses:
+        '200':
+          description: Platform record
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: object
+                    required:
+                    - type
+                    - id
+                    - attributes
+                    - links
+                    properties:
+                      type:
+                        type: string
+                        enum:
+                        - platforms
+                      id:
+                        type: string
+                      attributes:
+                        "$ref": "#/components/schemas/PlatformAttributes"
+                      links:
+                        type: object
+                        required:
+                        - self
+                        properties:
+                          self:
+                            type: string
+                            nullable: true
+                        additionalProperties: false
+                    additionalProperties: false
+                additionalProperties: false
+        '404':
+          description: Platform not found
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+        '401':
+          description: Missing or invalid bearer token; the response body is empty.
+      x-loopcontrol-contract:
+        scenarios:
+          success:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: id
+                  identity: contract
+          error_404:
+            status: 404
+            setup:
+            - documented_error
+            media_type: application/vnd.api+json
+            path:
+              id: '999999999'
+          unauthenticated:
+            status: 401
+            setup:
+            - unauthenticated
+          authentication_apiKeyAuth:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: id
+                  identity: contract
+            authentication: apiKeyAuth
+          authentication_browserSession:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: id
+                  identity: contract
             authentication: browserSession
         input_constraints: []
   "/api/task_kinds":

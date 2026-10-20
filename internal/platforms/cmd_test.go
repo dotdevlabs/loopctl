@@ -115,6 +115,131 @@ func TestPlatformsListError(t *testing.T) {
 	}
 }
 
+func TestPlatformsList_RicherFields(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":[{"type":"platforms","id":"pf1","attributes":{"name":"rails","display_name":"Ruby on Rails","container_image":"ruby:3.3","needs_database":true,"port":3000,"built_in":true}}]}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := listCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("list richer fields failed: %v", err)
+	}
+	got := out.String()
+	for _, want := range []string{"ruby:3.3", "true", "3000"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("output missing %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestPlatformsGet(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/platforms/pf2" {
+			t.Errorf("unexpected path: %s", r.URL.Path)
+		}
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"platforms","id":"pf2","attributes":{"name":"django","display_name":"Django","container_image":"python:3.12","needs_database":false,"port":null,"built_in":false,"environment_variables":[],"required_secrets":[]}}}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := getCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	if err := cmd.RunE(cmd, []string{"pf2"}); err != nil {
+		t.Fatalf("get failed: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "django") {
+		t.Errorf("output missing matched platform name:\n%s", got)
+	}
+	if !strings.Contains(got, "python:3.12") {
+		t.Errorf("output missing container_image:\n%s", got)
+	}
+}
+
+func TestPlatformsGetJSON(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"platforms","id":"pf1","attributes":{"name":"rails","display_name":"Ruby on Rails","container_image":"ruby:3.3","needs_database":true,"port":3000,"built_in":true,"environment_variables":[{"name":"RAILS_ENV","value":"production"}],"required_secrets":[]}}}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", true, &out)
+
+	cmd := getCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	if err := cmd.RunE(cmd, []string{"pf1"}); err != nil {
+		t.Fatalf("get json failed: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "rails") {
+		t.Errorf("expected platform in JSON output; got:\n%s", got)
+	}
+}
+
+func TestPlatformsGetNotFound(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = fmt.Fprint(w, `{"errors":[{"status":"404","detail":"platform not found"}]}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := getCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	err := cmd.RunE(cmd, []string{"missing"})
+	if err == nil {
+		t.Fatal("expected error for missing platform")
+	}
+	if !strings.Contains(err.Error(), "not found") {
+		t.Errorf("expected 'not found' in error; got: %v", err)
+	}
+}
+
+func TestPlatformsGetError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		w.WriteHeader(http.StatusInternalServerError)
+		_, _ = fmt.Fprint(w, `{"errors":[{"status":"500","detail":"internal server error"}]}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := getCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	err := cmd.RunE(cmd, []string{"pf1"})
+	if err == nil {
+		t.Fatal("expected error on 500")
+	}
+	if !strings.Contains(err.Error(), "internal server error") {
+		t.Errorf("expected error detail in message; got: %v", err)
+	}
+}
+
 func TestPlatformsListVerbose(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/vnd.api+json")

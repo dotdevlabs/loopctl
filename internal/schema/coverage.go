@@ -22,6 +22,9 @@ type OperationCoverage struct {
 var Covered = map[OperationKey]OperationCoverage{
 	{Method: "POST", Path: "/api/registrations"}:                                  {Command: "onboard"},
 	{Method: "GET", Path: "/api/platforms"}:                                       {Command: "platforms list", Paginated: true},
+	{Method: "GET", Path: "/api/platforms/:id"}:                                   {Command: "platforms get"},
+	{Method: "GET", Path: "/api/agents"}:                                          {Command: "agents list", Paginated: true},
+	{Method: "GET", Path: "/api/agents/:id"}:                                      {Command: "agents get"},
 	{Method: "GET", Path: "/api/task_kinds"}:                                      {Command: "task-kinds list", Paginated: true},
 	{Method: "POST", Path: "/api/task_kinds"}:                                     {Command: "task-kinds create"},
 	{Method: "GET", Path: "/api/pipelines"}:                                       {Command: "pipelines list", Paginated: true},
@@ -58,7 +61,6 @@ var Covered = map[OperationKey]OperationCoverage{
 // These are server-internal, UI-only, container-internal, or otherwise not agent-facing.
 var Excluded = map[OperationKey]string{
 	{Method: "GET", Path: "/status"}:                                                     "server health probe; not agent-facing",
-	{Method: "GET", Path: "/api/agents"}:                                                 "admin read-only; loopctl acts as an agent, not an agent manager",
 	{Method: "PATCH", Path: "/api/containers/:id"}:                                       "container-internal: agent container self-reports its own status",
 	{Method: "POST", Path: "/api/pipelines/:pipeline_id/clone"}:                          "not yet implemented in loopctl",
 	{Method: "GET", Path: "/api/tasks/:id/logs"}:                                         "Loki log streaming; not yet implemented in loopctl",
