@@ -1355,6 +1355,241 @@ func TestTasksListFullIndexFields(t *testing.T) {
 	}
 }
 
+func TestTasksUpdateSetDependsOn(t *testing.T) {
+	var gotBody string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPatch {
+			t.Errorf("unexpected method: %s", r.Method)
+		}
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{}}}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+	cmd := updateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("depends-on", "id1")
+	_ = cmd.Flags().Set("depends-on", "id2")
+
+	if err := cmd.RunE(cmd, []string{"t1"}); err != nil {
+		t.Fatalf("update set depends-on failed: %v", err)
+	}
+	if !strings.Contains(gotBody, `"depends_on"`) {
+		t.Errorf("expected depends_on in body; got: %s", gotBody)
+	}
+	if !strings.Contains(gotBody, `"id1"`) || !strings.Contains(gotBody, `"id2"`) {
+		t.Errorf("expected id1 and id2 in body; got: %s", gotBody)
+	}
+}
+
+func TestTasksUpdateClearDependsOn(t *testing.T) {
+	var gotBody string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b, _ := io.ReadAll(r.Body)
+		gotBody = string(b)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{}}}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+	cmd := updateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("clear-depends-on", "true")
+
+	if err := cmd.RunE(cmd, []string{"t1"}); err != nil {
+		t.Fatalf("update clear depends-on failed: %v", err)
+	}
+	if !strings.Contains(gotBody, `"depends_on":[]`) {
+		t.Errorf("expected depends_on:[] in body; got: %s", gotBody)
+	}
+}
+
+func TestTasksUpdateRemoveOneDependsOn(t *testing.T) {
+	var reqCount int32
+	var gotPatchBody string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt32(&reqCount, 1)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		switch {
+		case n == 1 && r.Method == http.MethodGet:
+			_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{"depends_on":["id1","id2"]}}}`)
+		default:
+			b, _ := io.ReadAll(r.Body)
+			gotPatchBody = string(b)
+			_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{}}}`)
+		}
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+	cmd := updateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("remove-depends-on", "id2")
+
+	if err := cmd.RunE(cmd, []string{"t1"}); err != nil {
+		t.Fatalf("update remove one depends-on failed: %v", err)
+	}
+	if !strings.Contains(gotPatchBody, `"id1"`) {
+		t.Errorf("expected id1 to remain in body; got: %s", gotPatchBody)
+	}
+	if strings.Contains(gotPatchBody, `"id2"`) {
+		t.Errorf("expected id2 to be removed from body; got: %s", gotPatchBody)
+	}
+}
+
+func TestTasksUpdateRemoveSeveralDependsOn(t *testing.T) {
+	var reqCount int32
+	var gotPatchBody string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt32(&reqCount, 1)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		switch {
+		case n == 1 && r.Method == http.MethodGet:
+			_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{"depends_on":["id1","id2","id3"]}}}`)
+		default:
+			b, _ := io.ReadAll(r.Body)
+			gotPatchBody = string(b)
+			_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{}}}`)
+		}
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+	cmd := updateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("remove-depends-on", "id1")
+	_ = cmd.Flags().Set("remove-depends-on", "id2")
+
+	if err := cmd.RunE(cmd, []string{"t1"}); err != nil {
+		t.Fatalf("update remove several depends-on failed: %v", err)
+	}
+	if !strings.Contains(gotPatchBody, `"id3"`) {
+		t.Errorf("expected id3 to remain in body; got: %s", gotPatchBody)
+	}
+	if strings.Contains(gotPatchBody, `"id1"`) || strings.Contains(gotPatchBody, `"id2"`) {
+		t.Errorf("expected id1 and id2 to be removed; got: %s", gotPatchBody)
+	}
+}
+
+func TestTasksUpdateConflictingFlags(t *testing.T) {
+	called := false
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+	cmd := updateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("depends-on", "id1")
+	_ = cmd.Flags().Set("clear-depends-on", "true")
+
+	err := cmd.RunE(cmd, []string{"t1"})
+	if err == nil {
+		t.Fatal("expected error for conflicting flags")
+	}
+	if called {
+		t.Error("conflicting flags should not make HTTP request")
+	}
+	if !strings.Contains(err.Error(), "cannot be combined") {
+		t.Errorf("expected conflict message; got: %v", err)
+	}
+}
+
+func TestTasksUpdateConflictingFlagsRemoveAndClear(t *testing.T) {
+	called := false
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+	cmd := updateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("remove-depends-on", "id1")
+	_ = cmd.Flags().Set("clear-depends-on", "true")
+
+	err := cmd.RunE(cmd, []string{"t1"})
+	if err == nil {
+		t.Fatal("expected error for conflicting remove and clear flags")
+	}
+	if called {
+		t.Error("conflicting flags should not make HTTP request")
+	}
+	if !strings.Contains(err.Error(), "cannot be combined") {
+		t.Errorf("expected conflict message; got: %v", err)
+	}
+}
+
+func TestTasksUpdate422DependsOnError(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = fmt.Fprint(w, `{"errors":[{"detail":"Dependency cycle detected"}]}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+	cmd := updateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("depends-on", "id1")
+
+	err := cmd.RunE(cmd, []string{"t1"})
+	if err == nil {
+		t.Fatal("expected error for 422 response")
+	}
+	if !strings.Contains(err.Error(), "Dependency cycle detected") {
+		t.Errorf("expected cycle error message; got: %v", err)
+	}
+}
+
+func TestTasksUpdateDryRun(t *testing.T) {
+	called := false
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	renderer := output.New(false, "", &out, io.Discard)
+	ctx := context.Background()
+	ctx = ctxutil.WithRenderer(ctx, renderer)
+	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{DryRun: true})
+
+	cmd := updateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	_ = cmd.Flags().Set("depends-on", "id1")
+
+	if err := cmd.RunE(cmd, []string{"t1"}); err != nil {
+		t.Fatalf("update dry-run failed: %v", err)
+	}
+	if called {
+		t.Error("dry-run should not make HTTP request")
+	}
+	if !strings.Contains(out.String(), "dry-run") {
+		t.Errorf("expected dry-run message; got: %s", out.String())
+	}
+}
+
 func TestTasksCreateWatch_Timeout(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/vnd.api+json")

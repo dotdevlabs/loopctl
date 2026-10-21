@@ -10705,7 +10705,7 @@ paths:
     patch:
       operationId: patch-api-task
       summary: Updates a task's title, description, implementation/verification criteria,
-        or token usage counts.
+        token usage counts, or dependency list.
       parameters:
       - name: id
         in: path
@@ -10733,6 +10733,14 @@ paths:
                       type: integer
                     output_tokens:
                       type: integer
+                    depends_on:
+                      type: array
+                      items:
+                        type: string
+                      description: >
+                        Complete list of dependency task IDs. Ids absent from the list are removed;
+                        new ids are added. An empty array removes all dependencies. Omit the key to
+                        leave dependencies unchanged.
                   additionalProperties: true
                   x-loopcontrol-open-reason: ignored_inputs
                   x-loopcontrol-input-policy: Unknown keys are discarded by Rails
@@ -10947,6 +10955,19 @@ paths:
             path:
               id: '999999999'
             query: {}
+          error_422_depends_on_started:
+            status: 422
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: task
+                  identity: planning_task
+            body:
+              task:
+                depends_on: []
         input_constraints:
         - field: ''
           operation: require

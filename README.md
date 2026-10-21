@@ -829,7 +829,7 @@ When `--watch` is set, the command first prints the created task row, then strea
 
 #### tasks update
 
-Update an existing task's criteria fields. Only the flags you provide are changed. Output columns: `ID`, `KIND`, `TITLE`, `STAGE`, `STATUS`.
+Update an existing task's criteria fields or dependency list. Only the flags you provide are changed. Output columns: `ID`, `KIND`, `TITLE`, `STAGE`, `STATUS`.
 
 ```bash
 loopctl tasks update <id> --implementation-criteria "Step-by-step plan..."
@@ -837,6 +837,11 @@ loopctl tasks update <id> --verification-criteria "Run these checks..."
 loopctl tasks update <id> \
   --implementation-criteria "Step-by-step plan..." \
   --verification-criteria "Run these checks..."
+loopctl tasks update <id> --depends-on <dep-id>
+loopctl tasks update <id> --depends-on <dep1> --depends-on <dep2>
+loopctl tasks update <id> --remove-depends-on <dep-id>
+loopctl tasks update <id> --clear-depends-on
+loopctl tasks update <id> --depends-on <dep-id> --dry-run
 ```
 
 **Flags:**
@@ -845,10 +850,16 @@ loopctl tasks update <id> \
 |------|----------|-------------|
 | `--implementation-criteria` | no | Implementation plan written by the planning agent |
 | `--verification-criteria` | no | Verification steps for the implementing agent |
+| `--depends-on` | no | Complete list of dependency task IDs; repeat to set multiple (replaces existing list) |
+| `--remove-depends-on` | no | Task ID to remove from dependencies; repeat to remove multiple |
+| `--clear-depends-on` | no | Remove all dependencies |
+
+`--depends-on` is mutually exclusive with `--remove-depends-on` and `--clear-depends-on`.
+`--remove-depends-on` and `--clear-depends-on` are mutually exclusive with each other.
 
 At least one flag must be provided.
 
-**API:** `PATCH /api/tasks/:id`
+**API:** `PATCH /api/tasks/:id` (preceded by `GET /api/tasks/:id` when `--remove-depends-on` is used)
 
 #### tasks cancel
 

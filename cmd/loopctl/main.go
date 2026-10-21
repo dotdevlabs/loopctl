@@ -123,5 +123,15 @@ func loopWorkflows() []airef.Workflow {
 				`loopctl tasks recordings content <task-id> <recording-id> --output session.cast`,
 			},
 		},
+		{
+			Name:        "Update task dependencies",
+			Description: "Set, remove, or clear a task's dependency list.",
+			Steps: []string{
+				`loopctl tasks update <task-id> --depends-on <dep-id>`,
+				`loopctl tasks update <task-id> --depends-on <dep1> --depends-on <dep2>`,
+				`loopctl tasks update <task-id> --remove-depends-on <dep-id>`,
+				`loopctl tasks update <task-id> --clear-depends-on`,
+			},
+		},
 	}
 }
