@@ -13,6 +13,7 @@ import (
 
 	"github.com/dotdevlabs/loopctl/internal/agents"
 	"github.com/dotdevlabs/loopctl/internal/apiclient"
+	"github.com/dotdevlabs/loopctl/internal/environments"
 	"github.com/dotdevlabs/loopctl/internal/onboard"
 	"github.com/dotdevlabs/loopctl/internal/pipelines"
 	"github.com/dotdevlabs/loopctl/internal/platforms"
@@ -33,6 +34,7 @@ func main() {
 		Version: ver,
 		Commands: []*cobra.Command{
 			agents.NewCmd(),
+			environments.NewCmd(),
 			onboard.NewCmd(),
 			platforms.NewCmd(),
 			pipelines.NewCmd(),

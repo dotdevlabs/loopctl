@@ -55,6 +55,14 @@ var Covered = map[OperationKey]OperationCoverage{
 	{Method: "GET", Path: "/api/tasks/:task_id/recordings/:recording_id/content"}: {Command: "tasks recordings content"},
 	{Method: "GET", Path: "/api/tasks/:task_id/comments"}:                         {Command: "tasks comments list", Paginated: true},
 	{Method: "GET", Path: "/api/tasks/:task_id/transitions"}:                      {Command: "tasks transitions list", Paginated: true},
+	{Method: "GET", Path: "/api/environments"}:                                    {Command: "environments list", Paginated: true},
+	{Method: "POST", Path: "/api/environments"}:                                   {Command: "environments create"},
+	{Method: "GET", Path: "/api/environments/:id"}:                                {Command: "environments get"},
+	{Method: "PATCH", Path: "/api/environments/:id"}:                              {Command: "environments update"},
+	{Method: "GET", Path: "/api/environments/:environment_id/entries"}:            {Command: "environments entries list", Paginated: true},
+	{Method: "POST", Path: "/api/environments/:environment_id/entries"}:           {Command: "environments entries add"},
+	{Method: "PATCH", Path: "/api/environments/:environment_id/entries/:id"}:      {Command: "environments entries change"},
+	{Method: "DELETE", Path: "/api/environments/:environment_id/entries/:id"}:     {Command: "environments entries remove"},
 }
 
 // Excluded maps operations intentionally not covered by loopctl with the reason.
@@ -100,12 +108,14 @@ var Excluded = map[OperationKey]string{
 	{Method: "PATCH", Path: "/api/agent_sessions/:agent_session_id/stream"}: "container-internal: agent session transcript stream",
 	{Method: "PUT", Path: "/api/agent_sessions/:agent_session_id/stream"}:   "container-internal: agent session transcript stream (PUT alias)",
 	// PUT aliases for PATCH operations — loopctl uses PATCH exclusively.
-	{Method: "PUT", Path: "/api/pipelines/:id"}:                   "PUT alias for PATCH /api/pipelines/:id; loopctl uses PATCH",
-	{Method: "PUT", Path: "/api/projects/:id"}:                    "PUT alias for PATCH /api/projects/:id; loopctl uses PATCH",
-	{Method: "PUT", Path: "/api/containers/:id"}:                  "PUT alias for PATCH /api/containers/:id; container-internal, loopctl uses PATCH",
-	{Method: "PUT", Path: "/api/tasks/:id"}:                       "PUT alias for PATCH /api/tasks/:id; loopctl uses PATCH",
-	{Method: "PUT", Path: "/api/tasks/:task_id/todos/:id"}:        "PUT alias for PATCH /api/tasks/:task_id/todos/:id; loopctl uses PATCH",
-	{Method: "PUT", Path: "/api/account_pipeline_defaults/:kind"}: "PUT alias for PATCH /api/account_pipeline_defaults/:kind; loopctl uses PATCH",
+	{Method: "PUT", Path: "/api/pipelines/:id"}:                            "PUT alias for PATCH /api/pipelines/:id; loopctl uses PATCH",
+	{Method: "PUT", Path: "/api/projects/:id"}:                             "PUT alias for PATCH /api/projects/:id; loopctl uses PATCH",
+	{Method: "PUT", Path: "/api/containers/:id"}:                           "PUT alias for PATCH /api/containers/:id; container-internal, loopctl uses PATCH",
+	{Method: "PUT", Path: "/api/tasks/:id"}:                                "PUT alias for PATCH /api/tasks/:id; loopctl uses PATCH",
+	{Method: "PUT", Path: "/api/tasks/:task_id/todos/:id"}:                 "PUT alias for PATCH /api/tasks/:task_id/todos/:id; loopctl uses PATCH",
+	{Method: "PUT", Path: "/api/account_pipeline_defaults/:kind"}:          "PUT alias for PATCH /api/account_pipeline_defaults/:kind; loopctl uses PATCH",
+	{Method: "PUT", Path: "/api/environments/:id"}:                         "PUT alias for PATCH /api/environments/:id; loopctl uses PATCH",
+	{Method: "PUT", Path: "/api/environments/:environment_id/entries/:id"}: "PUT alias for PATCH /api/environments/:environment_id/entries/:id; loopctl uses PATCH",
 	// New in API v1.2.0 — credential capacity and container capacity snapshots.
 	{Method: "GET", Path: "/api/credential_sets"}:                                       "credential capacity read; not yet implemented in loopctl",
 	{Method: "GET", Path: "/api/credential_sets/:id"}:                                   "credential capacity read; not yet implemented in loopctl",

@@ -703,8 +703,6 @@ components:
     AgentCredentialSchemaEntry:
       type: object
       properties:
-        service:
-          type: string
         env_var:
           type: string
           nullable: true
@@ -716,7 +714,6 @@ components:
           nullable: true
       additionalProperties: false
       required:
-      - service
       - env_var
       - file_path
       - encoding
@@ -2881,7 +2878,6 @@ components:
           type: object
           properties:
             name: *14
-            service: *14
             capacity:
               "$ref": "#/components/schemas/ProviderCapacityObservation"
             affected_blocked_tasks:
@@ -2900,7 +2896,6 @@ components:
           additionalProperties: false
           required:
           - name
-          - service
           - capacity
           - affected_blocked_tasks
       additionalProperties: false
@@ -3022,6 +3017,63 @@ components:
       - reached_limit_type
       - source
       - diagnostic
+    EnvironmentAttributes:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+          nullable: true
+        shared:
+          type: boolean
+        default:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      additionalProperties: false
+      required:
+      - name
+      - description
+      - shared
+      - default
+      - created_at
+      - updated_at
+    EnvironmentEntryAttributes:
+      type: object
+      properties:
+        env_var:
+          type: string
+          nullable: true
+        entry_type:
+          type: string
+          enum:
+          - credential
+          - custom
+        service:
+          type: string
+          nullable: true
+        custom_value:
+          type: string
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+      additionalProperties: false
+      required:
+      - env_var
+      - entry_type
+      - service
+      - custom_value
+      - created_at
+      - updated_at
   responses:
     BadRequest:
       description: Invalid request parameter.
@@ -8337,10 +8389,13 @@ paths:
                               "$ref": "#/components/schemas/JsonApiToOneRelationship"
                             pipeline:
                               "$ref": "#/components/schemas/JsonApiNullableToOneRelationship"
+                            environment:
+                              "$ref": "#/components/schemas/JsonApiNullableToOneRelationship"
                           additionalProperties: false
                           required:
                           - platform
                           - pipeline
+                          - environment
                         links:
                           type: object
                           required:
@@ -8628,6 +8683,7 @@ paths:
                         required:
                         - platform
                         - pipeline
+                        - environment
                         properties:
                           platform:
                             type: object
@@ -8669,6 +8725,8 @@ paths:
                                     type: string
                                     enum:
                                     - pipelines
+                          environment:
+                            "$ref": "#/components/schemas/JsonApiNullableToOneRelationship"
                       links:
                         type: object
                         required:
@@ -8876,10 +8934,13 @@ paths:
                             "$ref": "#/components/schemas/JsonApiToOneRelationship"
                           pipeline:
                             "$ref": "#/components/schemas/JsonApiNullableToOneRelationship"
+                          environment:
+                            "$ref": "#/components/schemas/JsonApiNullableToOneRelationship"
                         additionalProperties: false
                         required:
                         - platform
                         - pipeline
+                        - environment
                       links:
                         type: object
                         required:
@@ -9031,10 +9092,13 @@ paths:
                             "$ref": "#/components/schemas/JsonApiToOneRelationship"
                           pipeline:
                             "$ref": "#/components/schemas/JsonApiNullableToOneRelationship"
+                          environment:
+                            "$ref": "#/components/schemas/JsonApiNullableToOneRelationship"
                         additionalProperties: false
                         required:
                         - platform
                         - pipeline
+                        - environment
                       links:
                         type: object
                         required:
@@ -9315,10 +9379,13 @@ paths:
                             "$ref": "#/components/schemas/JsonApiToOneRelationship"
                           pipeline:
                             "$ref": "#/components/schemas/JsonApiNullableToOneRelationship"
+                          environment:
+                            "$ref": "#/components/schemas/JsonApiNullableToOneRelationship"
                         additionalProperties: false
                         required:
                         - platform
                         - pipeline
+                        - environment
                       links:
                         type: object
                         required:
@@ -20527,6 +20594,1541 @@ paths:
             status: 401
             setup:
             - unauthenticated
+        input_constraints: []
+  "/api/environments":
+    get:
+      operationId: get-api-environments
+      summary: Lists environments accessible to the current user.
+      parameters:
+      - name: page[number]
+        in: query
+        schema:
+          type: integer
+          default: 1
+      - name: page[size]
+        in: query
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      responses:
+        '200':
+          description: Paginated list of environments
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required:
+                - data
+                - links
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                      - type
+                      - id
+                      - attributes
+                      - links
+                      properties:
+                        type:
+                          type: string
+                          enum:
+                          - environments
+                        id:
+                          type: string
+                        attributes:
+                          "$ref": "#/components/schemas/EnvironmentAttributes"
+                        links:
+                          type: object
+                          required:
+                          - self
+                          properties:
+                            self:
+                              type: string
+                              nullable: true
+                          additionalProperties: false
+                      additionalProperties: false
+                  links:
+                    "$ref": "#/components/schemas/JsonApiLinks"
+                  meta:
+                    "$ref": "#/components/schemas/JsonApiPaginationMeta"
+                additionalProperties: false
+        '400':
+          description: Invalid pagination parameter
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+        '401':
+          description: Missing or invalid bearer token; the response body is empty.
+      x-loopcontrol-contract:
+        scenarios:
+          success:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            query: {}
+          error_400:
+            status: 400
+            setup:
+            - documented_error
+            media_type: application/vnd.api+json
+            query:
+              page: invalid
+          unauthenticated:
+            status: 401
+            setup:
+            - unauthenticated
+            query:
+              page[number]: 1
+              page[size]: 1
+          pagination_0:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            query: {}
+            assertions:
+            - pointer: "/meta/current_page"
+              equals: 1
+            - pointer: "/meta/per_page"
+              equals: 20
+          pagination_1:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            query:
+              page:
+                number: '0'
+                size: '0'
+            assertions:
+            - pointer: "/meta/current_page"
+              equals: 1
+            - pointer: "/meta/per_page"
+              equals: 1
+            invalid_request: Accepted pagination normalization boundary
+          pagination_2:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            query:
+              page:
+                number: '1'
+                size: '101'
+            assertions:
+            - pointer: "/meta/current_page"
+              equals: 1
+            - pointer: "/meta/per_page"
+              equals: 100
+            invalid_request: Accepted pagination normalization boundary
+          pagination_3:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            query:
+              page:
+                number: '999'
+                size: '20'
+            assertions:
+            - pointer: "/meta/current_page"
+              equals: 999
+            - pointer: "/meta/per_page"
+              equals: 20
+            - pointer: "/data"
+              equals: []
+          pagination_invalid_0:
+            status: 400
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            query:
+              page: '1'
+            assertions:
+            - pointer: "/errors/0/status"
+              equals: '400'
+          pagination_invalid_1:
+            status: 400
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            query:
+              page:
+                number: abc
+            assertions:
+            - pointer: "/errors/0/status"
+              equals: '400'
+          pagination_invalid_2:
+            status: 400
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            query:
+              page:
+                size: "-1"
+            assertions:
+            - pointer: "/errors/0/status"
+              equals: '400'
+          pagination_invalid_3:
+            status: 400
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            query:
+              page:
+                size:
+                  nested: '1'
+            assertions:
+            - pointer: "/errors/0/status"
+              equals: '400'
+        input_constraints: []
+    post:
+      operationId: post-api-environments
+      summary: Creates an environment.
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                environment:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    description:
+                      type: string
+                    shared:
+                      type: boolean
+                    default:
+                      type: boolean
+                  additionalProperties: false
+              additionalProperties: true
+              x-loopcontrol-open-reason: ignored_inputs
+              x-loopcontrol-input-policy: Unknown top-level keys are discarded.
+      responses:
+        '201':
+          description: Created environment
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: object
+                    required:
+                    - type
+                    - id
+                    - attributes
+                    - links
+                    properties:
+                      type:
+                        type: string
+                        enum:
+                        - environments
+                      id:
+                        type: string
+                      attributes:
+                        "$ref": "#/components/schemas/EnvironmentAttributes"
+                      links:
+                        type: object
+                        required:
+                        - self
+                        properties:
+                          self:
+                            type: string
+                            nullable: true
+                        additionalProperties: false
+                    additionalProperties: false
+                additionalProperties: false
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          description: Missing or invalid bearer token; the response body is empty.
+        '422':
+          description: Validation failed
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+      x-loopcontrol-contract:
+        scenarios:
+          success:
+            status: 201
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            body:
+              environment:
+                name: Contract Environment
+          error_422:
+            status: 422
+            setup:
+            - documented_error
+            media_type: application/vnd.api+json
+            body:
+              environment:
+                name: ''
+          missing_environment_json:
+            status: 400
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            omit_body_field: environment
+            request_media_type: application/json
+            body:
+              environment:
+                name: Contract Environment
+          unauthenticated:
+            status: 401
+            setup:
+            - unauthenticated
+            body:
+              environment:
+                name: Contract Environment
+        input_constraints:
+        - field: ''
+          operation: require
+          arguments:
+          - ":environment"
+  "/api/environments/{id}":
+    get:
+      operationId: get-api-environment
+      summary: Returns a single environment.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '200':
+          description: Environment record
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: object
+                    required:
+                    - type
+                    - id
+                    - attributes
+                    - links
+                    properties:
+                      type:
+                        type: string
+                        enum:
+                        - environments
+                      id:
+                        type: string
+                      attributes:
+                        "$ref": "#/components/schemas/EnvironmentAttributes"
+                      links:
+                        type: object
+                        required:
+                        - self
+                        properties:
+                          self:
+                            type: string
+                            nullable: true
+                        additionalProperties: false
+                    additionalProperties: false
+                additionalProperties: false
+        '401':
+          description: Missing or invalid bearer token; the response body is empty.
+        '404':
+          "$ref": "#/components/responses/NotFound"
+      x-loopcontrol-contract:
+        scenarios:
+          success:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: environment
+                  identity: one
+          not_found:
+            status: 404
+            setup:
+            - documented_error
+            media_type: application/vnd.api+json
+            path:
+              id: '0'
+          unauthenticated:
+            status: 401
+            setup:
+            - unauthenticated
+        input_constraints: []
+    patch:
+      operationId: patch-api-environment
+      summary: Updates an environment.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                environment:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    description:
+                      type: string
+                    shared:
+                      type: boolean
+                    default:
+                      type: boolean
+                  additionalProperties: false
+              additionalProperties: true
+              x-loopcontrol-open-reason: ignored_inputs
+              x-loopcontrol-input-policy: Unknown top-level keys are discarded.
+      responses:
+        '200':
+          description: Updated environment
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: object
+                    required:
+                    - type
+                    - id
+                    - attributes
+                    - links
+                    properties:
+                      type:
+                        type: string
+                        enum:
+                        - environments
+                      id:
+                        type: string
+                      attributes:
+                        "$ref": "#/components/schemas/EnvironmentAttributes"
+                      links:
+                        type: object
+                        required:
+                        - self
+                        properties:
+                          self:
+                            type: string
+                            nullable: true
+                        additionalProperties: false
+                    additionalProperties: false
+                additionalProperties: false
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          description: Missing or invalid bearer token; the response body is empty.
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '422':
+          description: Validation failed
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+      x-loopcontrol-contract:
+        scenarios:
+          success:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: environment
+                  identity: one
+            body:
+              environment:
+                name: Contract Environment Updated
+          error_422:
+            status: 422
+            setup:
+            - documented_error
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: environment
+                  identity: one
+            body:
+              environment:
+                name: ''
+          not_found:
+            status: 404
+            setup:
+            - documented_error
+            media_type: application/vnd.api+json
+            path:
+              id: '0'
+            body:
+              environment:
+                name: Contract Environment Updated
+          missing_environment_json:
+            status: 400
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: environment
+                  identity: one
+            omit_body_field: environment
+            request_media_type: application/json
+            body:
+              environment:
+                name: Contract Environment Updated
+          unauthenticated:
+            status: 401
+            setup:
+            - unauthenticated
+            body:
+              environment:
+                name: Contract Environment Updated
+        input_constraints:
+        - field: ''
+          operation: require
+          arguments:
+          - ":environment"
+    put:
+      operationId: put-api-environment
+      summary: Updates an environment.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                environment:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    description:
+                      type: string
+                    shared:
+                      type: boolean
+                    default:
+                      type: boolean
+                  additionalProperties: false
+              additionalProperties: true
+              x-loopcontrol-open-reason: ignored_inputs
+              x-loopcontrol-input-policy: Unknown top-level keys are discarded.
+      responses:
+        '200':
+          description: Updated environment
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: object
+                    required:
+                    - type
+                    - id
+                    - attributes
+                    - links
+                    properties:
+                      type:
+                        type: string
+                        enum:
+                        - environments
+                      id:
+                        type: string
+                      attributes:
+                        "$ref": "#/components/schemas/EnvironmentAttributes"
+                      links:
+                        type: object
+                        required:
+                        - self
+                        properties:
+                          self:
+                            type: string
+                            nullable: true
+                        additionalProperties: false
+                    additionalProperties: false
+                additionalProperties: false
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          description: Missing or invalid bearer token; the response body is empty.
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '422':
+          description: Validation failed
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+      x-loopcontrol-contract:
+        scenarios:
+          success:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: environment
+                  identity: one
+            body:
+              environment:
+                name: Contract Environment Updated
+          error_422:
+            status: 422
+            setup:
+            - documented_error
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: environment
+                  identity: one
+            body:
+              environment:
+                name: ''
+          not_found:
+            status: 404
+            setup:
+            - documented_error
+            media_type: application/vnd.api+json
+            path:
+              id: '0'
+            body:
+              environment:
+                name: Contract Environment Updated
+          missing_environment_json:
+            status: 400
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: environment
+                  identity: one
+            omit_body_field: environment
+            request_media_type: application/json
+            body:
+              environment:
+                name: Contract Environment Updated
+          unauthenticated:
+            status: 401
+            setup:
+            - unauthenticated
+            body:
+              environment:
+                name: Contract Environment Updated
+        input_constraints:
+        - field: ''
+          operation: require
+          arguments:
+          - ":environment"
+  "/api/environments/{environment_id}/entries":
+    get:
+      operationId: get-api-environment-entries
+      summary: Lists entries for an environment.
+      parameters:
+      - name: environment_id
+        in: path
+        required: true
+        schema:
+          type: integer
+      - name: page[number]
+        in: query
+        schema:
+          type: integer
+          default: 1
+      - name: page[size]
+        in: query
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      responses:
+        '200':
+          description: Paginated list of environment entries
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required:
+                - data
+                - links
+                - meta
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      required:
+                      - type
+                      - id
+                      - attributes
+                      - relationships
+                      - links
+                      properties:
+                        type:
+                          type: string
+                          enum:
+                          - environment_entries
+                        id:
+                          type: string
+                        attributes:
+                          "$ref": "#/components/schemas/EnvironmentEntryAttributes"
+                        relationships:
+                          type: object
+                          required:
+                          - credential_set
+                          properties:
+                            credential_set:
+                              "$ref": "#/components/schemas/JsonApiNullableToOneRelationship"
+                          additionalProperties: false
+                        links:
+                          type: object
+                          required:
+                          - self
+                          properties:
+                            self:
+                              type: string
+                              nullable: true
+                          additionalProperties: false
+                      additionalProperties: false
+                  links:
+                    "$ref": "#/components/schemas/JsonApiLinks"
+                  meta:
+                    "$ref": "#/components/schemas/JsonApiPaginationMeta"
+                additionalProperties: false
+        '400':
+          description: Invalid pagination parameter
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+        '401':
+          description: Missing or invalid bearer token; the response body is empty.
+        '404':
+          "$ref": "#/components/responses/NotFound"
+      x-loopcontrol-contract:
+        scenarios:
+          success:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              environment_id:
+                fixture:
+                  resource: environment
+                  identity: one
+            query: {}
+          error_400:
+            status: 400
+            setup:
+            - documented_error
+            media_type: application/vnd.api+json
+            path:
+              environment_id:
+                fixture:
+                  resource: environment
+                  identity: one
+            query:
+              page: invalid
+          not_found:
+            status: 404
+            setup:
+            - documented_error
+            media_type: application/vnd.api+json
+            path:
+              environment_id: '0'
+            query: {}
+          unauthenticated:
+            status: 401
+            setup:
+            - unauthenticated
+            path:
+              environment_id:
+                fixture:
+                  resource: environment
+                  identity: one
+            query:
+              page[number]: 1
+              page[size]: 1
+          pagination_0:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              environment_id:
+                fixture:
+                  resource: environment
+                  identity: one
+            query: {}
+            assertions:
+            - pointer: "/meta/current_page"
+              equals: 1
+            - pointer: "/meta/per_page"
+              equals: 20
+          pagination_1:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              environment_id:
+                fixture:
+                  resource: environment
+                  identity: one
+            query:
+              page:
+                number: '0'
+                size: '0'
+            assertions:
+            - pointer: "/meta/current_page"
+              equals: 1
+            - pointer: "/meta/per_page"
+              equals: 1
+            invalid_request: Accepted pagination normalization boundary
+          pagination_2:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              environment_id:
+                fixture:
+                  resource: environment
+                  identity: one
+            query:
+              page:
+                number: '1'
+                size: '101'
+            assertions:
+            - pointer: "/meta/current_page"
+              equals: 1
+            - pointer: "/meta/per_page"
+              equals: 100
+            invalid_request: Accepted pagination normalization boundary
+          pagination_3:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              environment_id:
+                fixture:
+                  resource: environment
+                  identity: one
+            query:
+              page:
+                number: '999'
+                size: '20'
+            assertions:
+            - pointer: "/meta/current_page"
+              equals: 999
+            - pointer: "/meta/per_page"
+              equals: 20
+            - pointer: "/data"
+              equals: []
+          pagination_invalid_0:
+            status: 400
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              environment_id:
+                fixture:
+                  resource: environment
+                  identity: one
+            query:
+              page: '1'
+            assertions:
+            - pointer: "/errors/0/status"
+              equals: '400'
+          pagination_invalid_1:
+            status: 400
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              environment_id:
+                fixture:
+                  resource: environment
+                  identity: one
+            query:
+              page:
+                number: abc
+            assertions:
+            - pointer: "/errors/0/status"
+              equals: '400'
+          pagination_invalid_2:
+            status: 400
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              environment_id:
+                fixture:
+                  resource: environment
+                  identity: one
+            query:
+              page:
+                size: "-1"
+            assertions:
+            - pointer: "/errors/0/status"
+              equals: '400'
+          pagination_invalid_3:
+            status: 400
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              environment_id:
+                fixture:
+                  resource: environment
+                  identity: one
+            query:
+              page:
+                size:
+                  nested: '1'
+            assertions:
+            - pointer: "/errors/0/status"
+              equals: '400'
+        input_constraints: []
+    post:
+      operationId: post-api-environment-entries
+      summary: Creates an entry in an environment.
+      parameters:
+      - name: environment_id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                entry:
+                  type: object
+                  properties:
+                    env_var:
+                      type: string
+                    entry_type:
+                      type: string
+                    custom_value:
+                      type: string
+                    credential_set_id:
+                      type: integer
+                    service:
+                      type: string
+                  additionalProperties: false
+              additionalProperties: true
+              x-loopcontrol-open-reason: ignored_inputs
+              x-loopcontrol-input-policy: Unknown top-level keys are discarded.
+      responses:
+        '201':
+          description: Created environment entry
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: object
+                    required:
+                    - type
+                    - id
+                    - attributes
+                    - relationships
+                    - links
+                    properties:
+                      type:
+                        type: string
+                        enum:
+                        - environment_entries
+                      id:
+                        type: string
+                      attributes:
+                        "$ref": "#/components/schemas/EnvironmentEntryAttributes"
+                      relationships:
+                        type: object
+                        required:
+                        - credential_set
+                        properties:
+                          credential_set:
+                            "$ref": "#/components/schemas/JsonApiNullableToOneRelationship"
+                        additionalProperties: false
+                      links:
+                        type: object
+                        required:
+                        - self
+                        properties:
+                          self:
+                            type: string
+                            nullable: true
+                        additionalProperties: false
+                    additionalProperties: false
+                additionalProperties: false
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          description: Missing or invalid bearer token; the response body is empty.
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '422':
+          description: Validation failed
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+      x-loopcontrol-contract:
+        scenarios:
+          success:
+            status: 201
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              environment_id:
+                fixture:
+                  resource: environment
+                  identity: one
+            body:
+              entry:
+                env_var: CONTRACT_CUSTOM_VAR
+                entry_type: custom
+                custom_value: contract-value
+          error_422:
+            status: 422
+            setup:
+            - documented_error
+            media_type: application/vnd.api+json
+            path:
+              environment_id:
+                fixture:
+                  resource: environment
+                  identity: one
+            body:
+              entry:
+                env_var: CONTRACT_CUSTOM_VAR
+                entry_type: invalid_type
+                custom_value: contract-value
+          not_found:
+            status: 404
+            setup:
+            - documented_error
+            media_type: application/vnd.api+json
+            path:
+              environment_id: '0'
+            body:
+              entry:
+                env_var: CONTRACT_CUSTOM_VAR
+                entry_type: custom
+                custom_value: contract-value
+          missing_entry_json:
+            status: 400
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              environment_id:
+                fixture:
+                  resource: environment
+                  identity: one
+            omit_body_field: entry
+            request_media_type: application/json
+            body:
+              entry:
+                env_var: CONTRACT_CUSTOM_VAR
+                entry_type: custom
+                custom_value: contract-value
+          unauthenticated:
+            status: 401
+            setup:
+            - unauthenticated
+            path:
+              environment_id:
+                fixture:
+                  resource: environment
+                  identity: one
+            body:
+              entry:
+                env_var: CONTRACT_CUSTOM_VAR
+                entry_type: custom
+                custom_value: contract-value
+        input_constraints:
+        - field: ''
+          operation: require
+          arguments:
+          - ":entry"
+  "/api/environments/{environment_id}/entries/{id}":
+    patch:
+      operationId: patch-api-environment-entry
+      summary: Updates an environment entry.
+      parameters:
+      - name: environment_id
+        in: path
+        required: true
+        schema:
+          type: integer
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                entry:
+                  type: object
+                  properties:
+                    env_var:
+                      type: string
+                    entry_type:
+                      type: string
+                    custom_value:
+                      type: string
+                    credential_set_id:
+                      type: integer
+                    service:
+                      type: string
+                  additionalProperties: false
+              additionalProperties: true
+              x-loopcontrol-open-reason: ignored_inputs
+              x-loopcontrol-input-policy: Unknown top-level keys are discarded.
+      responses:
+        '200':
+          description: Updated environment entry
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: object
+                    required:
+                    - type
+                    - id
+                    - attributes
+                    - relationships
+                    - links
+                    properties:
+                      type:
+                        type: string
+                        enum:
+                        - environment_entries
+                      id:
+                        type: string
+                      attributes:
+                        "$ref": "#/components/schemas/EnvironmentEntryAttributes"
+                      relationships:
+                        type: object
+                        required:
+                        - credential_set
+                        properties:
+                          credential_set:
+                            "$ref": "#/components/schemas/JsonApiNullableToOneRelationship"
+                        additionalProperties: false
+                      links:
+                        type: object
+                        required:
+                        - self
+                        properties:
+                          self:
+                            type: string
+                            nullable: true
+                        additionalProperties: false
+                    additionalProperties: false
+                additionalProperties: false
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          description: Missing or invalid bearer token; the response body is empty.
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '422':
+          description: Validation failed
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+      x-loopcontrol-contract:
+        scenarios:
+          success:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              environment_id:
+                fixture:
+                  resource: environment
+                  identity: one
+              id:
+                fixture:
+                  resource: credential_assignment
+                  identity: one_claude
+            body:
+              entry:
+                service: contract-updated-service
+          error_422:
+            status: 422
+            setup:
+            - documented_error
+            media_type: application/vnd.api+json
+            path:
+              environment_id:
+                fixture:
+                  resource: environment
+                  identity: one
+              id:
+                fixture:
+                  resource: credential_assignment
+                  identity: one_claude
+            body:
+              entry:
+                entry_type: invalid_type
+          not_found:
+            status: 404
+            setup:
+            - documented_error
+            media_type: application/vnd.api+json
+            path:
+              environment_id: '0'
+              id: '0'
+            body:
+              entry:
+                service: contract-updated-service
+          missing_entry_json:
+            status: 400
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              environment_id:
+                fixture:
+                  resource: environment
+                  identity: one
+              id:
+                fixture:
+                  resource: credential_assignment
+                  identity: one_claude
+            omit_body_field: entry
+            request_media_type: application/json
+            body:
+              entry:
+                service: contract-updated-service
+          unauthenticated:
+            status: 401
+            setup:
+            - unauthenticated
+            path:
+              environment_id:
+                fixture:
+                  resource: environment
+                  identity: one
+              id:
+                fixture:
+                  resource: credential_assignment
+                  identity: one_claude
+            body:
+              entry:
+                service: contract-updated-service
+        input_constraints:
+        - field: ''
+          operation: require
+          arguments:
+          - ":entry"
+    put:
+      operationId: put-api-environment-entry
+      summary: Updates an environment entry.
+      parameters:
+      - name: environment_id
+        in: path
+        required: true
+        schema:
+          type: integer
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                entry:
+                  type: object
+                  properties:
+                    env_var:
+                      type: string
+                    entry_type:
+                      type: string
+                    custom_value:
+                      type: string
+                    credential_set_id:
+                      type: integer
+                    service:
+                      type: string
+                  additionalProperties: false
+              additionalProperties: true
+              x-loopcontrol-open-reason: ignored_inputs
+              x-loopcontrol-input-policy: Unknown top-level keys are discarded.
+      responses:
+        '200':
+          description: Updated environment entry
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: object
+                    required:
+                    - type
+                    - id
+                    - attributes
+                    - relationships
+                    - links
+                    properties:
+                      type:
+                        type: string
+                        enum:
+                        - environment_entries
+                      id:
+                        type: string
+                      attributes:
+                        "$ref": "#/components/schemas/EnvironmentEntryAttributes"
+                      relationships:
+                        type: object
+                        required:
+                        - credential_set
+                        properties:
+                          credential_set:
+                            "$ref": "#/components/schemas/JsonApiNullableToOneRelationship"
+                        additionalProperties: false
+                      links:
+                        type: object
+                        required:
+                        - self
+                        properties:
+                          self:
+                            type: string
+                            nullable: true
+                        additionalProperties: false
+                    additionalProperties: false
+                additionalProperties: false
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+        '401':
+          description: Missing or invalid bearer token; the response body is empty.
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '422':
+          description: Validation failed
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+      x-loopcontrol-contract:
+        scenarios:
+          success:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              environment_id:
+                fixture:
+                  resource: environment
+                  identity: one
+              id:
+                fixture:
+                  resource: credential_assignment
+                  identity: one_claude
+            body:
+              entry:
+                service: contract-updated-service
+          error_422:
+            status: 422
+            setup:
+            - documented_error
+            media_type: application/vnd.api+json
+            path:
+              environment_id:
+                fixture:
+                  resource: environment
+                  identity: one
+              id:
+                fixture:
+                  resource: credential_assignment
+                  identity: one_claude
+            body:
+              entry:
+                entry_type: invalid_type
+          not_found:
+            status: 404
+            setup:
+            - documented_error
+            media_type: application/vnd.api+json
+            path:
+              environment_id: '0'
+              id: '0'
+            body:
+              entry:
+                service: contract-updated-service
+          missing_entry_json:
+            status: 400
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              environment_id:
+                fixture:
+                  resource: environment
+                  identity: one
+              id:
+                fixture:
+                  resource: credential_assignment
+                  identity: one_claude
+            omit_body_field: entry
+            request_media_type: application/json
+            body:
+              entry:
+                service: contract-updated-service
+          unauthenticated:
+            status: 401
+            setup:
+            - unauthenticated
+            path:
+              environment_id:
+                fixture:
+                  resource: environment
+                  identity: one
+              id:
+                fixture:
+                  resource: credential_assignment
+                  identity: one_claude
+            body:
+              entry:
+                service: contract-updated-service
+        input_constraints:
+        - field: ''
+          operation: require
+          arguments:
+          - ":entry"
+    delete:
+      operationId: delete-api-environment-entry
+      summary: Removes an entry from an environment.
+      parameters:
+      - name: environment_id
+        in: path
+        required: true
+        schema:
+          type: integer
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      responses:
+        '204':
+          description: Entry deleted
+          x-loopcontrol-empty-body: true
+        '401':
+          description: Missing or invalid bearer token; the response body is empty.
+        '404':
+          "$ref": "#/components/responses/NotFound"
+      x-loopcontrol-contract:
+        scenarios:
+          success:
+            status: 204
+            setup:
+            - authenticated
+            path:
+              environment_id:
+                fixture:
+                  resource: environment
+                  identity: one
+              id:
+                fixture:
+                  resource: credential_assignment
+                  identity: one_claude
+          not_found:
+            status: 404
+            setup:
+            - documented_error
+            media_type: application/vnd.api+json
+            path:
+              environment_id: '0'
+              id: '0'
+          unauthenticated:
+            status: 401
+            setup:
+            - unauthenticated
+            path:
+              environment_id:
+                fixture:
+                  resource: environment
+                  identity: one
+              id:
+                fixture:
+                  resource: credential_assignment
+                  identity: one_claude
         input_constraints: []
 x-loopcontrol-implicit-head:
   description: Rails implicitly handles HEAD through each mounted GET operation. Status

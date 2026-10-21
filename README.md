@@ -205,6 +205,187 @@ Output columns: `ID`, `NAME`, `SLUG`, `INSTALL_COMMAND`, `LAUNCH_COMMAND`.
 
 ---
 
+### environments
+
+Manage LoopControl environments and their entries. Environments group environment variables and credential references that are injected into project runs. Assign an environment to a project with `projects update --environment-id`.
+
+#### environments list
+
+List all environments.
+
+```bash
+loopctl environments list
+loopctl environments list --json
+```
+
+Output columns: `ID`, `NAME`, `SHARED`, `DEFAULT`.
+
+**API:** `GET /api/environments`
+
+#### environments get
+
+Get an environment by ID.
+
+```bash
+loopctl environments get <id>
+loopctl environments get <id> --json
+```
+
+Output columns: `ID`, `NAME`, `SHARED`, `DEFAULT`, `DESCRIPTION`.
+
+**API:** `GET /api/environments/:id`
+
+#### environments create
+
+Create a new environment.
+
+```bash
+loopctl environments create --name production
+loopctl environments create --name staging --description "Staging environment"
+loopctl environments create --name shared-creds --shared
+loopctl environments create --name default-env --default
+loopctl environments create --name production --dry-run
+```
+
+**Flags:**
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--name` | yes | Name of the environment |
+| `--description` | no | Human-readable description |
+| `--shared` | no | Mark the environment as shared (accessible to all projects) |
+| `--default` | no | Mark this environment as the account default |
+
+Output columns on success: `ID`, `NAME`, `SHARED`, `DEFAULT`. Use `--json` for the full resource.
+
+**API:** `POST /api/environments`
+
+#### environments update
+
+Update an existing environment. Only the flags you provide are changed — unset flags are not sent to the API.
+
+```bash
+loopctl environments update <id> --name "Renamed"
+loopctl environments update <id> --description "Updated description"
+loopctl environments update <id> --shared
+loopctl environments update <id> --no-shared
+loopctl environments update <id> --default
+loopctl environments update <id> --no-default
+loopctl environments update <id> --name "Renamed" --dry-run
+```
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--name` | New name for the environment |
+| `--description` | New description |
+| `--shared` | Set shared to true |
+| `--no-shared` | Set shared to false (`--shared` and `--no-shared` are mutually exclusive) |
+| `--default` | Set default to true |
+| `--no-default` | Set default to false (`--default` and `--no-default` are mutually exclusive) |
+
+At least one flag must be provided. Output columns on success: `ID`, `NAME`, `SHARED`, `DEFAULT`. Use `--json` for the full resource.
+
+**API:** `PATCH /api/environments/:id`
+
+#### environments entries
+
+Manage entries within an environment. Each entry binds an environment variable name to either a custom string value or a credential reference. Credential values are never printed.
+
+##### environments entries list
+
+List all entries for an environment.
+
+```bash
+loopctl environments entries list <environment-id>
+loopctl environments entries list <environment-id> --json
+```
+
+Output columns: `ID`, `ENV_VAR`, `TYPE`, `SERVICE`, `CREATED_AT`. Custom values are intentionally omitted from table output to avoid leaking secrets.
+
+**API:** `GET /api/environments/:environment_id/entries`
+
+##### environments entries add
+
+Add a new entry to an environment.
+
+```bash
+# Custom entry — value via flag
+loopctl environments entries add <environment-id> \
+  --env-var DATABASE_URL \
+  --type custom \
+  --value "postgres://localhost/mydb"
+
+# Custom entry — value read from stdin (useful for multi-line or secret values)
+echo "postgres://localhost/mydb" | loopctl environments entries add <environment-id> \
+  --env-var DATABASE_URL \
+  --type custom
+
+# Credential entry — references a credential set
+loopctl environments entries add <environment-id> \
+  --env-var GITHUB_TOKEN \
+  --type credential \
+  --credential-set-id <credential-set-id> \
+  --service github
+
+# Preview without making API calls
+loopctl environments entries add <environment-id> --env-var FOO --type custom --value bar --dry-run
+```
+
+**Flags:**
+
+| Flag | Required | Description |
+|------|----------|-------------|
+| `--env-var` | yes | Environment variable name |
+| `--type` | yes | Entry type: `custom` or `credential` |
+| `--value` | no | Custom value (for `--type custom`; reads from stdin when omitted) |
+| `--credential-set-id` | no | Credential set ID (for `--type credential`) |
+| `--service` | no | Service name associated with this entry |
+
+Output columns on success: `ID`, `ENV_VAR`, `TYPE`, `SERVICE`, `CREATED_AT`.
+
+**API:** `POST /api/environments/:environment_id/entries`
+
+##### environments entries change
+
+Update an existing entry. Only the flags you provide are changed.
+
+```bash
+loopctl environments entries change <environment-id> <entry-id> --value "new-value"
+loopctl environments entries change <environment-id> <entry-id> --env-var NEW_NAME
+loopctl environments entries change <environment-id> <entry-id> --service updated-service
+loopctl environments entries change <environment-id> <entry-id> --type credential --credential-set-id <id>
+loopctl environments entries change <environment-id> <entry-id> --value "new-value" --dry-run
+```
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--env-var` | New environment variable name |
+| `--type` | New entry type: `custom` or `credential` |
+| `--value` | New custom value |
+| `--credential-set-id` | New credential set ID |
+| `--service` | New service name |
+
+At least one flag must be provided. Output columns on success: `ID`, `ENV_VAR`, `TYPE`, `SERVICE`, `CREATED_AT`.
+
+**API:** `PATCH /api/environments/:environment_id/entries/:id`
+
+##### environments entries remove
+
+Remove an entry from an environment.
+
+```bash
+loopctl environments entries remove <environment-id> <entry-id>
+loopctl environments entries remove <environment-id> <entry-id> --dry-run
+```
+
+**API:** `DELETE /api/environments/:environment_id/entries/:id`
+
+---
+
 ### platforms
 
 List and inspect available platforms. Use this to discover the platform names and IDs accepted by `projects create`.
@@ -1128,6 +1309,31 @@ loopctl pipelines list
 loopctl task-kinds list
 ```
 
+### Create an environment and assign it to a project
+
+```bash
+# Create an environment with a custom entry
+loopctl environments create --name production
+
+# Add a custom value entry
+loopctl environments entries add <environment-id> \
+  --env-var DATABASE_URL \
+  --type custom \
+  --value "postgres://localhost/prod"
+
+# Add a credential entry (value never printed)
+loopctl environments entries add <environment-id> \
+  --env-var GITHUB_TOKEN \
+  --type credential \
+  --credential-set-id <credential-set-id>
+
+# Assign the environment to a project
+loopctl projects update <project-id> --environment-id <environment-id>
+
+# Inspect the environment's entries
+loopctl environments entries list <environment-id>
+```
+
 ### Create a custom pipeline and use it for a project
 
 ```bash
@@ -1230,6 +1436,11 @@ loopctl pipelines stages remove <pipeline-id> review --dry-run
 loopctl task-kinds create --name my-kind --dry-run
 loopctl task-kinds set-default-pipeline <kind-name> --pipeline-id <integer-pipeline-id> --dry-run
 loopctl task-kinds clear-default-pipeline <kind-name> --dry-run
+loopctl environments create --name production --dry-run
+loopctl environments update <id> --name "Renamed" --dry-run
+loopctl environments entries add <environment-id> --env-var FOO --type custom --value bar --dry-run
+loopctl environments entries change <environment-id> <entry-id> --value "new-value" --dry-run
+loopctl environments entries remove <environment-id> <entry-id> --dry-run
 ```
 
 ---
