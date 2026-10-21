@@ -28,12 +28,13 @@ type EnvironmentAttrs struct {
 
 // EnvironmentEntryAttrs holds the attributes for an environment entry.
 type EnvironmentEntryAttrs struct {
-	EnvVar      *string `json:"env_var"`
-	EntryType   string  `json:"entry_type"`
-	Service     *string `json:"service"`
-	CustomValue *string `json:"custom_value"`
-	CreatedAt   string  `json:"created_at"`
-	UpdatedAt   string  `json:"updated_at"`
+	EnvVar         *string `json:"env_var"`
+	EntryType      string  `json:"entry_type"`
+	CredentialID   *string `json:"credential_id"`
+	CredentialName *string `json:"credential_name"`
+	CustomValue    *string `json:"custom_value"`
+	CreatedAt      string  `json:"created_at"`
+	UpdatedAt      string  `json:"updated_at"`
 }
 
 // NewCmd returns the "environments" parent command with all verb subcommands.
@@ -315,7 +316,8 @@ func entriesListCmd() *cobra.Command {
 				{Header: "ID"},
 				{Header: "ENV_VAR"},
 				{Header: "TYPE"},
-				{Header: "SERVICE"},
+				{Header: "CREDENTIAL_ID"},
+				{Header: "CREDENTIAL_NAME"},
 				{Header: "CREATED_AT"},
 			}
 			rows := make([][]string, len(col.Data))
@@ -324,15 +326,20 @@ func entriesListCmd() *cobra.Command {
 				if e.Attributes.EnvVar != nil {
 					envVar = *e.Attributes.EnvVar
 				}
-				service := ""
-				if e.Attributes.Service != nil {
-					service = *e.Attributes.Service
+				credID := ""
+				if e.Attributes.CredentialID != nil {
+					credID = *e.Attributes.CredentialID
+				}
+				credName := ""
+				if e.Attributes.CredentialName != nil {
+					credName = *e.Attributes.CredentialName
 				}
 				rows[i] = []string{
 					e.ID,
 					envVar,
 					e.Attributes.EntryType,
-					service,
+					credID,
+					credName,
 					e.Attributes.CreatedAt,
 				}
 			}
@@ -347,7 +354,6 @@ func entriesAddCmd() *cobra.Command {
 		entryType       string
 		value           string
 		credentialSetID int
-		service         string
 	)
 
 	cmd := &cobra.Command{
@@ -380,9 +386,6 @@ func entriesAddCmd() *cobra.Command {
 			if cmd.Flags().Changed("credential-set-id") {
 				entry["credential_set_id"] = credentialSetID
 			}
-			if cmd.Flags().Changed("service") {
-				entry["service"] = service
-			}
 
 			path := "/api/environments/" + url.PathEscape(args[0]) + "/entries"
 
@@ -405,23 +408,29 @@ func entriesAddCmd() *cobra.Command {
 			if res.Attributes.EnvVar != nil {
 				envVarOut = *res.Attributes.EnvVar
 			}
-			serviceOut := ""
-			if res.Attributes.Service != nil {
-				serviceOut = *res.Attributes.Service
+			credID := ""
+			if res.Attributes.CredentialID != nil {
+				credID = *res.Attributes.CredentialID
+			}
+			credName := ""
+			if res.Attributes.CredentialName != nil {
+				credName = *res.Attributes.CredentialName
 			}
 
 			cols := []output.Column{
 				{Header: "ID"},
 				{Header: "ENV_VAR"},
 				{Header: "TYPE"},
-				{Header: "SERVICE"},
+				{Header: "CREDENTIAL_ID"},
+				{Header: "CREDENTIAL_NAME"},
 				{Header: "CREATED_AT"},
 			}
 			rows := [][]string{{
 				res.ID,
 				envVarOut,
 				res.Attributes.EntryType,
-				serviceOut,
+				credID,
+				credName,
 				res.Attributes.CreatedAt,
 			}}
 			return r.Render(cols, rows, res)
@@ -432,7 +441,6 @@ func entriesAddCmd() *cobra.Command {
 	cmd.Flags().StringVar(&entryType, "type", "", "Entry type: \"custom\" or \"credential\"")
 	cmd.Flags().StringVar(&value, "value", "", "Custom value (for --type custom; reads from stdin if omitted)")
 	cmd.Flags().IntVar(&credentialSetID, "credential-set-id", 0, "Credential set ID (for --type credential)")
-	cmd.Flags().StringVar(&service, "service", "", "Service name")
 
 	_ = cmd.MarkFlagRequired("env-var")
 	_ = cmd.MarkFlagRequired("type")
@@ -446,7 +454,6 @@ func entriesChangeCmd() *cobra.Command {
 		entryType       string
 		value           string
 		credentialSetID int
-		service         string
 	)
 
 	cmd := &cobra.Command{
@@ -469,13 +476,10 @@ func entriesChangeCmd() *cobra.Command {
 			if cmd.Flags().Changed("credential-set-id") {
 				patch["credential_set_id"] = credentialSetID
 			}
-			if cmd.Flags().Changed("service") {
-				patch["service"] = service
-			}
 
 			if len(patch) == 0 {
 				return clierror.New(clierror.CodeUsage, "no fields to update",
-					"provide at least one flag such as --env-var or --service")
+					"provide at least one flag such as --env-var or --credential-set-id")
 			}
 
 			path := "/api/environments/" + url.PathEscape(args[0]) + "/entries/" + url.PathEscape(args[1])
@@ -499,23 +503,29 @@ func entriesChangeCmd() *cobra.Command {
 			if res.Attributes.EnvVar != nil {
 				envVarOut = *res.Attributes.EnvVar
 			}
-			serviceOut := ""
-			if res.Attributes.Service != nil {
-				serviceOut = *res.Attributes.Service
+			credID := ""
+			if res.Attributes.CredentialID != nil {
+				credID = *res.Attributes.CredentialID
+			}
+			credName := ""
+			if res.Attributes.CredentialName != nil {
+				credName = *res.Attributes.CredentialName
 			}
 
 			cols := []output.Column{
 				{Header: "ID"},
 				{Header: "ENV_VAR"},
 				{Header: "TYPE"},
-				{Header: "SERVICE"},
+				{Header: "CREDENTIAL_ID"},
+				{Header: "CREDENTIAL_NAME"},
 				{Header: "CREATED_AT"},
 			}
 			rows := [][]string{{
 				res.ID,
 				envVarOut,
 				res.Attributes.EntryType,
-				serviceOut,
+				credID,
+				credName,
 				res.Attributes.CreatedAt,
 			}}
 			return r.Render(cols, rows, res)
@@ -526,7 +536,6 @@ func entriesChangeCmd() *cobra.Command {
 	cmd.Flags().StringVar(&entryType, "type", "", "Entry type: \"custom\" or \"credential\"")
 	cmd.Flags().StringVar(&value, "value", "", "Custom value")
 	cmd.Flags().IntVar(&credentialSetID, "credential-set-id", 0, "Credential set ID")
-	cmd.Flags().StringVar(&service, "service", "", "Service name")
 
 	return cmd
 }

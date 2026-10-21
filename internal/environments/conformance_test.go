@@ -135,7 +135,7 @@ func TestConformance_EnvironmentsEntriesAdd(t *testing.T) {
 		violations = schema.CheckRequest(r, endpoints)
 		w.Header().Set("Content-Type", "application/vnd.api+json")
 		w.WriteHeader(http.StatusCreated)
-		_, _ = fmt.Fprint(w, `{"data":{"type":"environment_entries","id":"1","attributes":{"env_var":"MY_VAR","entry_type":"custom","service":null,"custom_value":"val","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"},"relationships":{"credential_set":{"data":null}},"links":{"self":null}}}`)
+		_, _ = fmt.Fprint(w, `{"data":{"type":"environment_entries","id":"1","attributes":{"env_var":"MY_VAR","entry_type":"custom","credential_id":null,"credential_name":null,"custom_value":"val","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"},"relationships":{"credential_set":{"data":null}},"links":{"self":null}}}`)
 	}))
 	defer ts.Close()
 
@@ -159,7 +159,7 @@ func TestConformance_EnvironmentsEntriesChange(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		violations = schema.CheckRequest(r, endpoints)
 		w.Header().Set("Content-Type", "application/vnd.api+json")
-		_, _ = fmt.Fprint(w, `{"data":{"type":"environment_entries","id":"1","attributes":{"env_var":"MY_VAR","entry_type":"custom","service":"svc","custom_value":"val","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-02T00:00:00Z"},"relationships":{"credential_set":{"data":null}},"links":{"self":null}}}`)
+		_, _ = fmt.Fprint(w, `{"data":{"type":"environment_entries","id":"1","attributes":{"env_var":"UPDATED_VAR","entry_type":"custom","credential_id":null,"credential_name":null,"custom_value":"val","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-02T00:00:00Z"},"relationships":{"credential_set":{"data":null}},"links":{"self":null}}}`)
 	}))
 	defer ts.Close()
 
@@ -167,7 +167,7 @@ func TestConformance_EnvironmentsEntriesChange(t *testing.T) {
 	cmd := entriesChangeCmd()
 	cmd.SetContext(ctx)
 	cmd.SetOut(io.Discard)
-	_ = cmd.Flags().Set("service", "svc")
+	_ = cmd.Flags().Set("env-var", "UPDATED_VAR")
 	_ = cmd.RunE(cmd, []string{"1", "1"})
 
 	if len(violations) != 0 {
@@ -231,11 +231,11 @@ func TestConformance_EnvironmentsEntriesListPaginates(t *testing.T) {
 		w.Header().Set("Content-Type", "application/vnd.api+json")
 		if r.URL.RawQuery == "" {
 			_, _ = fmt.Fprintf(w,
-				`{"data":[{"type":"environment_entries","id":"1","attributes":{"env_var":"VAR1","entry_type":"custom","service":null,"custom_value":"v1","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"},"relationships":{"credential_set":{"data":null}},"links":{"self":null}}],"links":{"next":"%s/api/environments/1/entries?page%%5Bnumber%%5D=2"},"meta":{"current_page":1,"page_count":2,"per_page":20,"total_count":2}}`,
+				`{"data":[{"type":"environment_entries","id":"1","attributes":{"env_var":"VAR1","entry_type":"custom","credential_id":null,"credential_name":null,"custom_value":"v1","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"},"relationships":{"credential_set":{"data":null}},"links":{"self":null}}],"links":{"next":"%s/api/environments/1/entries?page%%5Bnumber%%5D=2"},"meta":{"current_page":1,"page_count":2,"per_page":20,"total_count":2}}`,
 				"http://"+r.Host)
 		} else {
 			_, _ = fmt.Fprint(w,
-				`{"data":[{"type":"environment_entries","id":"2","attributes":{"env_var":"VAR2","entry_type":"custom","service":null,"custom_value":"v2","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"},"relationships":{"credential_set":{"data":null}},"links":{"self":null}}],"links":{},"meta":{"current_page":2,"page_count":2,"per_page":20,"total_count":2}}`)
+				`{"data":[{"type":"environment_entries","id":"2","attributes":{"env_var":"VAR2","entry_type":"custom","credential_id":null,"credential_name":null,"custom_value":"v2","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"},"relationships":{"credential_set":{"data":null}},"links":{"self":null}}],"links":{},"meta":{"current_page":2,"page_count":2,"per_page":20,"total_count":2}}`)
 		}
 	}))
 	defer ts.Close()

@@ -2878,6 +2878,8 @@ components:
           type: object
           properties:
             name: *14
+            shared:
+              type: boolean
             capacity:
               "$ref": "#/components/schemas/ProviderCapacityObservation"
             affected_blocked_tasks:
@@ -2896,6 +2898,7 @@ components:
           additionalProperties: false
           required:
           - name
+          - shared
           - capacity
           - affected_blocked_tasks
       additionalProperties: false
@@ -3054,10 +3057,13 @@ components:
           enum:
           - credential
           - custom
-        service:
+        custom_value:
           type: string
           nullable: true
-        custom_value:
+        credential_id:
+          type: string
+          nullable: true
+        credential_name:
           type: string
           nullable: true
         created_at:
@@ -3070,8 +3076,9 @@ components:
       required:
       - env_var
       - entry_type
-      - service
       - custom_value
+      - credential_id
+      - credential_name
       - created_at
       - updated_at
   responses:
@@ -21562,8 +21569,6 @@ paths:
                       type: string
                     credential_set_id:
                       type: integer
-                    service:
-                      type: string
                   additionalProperties: false
               additionalProperties: true
               x-loopcontrol-open-reason: ignored_inputs
@@ -21738,8 +21743,6 @@ paths:
                       type: string
                     credential_set_id:
                       type: integer
-                    service:
-                      type: string
                   additionalProperties: false
               additionalProperties: true
               x-loopcontrol-open-reason: ignored_inputs
@@ -21820,7 +21823,7 @@ paths:
                   identity: one_claude
             body:
               entry:
-                service: contract-updated-service
+                env_var: UPDATED_VAR
           error_422:
             status: 422
             setup:
@@ -21848,7 +21851,7 @@ paths:
               id: '0'
             body:
               entry:
-                service: contract-updated-service
+                env_var: UPDATED_VAR
           missing_entry_json:
             status: 400
             setup:
@@ -21867,7 +21870,7 @@ paths:
             request_media_type: application/json
             body:
               entry:
-                service: contract-updated-service
+                env_var: UPDATED_VAR
           unauthenticated:
             status: 401
             setup:
@@ -21883,7 +21886,7 @@ paths:
                   identity: one_claude
             body:
               entry:
-                service: contract-updated-service
+                env_var: UPDATED_VAR
         input_constraints:
         - field: ''
           operation: require
@@ -21920,8 +21923,6 @@ paths:
                       type: string
                     credential_set_id:
                       type: integer
-                    service:
-                      type: string
                   additionalProperties: false
               additionalProperties: true
               x-loopcontrol-open-reason: ignored_inputs
@@ -22002,7 +22003,7 @@ paths:
                   identity: one_claude
             body:
               entry:
-                service: contract-updated-service
+                env_var: UPDATED_VAR
           error_422:
             status: 422
             setup:
@@ -22030,7 +22031,7 @@ paths:
               id: '0'
             body:
               entry:
-                service: contract-updated-service
+                env_var: UPDATED_VAR
           missing_entry_json:
             status: 400
             setup:
@@ -22049,7 +22050,7 @@ paths:
             request_media_type: application/json
             body:
               entry:
-                service: contract-updated-service
+                env_var: UPDATED_VAR
           unauthenticated:
             status: 401
             setup:
@@ -22065,7 +22066,7 @@ paths:
                   identity: one_claude
             body:
               entry:
-                service: contract-updated-service
+                env_var: UPDATED_VAR
         input_constraints:
         - field: ''
           operation: require

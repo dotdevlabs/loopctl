@@ -264,7 +264,7 @@ func TestEnvironmentsEntriesList(t *testing.T) {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/vnd.api+json")
-		_, _ = fmt.Fprint(w, `{"data":[{"type":"environment_entries","id":"7","attributes":{"env_var":"MY_VAR","entry_type":"custom","service":null,"custom_value":"super-secret-value","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"},"relationships":{"credential_set":{"data":null}},"links":{"self":null}}],"links":{},"meta":{"current_page":1,"page_count":1,"per_page":20,"total_count":1}}`)
+		_, _ = fmt.Fprint(w, `{"data":[{"type":"environment_entries","id":"7","attributes":{"env_var":"MY_VAR","entry_type":"custom","credential_id":null,"credential_name":null,"custom_value":"super-secret-value","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"},"relationships":{"credential_set":{"data":null}},"links":{"self":null}}],"links":{},"meta":{"current_page":1,"page_count":1,"per_page":20,"total_count":1}}`)
 	}))
 	defer ts.Close()
 
@@ -280,6 +280,9 @@ func TestEnvironmentsEntriesList(t *testing.T) {
 	got := out.String()
 	if !strings.Contains(got, "MY_VAR") {
 		t.Errorf("output missing env_var:\n%s", got)
+	}
+	if !strings.Contains(strings.ToUpper(got), "CREDENTIAL_ID") {
+		t.Errorf("output missing CREDENTIAL_ID column:\n%s", got)
 	}
 	// custom_value must NOT appear in table output
 	if strings.Contains(got, "super-secret-value") {
@@ -300,7 +303,7 @@ func TestEnvironmentsEntriesAdd_Custom(t *testing.T) {
 		_ = json.Unmarshal(b, &gotBody)
 		w.Header().Set("Content-Type", "application/vnd.api+json")
 		w.WriteHeader(http.StatusCreated)
-		_, _ = fmt.Fprint(w, `{"data":{"type":"environment_entries","id":"9","attributes":{"env_var":"CUSTOM_VAR","entry_type":"custom","service":null,"custom_value":"myvalue","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"},"relationships":{"credential_set":{"data":null}},"links":{"self":null}}}`)
+		_, _ = fmt.Fprint(w, `{"data":{"type":"environment_entries","id":"9","attributes":{"env_var":"CUSTOM_VAR","entry_type":"custom","credential_id":null,"credential_name":null,"custom_value":"myvalue","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"},"relationships":{"credential_set":{"data":null}},"links":{"self":null}}}`)
 	}))
 	defer ts.Close()
 
@@ -339,7 +342,7 @@ func TestEnvironmentsEntriesAdd_Stdin(t *testing.T) {
 		_ = json.Unmarshal(b, &gotBody)
 		w.Header().Set("Content-Type", "application/vnd.api+json")
 		w.WriteHeader(http.StatusCreated)
-		_, _ = fmt.Fprint(w, `{"data":{"type":"environment_entries","id":"11","attributes":{"env_var":"STDIN_VAR","entry_type":"custom","service":null,"custom_value":"stdin-value","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"},"relationships":{"credential_set":{"data":null}},"links":{"self":null}}}`)
+		_, _ = fmt.Fprint(w, `{"data":{"type":"environment_entries","id":"11","attributes":{"env_var":"STDIN_VAR","entry_type":"custom","credential_id":null,"credential_name":null,"custom_value":"stdin-value","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"},"relationships":{"credential_set":{"data":null}},"links":{"self":null}}}`)
 	}))
 	defer ts.Close()
 
@@ -373,7 +376,7 @@ func TestEnvironmentsEntriesAdd_Credential(t *testing.T) {
 		_ = json.Unmarshal(b, &gotBody)
 		w.Header().Set("Content-Type", "application/vnd.api+json")
 		w.WriteHeader(http.StatusCreated)
-		_, _ = fmt.Fprint(w, `{"data":{"type":"environment_entries","id":"12","attributes":{"env_var":"CRED_VAR","entry_type":"credential","service":"github","custom_value":null,"created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"},"relationships":{"credential_set":{"data":{"type":"credential_sets","id":"42"}}},"links":{"self":null}}}`)
+		_, _ = fmt.Fprint(w, `{"data":{"type":"environment_entries","id":"12","attributes":{"env_var":"CRED_VAR","entry_type":"credential","credential_id":"42","credential_name":"github-token","custom_value":null,"created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-01T00:00:00Z"},"relationships":{"credential_set":{"data":{"type":"credential_sets","id":"42"}}},"links":{"self":null}}}`)
 	}))
 	defer ts.Close()
 
@@ -385,7 +388,6 @@ func TestEnvironmentsEntriesAdd_Credential(t *testing.T) {
 	_ = cmd.Flags().Set("env-var", "CRED_VAR")
 	_ = cmd.Flags().Set("type", "credential")
 	_ = cmd.Flags().Set("credential-set-id", "42")
-	_ = cmd.Flags().Set("service", "github")
 
 	if err := cmd.RunE(cmd, []string{"3"}); err != nil {
 		t.Fatalf("entries add credential failed: %v", err)
@@ -401,8 +403,8 @@ func TestEnvironmentsEntriesAdd_Credential(t *testing.T) {
 	if entry["credential_set_id"] != float64(42) {
 		t.Errorf("expected credential_set_id=42; got: %v", entry["credential_set_id"])
 	}
-	if entry["service"] != "github" {
-		t.Errorf("expected service=github; got: %v", entry["service"])
+	if _, ok := entry["service"]; ok {
+		t.Errorf("entry body must not contain service key; got: %v", entry)
 	}
 }
 
@@ -414,7 +416,7 @@ func TestEnvironmentsEntriesChange(t *testing.T) {
 		b, _ := io.ReadAll(r.Body)
 		_ = json.Unmarshal(b, &gotBody)
 		w.Header().Set("Content-Type", "application/vnd.api+json")
-		_, _ = fmt.Fprint(w, `{"data":{"type":"environment_entries","id":"7","attributes":{"env_var":"MY_VAR","entry_type":"custom","service":"mysvc","custom_value":"val","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-02T00:00:00Z"},"relationships":{"credential_set":{"data":null}},"links":{"self":null}}}`)
+		_, _ = fmt.Fprint(w, `{"data":{"type":"environment_entries","id":"7","attributes":{"env_var":"UPDATED_VAR","entry_type":"custom","credential_id":null,"credential_name":null,"custom_value":"val","created_at":"2024-01-01T00:00:00Z","updated_at":"2024-01-02T00:00:00Z"},"relationships":{"credential_set":{"data":null}},"links":{"self":null}}}`)
 	}))
 	defer ts.Close()
 
@@ -423,7 +425,7 @@ func TestEnvironmentsEntriesChange(t *testing.T) {
 	cmd := entriesChangeCmd()
 	cmd.SetContext(ctx)
 	cmd.SetOut(&out)
-	_ = cmd.Flags().Set("service", "mysvc")
+	_ = cmd.Flags().Set("env-var", "UPDATED_VAR")
 
 	if err := cmd.RunE(cmd, []string{"3", "7"}); err != nil {
 		t.Fatalf("entries change failed: %v", err)
@@ -436,8 +438,11 @@ func TestEnvironmentsEntriesChange(t *testing.T) {
 	if entry == nil {
 		t.Fatal("expected entry key in body")
 	}
-	if entry["service"] != "mysvc" {
-		t.Errorf("expected service=mysvc; got: %v", entry["service"])
+	if entry["env_var"] != "UPDATED_VAR" {
+		t.Errorf("expected env_var=UPDATED_VAR; got: %v", entry["env_var"])
+	}
+	if _, ok := entry["service"]; ok {
+		t.Errorf("entry body must not contain service key; got: %v", entry)
 	}
 	if len(entry) != 1 {
 		t.Errorf("expected exactly 1 field in entry patch; got %d: %v", len(entry), entry)

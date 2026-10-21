@@ -205,6 +205,38 @@ Output columns: `ID`, `NAME`, `SLUG`, `INSTALL_COMMAND`, `LAUNCH_COMMAND`.
 
 ---
 
+### credentials
+
+List and inspect credentials available to your account. Credential values are never printed.
+
+#### credentials list
+
+```bash
+loopctl credentials list
+loopctl credentials list --json
+```
+
+Output columns: `ID`, `NAME`, `SHARED`.
+
+**API:** `GET /api/credential_sets`
+
+#### credentials get
+
+Get a credential by ID.
+
+```bash
+loopctl credentials get <id>
+loopctl credentials get <id> --json
+```
+
+Output columns: `ID`, `NAME`, `SHARED`.
+
+Use `--json` to retrieve the full resource including capacity status and any blocked task metadata — never a secret value.
+
+**API:** `GET /api/credential_sets/:id`
+
+---
+
 ### environments
 
 Manage LoopControl environments and their entries. Environments group environment variables and credential references that are injected into project runs. Assign an environment to a project with `projects update --environment-id`.
@@ -302,7 +334,7 @@ loopctl environments entries list <environment-id>
 loopctl environments entries list <environment-id> --json
 ```
 
-Output columns: `ID`, `ENV_VAR`, `TYPE`, `SERVICE`, `CREATED_AT`. Custom values are intentionally omitted from table output to avoid leaking secrets.
+Output columns: `ID`, `ENV_VAR`, `TYPE`, `CREDENTIAL_ID`, `CREDENTIAL_NAME`, `CREATED_AT`. Custom values are intentionally omitted from table output to avoid leaking secrets.
 
 **API:** `GET /api/environments/:environment_id/entries`
 
@@ -326,8 +358,7 @@ echo "postgres://localhost/mydb" | loopctl environments entries add <environment
 loopctl environments entries add <environment-id> \
   --env-var GITHUB_TOKEN \
   --type credential \
-  --credential-set-id <credential-set-id> \
-  --service github
+  --credential-set-id <credential-set-id>
 
 # Preview without making API calls
 loopctl environments entries add <environment-id> --env-var FOO --type custom --value bar --dry-run
@@ -341,9 +372,8 @@ loopctl environments entries add <environment-id> --env-var FOO --type custom --
 | `--type` | yes | Entry type: `custom` or `credential` |
 | `--value` | no | Custom value (for `--type custom`; reads from stdin when omitted) |
 | `--credential-set-id` | no | Credential set ID (for `--type credential`) |
-| `--service` | no | Service name associated with this entry |
 
-Output columns on success: `ID`, `ENV_VAR`, `TYPE`, `SERVICE`, `CREATED_AT`.
+Output columns on success: `ID`, `ENV_VAR`, `TYPE`, `CREDENTIAL_ID`, `CREDENTIAL_NAME`, `CREATED_AT`.
 
 **API:** `POST /api/environments/:environment_id/entries`
 
@@ -354,7 +384,6 @@ Update an existing entry. Only the flags you provide are changed.
 ```bash
 loopctl environments entries change <environment-id> <entry-id> --value "new-value"
 loopctl environments entries change <environment-id> <entry-id> --env-var NEW_NAME
-loopctl environments entries change <environment-id> <entry-id> --service updated-service
 loopctl environments entries change <environment-id> <entry-id> --type credential --credential-set-id <id>
 loopctl environments entries change <environment-id> <entry-id> --value "new-value" --dry-run
 ```
@@ -367,9 +396,8 @@ loopctl environments entries change <environment-id> <entry-id> --value "new-val
 | `--type` | New entry type: `custom` or `credential` |
 | `--value` | New custom value |
 | `--credential-set-id` | New credential set ID |
-| `--service` | New service name |
 
-At least one flag must be provided. Output columns on success: `ID`, `ENV_VAR`, `TYPE`, `SERVICE`, `CREATED_AT`.
+At least one flag must be provided. Output columns on success: `ID`, `ENV_VAR`, `TYPE`, `CREDENTIAL_ID`, `CREDENTIAL_NAME`, `CREATED_AT`.
 
 **API:** `PATCH /api/environments/:environment_id/entries/:id`
 
@@ -1300,10 +1328,11 @@ loopctl tasks list --json
 loopctl tasks list --project-id <project-id> --json
 ```
 
-### Discover available agents, platforms, pipelines, and task kinds
+### Discover available agents, platforms, pipelines, task kinds, and credentials
 
 ```bash
 loopctl agents list
+loopctl credentials list
 loopctl platforms list
 loopctl pipelines list
 loopctl task-kinds list
@@ -1321,7 +1350,8 @@ loopctl environments entries add <environment-id> \
   --type custom \
   --value "postgres://localhost/prod"
 
-# Add a credential entry (value never printed)
+# List available credentials, then add a credential entry (value never printed)
+loopctl credentials list
 loopctl environments entries add <environment-id> \
   --env-var GITHUB_TOKEN \
   --type credential \
