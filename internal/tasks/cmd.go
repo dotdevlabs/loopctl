@@ -252,6 +252,9 @@ func updateCmd() *cobra.Command {
 	var (
 		implementationCriteria string
 		verificationCriteria   string
+		dependsOn              []string
+		removeDependsOn        []string
+		clearDependsOn         bool
 	)
 
 	cmd := &cobra.Command{
@@ -261,6 +264,17 @@ func updateCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
+			dependsOnChanged := cmd.Flags().Changed("depends-on")
+			removeChanged := cmd.Flags().Changed("remove-depends-on")
+			clearChanged := cmd.Flags().Changed("clear-depends-on")
+
+			if dependsOnChanged && (removeChanged || clearChanged) {
+				return clierror.New(clierror.CodeUsage, "--depends-on cannot be combined with --remove-depends-on or --clear-depends-on", "")
+			}
+			if removeChanged && clearChanged {
+				return clierror.New(clierror.CodeUsage, "--remove-depends-on cannot be combined with --clear-depends-on", "")
+			}
+
 			patch := map[string]any{}
 			if cmd.Flags().Changed("implementation-criteria") {
 				patch["implementation_criteria"] = implementationCriteria
@@ -268,18 +282,47 @@ func updateCmd() *cobra.Command {
 			if cmd.Flags().Changed("verification-criteria") {
 				patch["verification_criteria"] = verificationCriteria
 			}
+			if dependsOnChanged {
+				patch["depends_on"] = dependsOn
+			}
+			if clearChanged {
+				patch["depends_on"] = []string{}
+			}
 
-			if len(patch) == 0 {
-				return clierror.New(clierror.CodeUsage, "no fields to update", "provide at least one of --implementation-criteria, --verification-criteria")
+			if len(patch) == 0 && !removeChanged {
+				return clierror.New(clierror.CodeUsage, "no fields to update", "provide at least one of --implementation-criteria, --verification-criteria, --depends-on, --remove-depends-on, --clear-depends-on")
 			}
 
 			if ctxutil.GlobalFlagsFrom(ctx).DryRun {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would PATCH /api/tasks/%s %v\n", args[0], patch)
+				if removeChanged {
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would PATCH /api/tasks/%s (remove from depends_on: %v, other: %v)\n", args[0], removeDependsOn, patch)
+				} else {
+					_, _ = fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would PATCH /api/tasks/%s %v\n", args[0], patch)
+				}
 				return nil
 			}
 
 			activeCtx := ctxutil.ActiveContextFrom(ctx)
 			r := ctxutil.RendererFrom(ctx)
+
+			if removeChanged {
+				path := "/api/tasks/" + url.PathEscape(args[0])
+				current, err := apiclient.GetJSONAPISingle[TaskAttrs](ctx, activeCtx, path)
+				if err != nil {
+					return err
+				}
+				removeSet := make(map[string]struct{}, len(removeDependsOn))
+				for _, id := range removeDependsOn {
+					removeSet[id] = struct{}{}
+				}
+				remaining := make([]string, 0, len(current.Attributes.DependsOn))
+				for _, id := range current.Attributes.DependsOn {
+					if _, skip := removeSet[id]; !skip {
+						remaining = append(remaining, id)
+					}
+				}
+				patch["depends_on"] = remaining
+			}
 
 			body := map[string]any{"task": patch}
 			path := "/api/tasks/" + url.PathEscape(args[0])
@@ -304,6 +347,9 @@ func updateCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&implementationCriteria, "implementation-criteria", "", "Implementation plan written by the planning agent")
 	cmd.Flags().StringVar(&verificationCriteria, "verification-criteria", "", "Verification steps for the implementing agent")
+	cmd.Flags().StringArrayVar(&dependsOn, "depends-on", nil, "Complete list of dependency task IDs (repeatable); replaces existing list")
+	cmd.Flags().StringArrayVar(&removeDependsOn, "remove-depends-on", nil, "Task ID to remove from dependencies (repeatable); reads current list then sends remainder")
+	cmd.Flags().BoolVar(&clearDependsOn, "clear-depends-on", false, "Remove all dependencies")
 
 	return cmd
 }
