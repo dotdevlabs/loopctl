@@ -682,6 +682,25 @@ components:
       additionalProperties: false
       required:
       - data
+    JsonApiToManyRelationship:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+              id:
+                type: string
+            additionalProperties: false
+            required:
+            - type
+            - id
+      additionalProperties: false
+      required:
+      - data
     JsonApiNullableToOneRelationship:
       type: object
       properties:
@@ -810,6 +829,8 @@ components:
           type: string
         built_in:
           type: boolean
+        create_pull_request:
+          type: boolean
         account_id:
           type: string
           nullable: true
@@ -823,6 +844,7 @@ components:
       required:
       - name
       - built_in
+      - create_pull_request
       - account_id
       - created_at
       - updated_at
@@ -1063,12 +1085,28 @@ components:
             - todo_entry
           x-loopcontrol-optional-reason: Only explicitly configured sections or order
             are stored and returned.
-    PipelineStage:
+    PipelineStageResource:
       type: object
-      description: A single workflow stage as returned in pipeline responses.
+      description: A workflow stage resource in the included array of a pipeline
+        response.
       properties:
+        type:
+          type: string
+          enum:
+          - pipeline_stages
         id:
           type: string
+        attributes:
+          "$ref": "#/components/schemas/PipelineStage"
+      additionalProperties: false
+      required:
+      - type
+      - id
+      - attributes
+    PipelineStage:
+      type: object
+      description: Attributes of a single workflow stage in pipeline responses.
+      properties:
         stage_type:
           type: string
         custom_stage_name:
@@ -1129,7 +1167,6 @@ components:
             prompt; same as prompt_sections.template.'
       additionalProperties: false
       required:
-      - id
       - stage_type
       - custom_stage_name
       - gate
@@ -1455,10 +1492,6 @@ components:
           nullable: true
         stage_count:
           type: integer
-        stages:
-          type: array
-          items:
-            "$ref": "#/components/schemas/PipelineStage"
         created_at:
           type: string
           format: date-time
@@ -1474,7 +1507,6 @@ components:
       - task_kind_id
       - account_id
       - stage_count
-      - stages
       - created_at
       - updated_at
     PipelineUpdateResponseAttributes:
@@ -1494,10 +1526,6 @@ components:
           type: string
         stage_count:
           type: integer
-        stages:
-          type: array
-          items:
-            "$ref": "#/components/schemas/PipelineStage"
       additionalProperties: false
       required:
       - name
@@ -1507,7 +1535,6 @@ components:
       - task_kind_id
       - account_id
       - stage_count
-      - stages
     PipelineCloneResponseAttributes:
       type: object
       properties:
@@ -1544,6 +1571,7 @@ components:
           type: string
         port:
           type: integer
+          nullable: true
         bootstrapping:
           type: boolean
         pipeline_name:
@@ -2295,10 +2323,12 @@ components:
       properties:
         from_stage:
           type: string
+          nullable: true
         to_stage:
           type: string
         custom_stage_name:
           type: string
+          nullable: true
         metadata:
           type: object
           additionalProperties: true
@@ -2340,45 +2370,6 @@ components:
       - metadata
       - container_id
       - created_at
-    FlowRegistryFlowAttributes:
-      type: object
-      properties:
-        name:
-          type: string
-        description:
-          type: string
-        steps:
-          type: array
-          items:
-            type: object
-            additionalProperties: true
-            x-loopcontrol-open-reason: free_form
-        assertions:
-          type: array
-          items:
-            type: object
-            additionalProperties: true
-            x-loopcontrol-open-reason: free_form
-        baseline_commit_sha:
-          type: string
-        source:
-          type: string
-        created_at:
-          type: string
-          format: date-time
-        updated_at:
-          type: string
-          format: date-time
-      additionalProperties: false
-      required:
-      - name
-      - description
-      - steps
-      - assertions
-      - baseline_commit_sha
-      - source
-      - created_at
-      - updated_at
     AccountPipelineDefaultAttributes:
       type: object
       properties:
@@ -2733,19 +2724,16 @@ components:
           x-loopcontrol-open-reason: free_form
       additionalProperties: false
     ProviderCapacityObservation:
-      description: Latest safe observation when used as credential capacity. Null means
-        no observation exists for the current credential revision; unknown is an
-        observed unconfirmed result, not available capacity.
+      description: Latest safe observation when used as credential capacity. It is
+        a value of its parent resource, not an embedded record, so it has no internal
+        ids. Null means no observation exists for the current credential revision;
+        unknown is an observed unconfirmed result, not available capacity.
       type: object
       properties:
-        id: &1
-          type: integer
         provider: &2
           type: string
           enum:
           - codex
-        credential_set_id: &3
-          type: integer
         status: &4
           type: string
           enum:
@@ -2812,9 +2800,7 @@ components:
           - runtime_limit
       additionalProperties: false
       required:
-      - id
       - provider
-      - credential_set_id
       - status
       - observed_at
       - age_seconds
@@ -2833,9 +2819,7 @@ components:
         null. The whole value is null when neither observation exists.
       type: object
       properties:
-        id: *1
         provider: *2
-        credential_set_id: *3
         status: *4
         observed_at: *5
         age_seconds: *6
@@ -2850,9 +2834,7 @@ components:
           "$ref": "#/components/schemas/ProviderCapacityObservation"
       additionalProperties: false
       required:
-      - id
       - provider
-      - credential_set_id
       - status
       - observed_at
       - age_seconds
@@ -2882,30 +2864,27 @@ components:
               type: boolean
             capacity:
               "$ref": "#/components/schemas/ProviderCapacityObservation"
-            affected_blocked_tasks:
-              description: Tasks still blocked for agent_quota_exhausted by this
-                credential, including observations from earlier credential revisions.
-              type: array
-              items:
-                type: object
-                properties:
-                  id: *14
-                  title: *14
-                additionalProperties: false
-                required:
-                - id
-                - title
           additionalProperties: false
           required:
           - name
           - shared
           - capacity
-          - affected_blocked_tasks
+        relationships:
+          type: object
+          description: tasks lists the tasks still blocked for agent_quota_exhausted
+            by this credential, including observations from earlier credential revisions.
+          properties:
+            tasks:
+              "$ref": "#/components/schemas/JsonApiToManyRelationship"
+          additionalProperties: false
+          required:
+          - tasks
       additionalProperties: false
       required:
       - id
       - type
       - attributes
+      - relationships
     ProviderCapacityReport:
       type: object
       properties:
@@ -3323,7 +3302,12 @@ paths:
           foreign_account:
             status: 404
             setup:
-            - foreign_task
+            - authenticated
+            path:
+              task_id:
+                fixture:
+                  resource: task
+                  identity: other_tenant_task
             body: {}
             query:
               after: 1
@@ -3591,6 +3575,11 @@ paths:
             status: 202
             setup:
             - capacity_session
+            path:
+              container_id:
+                fixture:
+                  resource: container
+                  identity: codex_executor
             body: &15
               provider_capacity_snapshot:
                 observation_id: 11111111-1111-4111-8111-111111111111
@@ -3606,6 +3595,11 @@ paths:
             status: 202
             setup:
             - capacity_session
+            path:
+              container_id:
+                fixture:
+                  resource: container
+                  identity: codex_executor
             body:
               provider_capacity_snapshot:
                 agent_session_id:
@@ -3618,6 +3612,11 @@ paths:
             status: 400
             setup:
             - capacity_session
+            path:
+              container_id:
+                fixture:
+                  resource: container
+                  identity: codex_executor
             body: *15
             omit_body_field:
             - provider_capacity_snapshot
@@ -3636,13 +3635,17 @@ paths:
             setup:
             - capacity_session
             path:
+              container_id:
+                fixture:
+                  resource: container
+                  identity: codex_executor
               container_id: '0'
             body: *15
         input_constraints:
         - field: ''
-          operation: require
+          operation: expect
           arguments:
-          - ":provider_capacity_snapshot"
+          - 'provider_capacity_snapshot: [ :observation_id, :status, :source, :phase, :agent_session_id, :observed_at, :bucket_id, :used_percent, :resets_at, :reached_limit_type, :diagnostic ]'
   "/api/credential_sets":
     get:
       operationId: get-api-credential-sets
@@ -4701,9 +4704,9 @@ paths:
             request_media_type: application/json
         input_constraints:
         - field: ''
-          operation: require
+          operation: expect
           arguments:
-          - ":registration"
+          - 'registration: [ :email_address, :api_token_name, :account_name ]'
   "/api/agents":
     get:
       operationId: get-api-agents
@@ -4905,15 +4908,15 @@ paths:
           search:
             status: 200
             setup:
-            - search_records
+            - authenticated
             query:
-              query: Contract selection
+              query: Codex
             assertions:
             - pointer: "/data/0/id"
               equals:
                 fixture:
                   resource: agent
-                  identity: default_agent
+                  identity: codex_agent
             - pointer: "/meta/total_count"
               equals: 1
           authentication_apiKeyAuth:
@@ -5569,6 +5572,8 @@ paths:
                     name:
                       type: string
                       description: Unique name for the task kind within the account
+                    create_pull_request:
+                      type: boolean
                   additionalProperties: true
                   x-loopcontrol-open-reason: ignored_inputs
                   x-loopcontrol-input-policy: Unknown keys are discarded by Rails
@@ -5714,9 +5719,302 @@ paths:
             request_media_type: application/json
         input_constraints:
         - field: ''
-          operation: require
+          operation: expect
           arguments:
-          - ":task_kind"
+          - 'task_kind: [ :name, :create_pull_request ]'
+  "/api/task_kinds/{id}":
+    patch:
+      operationId: patch-api-task-kind
+      summary: Updates a custom task kind's name or pull request setting.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                task_kind:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    create_pull_request:
+                      type: boolean
+                  additionalProperties: false
+              additionalProperties: true
+              x-loopcontrol-open-reason: ignored_inputs
+              x-loopcontrol-input-policy: Unknown top-level keys are discarded.
+      responses:
+        '200':
+          description: Updated task kind
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: object
+                    required:
+                    - type
+                    - id
+                    - attributes
+                    - links
+                    properties:
+                      type:
+                        type: string
+                        enum:
+                        - task_kinds
+                      id:
+                        type: string
+                      attributes:
+                        "$ref": "#/components/schemas/TaskKindAttributes"
+                      links:
+                        type: object
+                        required:
+                        - self
+                        properties:
+                          self:
+                            type: string
+                            nullable: true
+                        additionalProperties: false
+                    additionalProperties: false
+                additionalProperties: false
+        '404':
+          description: Task kind not found
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+        '422':
+          description: Validation failed (e.g. blank name)
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+        '401':
+          description: Missing or invalid bearer token; the response body is empty.
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+      x-loopcontrol-contract:
+        scenarios:
+          success:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: task_kind
+                  identity: custom_account_kind
+            body:
+              task_kind:
+                name: contract-updated-name
+          error_422:
+            status: 422
+            setup:
+            - documented_error
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: task_kind
+                  identity: custom_account_kind
+            body:
+              task_kind:
+                name: ''
+          not_found:
+            status: 404
+            setup:
+            - documented_error
+            media_type: application/vnd.api+json
+            path:
+              id: '0'
+            body:
+              task_kind:
+                name: contract-updated-name
+          missing_task_kind_json:
+            status: 400
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: task_kind
+                  identity: custom_account_kind
+            omit_body_field: task_kind
+            request_media_type: application/json
+            body:
+              task_kind:
+                name: contract-updated-name
+          unauthenticated:
+            status: 401
+            setup:
+            - unauthenticated
+            path:
+              id: '1'
+            body:
+              task_kind:
+                name: contract-updated-name
+        input_constraints:
+        - field: ''
+          operation: expect
+          arguments:
+          - 'task_kind: [ :name, :create_pull_request ]'
+    put:
+      operationId: put-api-task-kind
+      summary: Updates a custom task kind's name or pull request setting.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                task_kind:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    create_pull_request:
+                      type: boolean
+                  additionalProperties: false
+              additionalProperties: true
+              x-loopcontrol-open-reason: ignored_inputs
+              x-loopcontrol-input-policy: Unknown top-level keys are discarded.
+      responses:
+        '200':
+          description: Updated task kind
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: object
+                    required:
+                    - type
+                    - id
+                    - attributes
+                    - links
+                    properties:
+                      type:
+                        type: string
+                        enum:
+                        - task_kinds
+                      id:
+                        type: string
+                      attributes:
+                        "$ref": "#/components/schemas/TaskKindAttributes"
+                      links:
+                        type: object
+                        required:
+                        - self
+                        properties:
+                          self:
+                            type: string
+                            nullable: true
+                        additionalProperties: false
+                    additionalProperties: false
+                additionalProperties: false
+        '404':
+          description: Task kind not found
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+        '422':
+          description: Validation failed (e.g. blank name)
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+        '401':
+          description: Missing or invalid bearer token; the response body is empty.
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+      x-loopcontrol-contract:
+        scenarios:
+          success:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: task_kind
+                  identity: custom_account_kind
+            body:
+              task_kind:
+                name: contract-put-name
+          error_422:
+            status: 422
+            setup:
+            - documented_error
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: task_kind
+                  identity: custom_account_kind
+            body:
+              task_kind:
+                name: ''
+          not_found:
+            status: 404
+            setup:
+            - documented_error
+            media_type: application/vnd.api+json
+            path:
+              id: '0'
+            body:
+              task_kind:
+                name: contract-put-name
+          missing_task_kind_json:
+            status: 400
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: task_kind
+                  identity: custom_account_kind
+            omit_body_field: task_kind
+            request_media_type: application/json
+            body:
+              task_kind:
+                name: contract-put-name
+          unauthenticated:
+            status: 401
+            setup:
+            - unauthenticated
+            path:
+              id: '1'
+            body:
+              task_kind:
+                name: contract-put-name
+        input_constraints:
+        - field: ''
+          operation: expect
+          arguments:
+          - 'task_kind: [ :name, :create_pull_request ]'
   "/api/pipelines":
     get:
       operationId: get-api-pipelines
@@ -5743,9 +6041,14 @@ paths:
                 type: object
                 required:
                 - data
+                - included
                 - links
                 - meta
                 properties:
+                  included:
+                    type: array
+                    items:
+                      "$ref": "#/components/schemas/PipelineStageResource"
                   data:
                     type: array
                     items:
@@ -5754,6 +6057,7 @@ paths:
                       - type
                       - id
                       - attributes
+                      - relationships
                       - links
                       properties:
                         type:
@@ -5764,6 +6068,14 @@ paths:
                           type: string
                         attributes:
                           "$ref": "#/components/schemas/PipelineAttributes"
+                        relationships:
+                          type: object
+                          properties:
+                            stages:
+                              "$ref": "#/components/schemas/JsonApiToManyRelationship"
+                          additionalProperties: false
+                          required:
+                          - stages
                         links:
                           type: object
                           required:
@@ -6309,13 +6621,19 @@ paths:
                 type: object
                 required:
                 - data
+                - included
                 properties:
+                  included:
+                    type: array
+                    items:
+                      "$ref": "#/components/schemas/PipelineStageResource"
                   data:
                     type: object
                     required:
                     - type
                     - id
                     - attributes
+                    - relationships
                     - links
                     properties:
                       type:
@@ -6326,6 +6644,14 @@ paths:
                         type: string
                       attributes:
                         "$ref": "#/components/schemas/PipelineAttributes"
+                      relationships:
+                        type: object
+                        properties:
+                          stages:
+                            "$ref": "#/components/schemas/JsonApiToManyRelationship"
+                        additionalProperties: false
+                        required:
+                        - stages
                       links:
                         type: object
                         required:
@@ -6449,7 +6775,7 @@ paths:
                   environment_id:
                     fixture:
                       resource: environment
-                      identity: one
+                      identity: default_environment
           legacy_stage:
             status: 201
             setup:
@@ -6567,13 +6893,19 @@ paths:
                 type: object
                 required:
                 - data
+                - included
                 properties:
+                  included:
+                    type: array
+                    items:
+                      "$ref": "#/components/schemas/PipelineStageResource"
                   data:
                     type: object
                     required:
                     - type
                     - id
                     - attributes
+                    - relationships
                     - links
                     properties:
                       type:
@@ -6584,6 +6916,14 @@ paths:
                         type: string
                       attributes:
                         "$ref": "#/components/schemas/PipelineAttributes"
+                      relationships:
+                        type: object
+                        properties:
+                          stages:
+                            "$ref": "#/components/schemas/JsonApiToManyRelationship"
+                        additionalProperties: false
+                        required:
+                        - stages
                       links:
                         type: object
                         required:
@@ -7034,13 +7374,19 @@ paths:
                 type: object
                 required:
                 - data
+                - included
                 properties:
+                  included:
+                    type: array
+                    items:
+                      "$ref": "#/components/schemas/PipelineStageResource"
                   data:
                     type: object
                     required:
                     - type
                     - id
                     - attributes
+                    - relationships
                     - links
                     properties:
                       type:
@@ -7051,6 +7397,14 @@ paths:
                         type: string
                       attributes:
                         "$ref": "#/components/schemas/PipelineAttributes"
+                      relationships:
+                        type: object
+                        properties:
+                          stages:
+                            "$ref": "#/components/schemas/JsonApiToManyRelationship"
+                        additionalProperties: false
+                        required:
+                        - stages
                       links:
                         type: object
                         required:
@@ -7201,7 +7555,7 @@ paths:
                   environment_id:
                     fixture:
                       resource: environment
-                      identity: one
+                      identity: default_environment
           legacy_stage:
             status: 200
             setup:
@@ -7294,13 +7648,13 @@ paths:
           active_task_refusal:
             status: 422
             setup:
-            - active_task_on_pipeline
+            - authenticated
             media_type: application/vnd.api+json
             path:
               id:
                 fixture:
                   resource: id
-                  identity: contract
+                  identity: release_pipeline
             body:
               pipeline:
                 stages:
@@ -7309,7 +7663,7 @@ paths:
           terminal_task_allowance:
             status: 200
             setup:
-            - terminal_task_on_pipeline
+            - authenticated
             media_type: application/vnd.api+json
             path:
               id:
@@ -7707,13 +8061,19 @@ paths:
                 type: object
                 required:
                 - data
+                - included
                 properties:
+                  included:
+                    type: array
+                    items:
+                      "$ref": "#/components/schemas/PipelineStageResource"
                   data:
                     type: object
                     required:
                     - type
                     - id
                     - attributes
+                    - relationships
                     - links
                     properties:
                       type:
@@ -7724,6 +8084,14 @@ paths:
                         type: string
                       attributes:
                         "$ref": "#/components/schemas/PipelineAttributes"
+                      relationships:
+                        type: object
+                        properties:
+                          stages:
+                            "$ref": "#/components/schemas/JsonApiToManyRelationship"
+                        additionalProperties: false
+                        required:
+                        - stages
                       links:
                         type: object
                         required:
@@ -7874,7 +8242,7 @@ paths:
                   environment_id:
                     fixture:
                       resource: environment
-                      identity: one
+                      identity: default_environment
           legacy_stage:
             status: 200
             setup:
@@ -7967,13 +8335,13 @@ paths:
           active_task_refusal:
             status: 422
             setup:
-            - active_task_on_pipeline
+            - authenticated
             media_type: application/vnd.api+json
             path:
               id:
                 fixture:
                   resource: id
-                  identity: contract
+                  identity: release_pipeline
             body:
               pipeline:
                 stages:
@@ -7982,7 +8350,7 @@ paths:
           terminal_task_allowance:
             status: 200
             setup:
-            - terminal_task_on_pipeline
+            - authenticated
             media_type: application/vnd.api+json
             path:
               id:
@@ -8020,13 +8388,19 @@ paths:
                 type: object
                 required:
                 - data
+                - included
                 properties:
+                  included:
+                    type: array
+                    items:
+                      "$ref": "#/components/schemas/PipelineStageResource"
                   data:
                     type: object
                     required:
                     - type
                     - id
                     - attributes
+                    - relationships
                     - links
                     properties:
                       type:
@@ -8037,6 +8411,14 @@ paths:
                         type: string
                       attributes:
                         "$ref": "#/components/schemas/PipelineAttributes"
+                      relationships:
+                        type: object
+                        properties:
+                          stages:
+                            "$ref": "#/components/schemas/JsonApiToManyRelationship"
+                        additionalProperties: false
+                        required:
+                        - stages
                       links:
                         type: object
                         required:
@@ -8074,7 +8456,7 @@ paths:
               pipeline_id:
                 fixture:
                   resource: pipeline
-                  identity: contract
+                  identity: release_pipeline
           success:
             status: 201
             setup:
@@ -8272,11 +8654,11 @@ paths:
               pipeline_id:
                 fixture:
                   resource: pipeline
-                  identity: custom_feature_one
+                  identity: account_default_pipeline
               id:
                 fixture:
                   resource: pipeline_stage
-                  identity: custom_planning
+                  identity: account_default_pipeline_active
             body:
               pipeline_stage:
                 gate: automated
@@ -8751,10 +9133,23 @@ paths:
             application/vnd.api+json:
               schema:
                 "$ref": "#/components/schemas/JsonApiErrors"
+        '400':
+          description: The project input is not an object
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
         '401':
           description: Missing or invalid bearer token; the response body is empty.
       x-loopcontrol-contract:
         scenarios:
+          scalar_project:
+            status: 400
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            body:
+              project: contract
           success:
             status: 201
             setup:
@@ -8893,9 +9288,9 @@ paths:
           arguments:
           - ":custom_profile_fields"
         - field: ''
-          operation: require
+          operation: expect
           arguments:
-          - ":project"
+          - 'project: [ :display_name, :name, :git_repo_url, :git_branch, :environment_id, :container_image, :platform_id, :failure_policy, :fallback_agent_id, :default_agent_id, :pipeline_id, mcp_config: {} ]'
   "/api/projects/{id}":
     get:
       operationId: get-api-project
@@ -9297,9 +9692,9 @@ paths:
             request_media_type: application/json
         input_constraints:
         - field: ''
-          operation: require
+          operation: expect
           arguments:
-          - ":project"
+          - 'project: [ :display_name, :git_branch, :environment_id, :container_image, :platform_id, :failure_policy, :fallback_agent_id, :default_agent_id, :pipeline_id, mcp_config: {} ]'
     put:
       operationId: put-api-project
       summary: Updates a project.
@@ -9584,9 +9979,9 @@ paths:
             request_media_type: application/json
         input_constraints:
         - field: ''
-          operation: require
+          operation: expect
           arguments:
-          - ":project"
+          - 'project: [ :display_name, :git_branch, :environment_id, :container_image, :platform_id, :failure_policy, :fallback_agent_id, :default_agent_id, :pipeline_id, mcp_config: {} ]'
   "/api/containers/{id}":
     patch:
       operationId: patch-api-container
@@ -10081,19 +10476,18 @@ paths:
             status: 200
             setup:
             - authenticated
-            - filtered_tasks
             query:
               project_id:
                 fixture:
                   resource: project
-                  identity: one
-              query: contract pagination & 雪
+                  identity: rails_project
+              query: Rework
               page:
                 number: '1'
                 size: '1'
             assertions:
             - pointer: "/meta/page_count"
-              equals: 3
+              equals: 4
           success:
             status: 200
             setup:
@@ -10223,26 +10617,26 @@ paths:
           search_order:
             status: 200
             setup:
-            - search_records
+            - authenticated
             query:
-              query: Contract selection
+              query: Merging Task
             assertions:
             - pointer: "/data/0/id"
               equals:
                 fixture:
                   resource: task
-                  identity: planning_task
+                  identity: merging_task
             - pointer: "/data/1/id"
               equals:
                 fixture:
                   resource: task
-                  identity: pending_task
+                  identity: merging_task_with_merged_pr
             - pointer: "/meta/total_count"
               equals: 2
           search_empty:
             status: 200
             setup:
-            - search_records
+            - authenticated
             query:
               query: No matching contract task
             assertions:
@@ -10253,12 +10647,12 @@ paths:
           project_filter:
             status: 200
             setup:
-            - search_records
+            - authenticated
             query:
               project_id:
                 fixture:
                   resource: project
-                  identity: three
+                  identity: other_tenant_project
             assertions:
             - pointer: "/data"
               equals: []
@@ -10571,9 +10965,9 @@ paths:
             request_media_type: application/json
         input_constraints:
         - field: ''
-          operation: require
+          operation: expect
           arguments:
-          - ":task"
+          - 'task: [ :project_id, :title, :description, :kind, depends_on: [] ]'
   "/api/tasks/{id}":
     get:
       operationId: get-api-task
@@ -10964,19 +11358,19 @@ paths:
               id:
                 fixture:
                   resource: task
-                  identity: planning_task
+                  identity: working_task
             body:
               task:
                 depends_on: []
         input_constraints:
         - field: ''
-          operation: require
+          operation: expect
           arguments:
-          - ":task"
+          - 'task: [ :implementation_criteria, :verification_criteria, :input_tokens, :output_tokens, :title, :description, depends_on: [] ]'
     put:
       operationId: put-api-task
       summary: Updates a task's title, description, implementation/verification criteria,
-        or token usage counts.
+        token usage counts, or dependency list.
       parameters:
       - name: id
         in: path
@@ -11004,6 +11398,14 @@ paths:
                       type: integer
                     output_tokens:
                       type: integer
+                    depends_on:
+                      type: array
+                      items:
+                        type: string
+                      description: >
+                        Complete list of dependency task IDs. Ids absent from the list are removed;
+                        new ids are added. An empty array removes all dependencies. Omit the key to
+                        leave dependencies unchanged.
                   additionalProperties: true
                   x-loopcontrol-open-reason: ignored_inputs
                   x-loopcontrol-input-policy: Unknown keys are discarded by Rails
@@ -11220,9 +11622,9 @@ paths:
             query: {}
         input_constraints:
         - field: ''
-          operation: require
+          operation: expect
           arguments:
-          - ":task"
+          - 'task: [ :implementation_criteria, :verification_criteria, :input_tokens, :output_tokens, :title, :description, depends_on: [] ]'
   "/api/tasks/{id}/logs":
     get:
       operationId: get-api-task-logs
@@ -12305,7 +12707,7 @@ paths:
             status: 200
             setup:
             - authenticated
-            media_type: application/json
+            media_type: application/x-asciicast
             path:
               task_id:
                 fixture:
@@ -12314,7 +12716,7 @@ paths:
               recording_id:
                 fixture:
                   resource: recording
-                  identity: asciinema_recent
+                  identity: asciinema_recording
           error_404:
             status: 404
             setup:
@@ -12334,7 +12736,7 @@ paths:
               recording_id:
                 fixture:
                   resource: recording
-                  identity: expired_one
+                  identity: deleted_recording
           error_422:
             status: 422
             setup:
@@ -12343,11 +12745,11 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: implementation_task
+                  identity: working_task
               recording_id:
                 fixture:
                   resource: recording
-                  identity: asciinema_recent
+                  identity: asciinema_recording
           unauthenticated:
             status: 401
             setup:
@@ -12365,9 +12767,8 @@ paths:
               recording_id:
                 fixture:
                   resource: recording
-                  identity: asciinema_recent
-            recording_media_type: application/json
-            response_body: "{}\n"
+                  identity: executable_mime_recording
+            response_body: "<script>window.syntheticRecording = true</script>"
           content_application_x_asciicast:
             status: 200
             setup:
@@ -12381,9 +12782,12 @@ paths:
               recording_id:
                 fixture:
                   resource: recording
-                  identity: asciinema_recent
-            recording_media_type: application/x-asciicast
-            response_body: "{}\n"
+                  identity: asciinema_recording
+            response_body: |
+              {"version":2,"width":80,"height":24,"timestamp":1700000000}
+              [0.01,"o","\u001b[32mSynthetic 雪\u001b[0m\r\n"]
+              [0.5,"o","second event\r\n"]
+              [1.2,"o","final event\r\n"]
           content_application_octet_stream:
             status: 200
             setup:
@@ -12397,7 +12801,7 @@ paths:
               recording_id:
                 fixture:
                   resource: recording
-                  identity: asciinema_recent
+                  identity: asciinema_recording
             recording_media_type: application/octet-stream
             response_body: "{}\n"
           content_text_plain:
@@ -12413,31 +12817,29 @@ paths:
               recording_id:
                 fixture:
                   resource: recording
-                  identity: asciinema_recent
+                  identity: asciinema_recording
             recording_media_type: text/plain
             response_body: "{}\n"
           transcript_content:
             status: 200
             setup:
-            - transcript_content
+            - authenticated
             media_type: application/x-ndjson
             path:
               task_id:
                 fixture:
                   resource: task
-                  identity: implementation_task
+                  identity: working_task_with_stopped_executor
               recording_id:
                 fixture:
                   resource: recording
-                  identity: transcript_one
-            response_body: |
-              {}
-              {}
+                  identity: crlf_transcript_recording
+            response_body: "{\"sentinel\":\"雪\"}\r\n{\"last\":true}"
           authentication_apiKeyAuth:
             status: 200
             setup:
             - authenticated
-            media_type: application/json
+            media_type: application/x-asciicast
             path:
               task_id:
                 fixture:
@@ -12446,13 +12848,13 @@ paths:
               recording_id:
                 fixture:
                   resource: recording
-                  identity: asciinema_recent
+                  identity: asciinema_recording
             authentication: apiKeyAuth
           authentication_browserSession:
             status: 200
             setup:
             - authenticated
-            media_type: application/json
+            media_type: application/x-asciicast
             path:
               task_id:
                 fixture:
@@ -12461,7 +12863,7 @@ paths:
               recording_id:
                 fixture:
                   resource: recording
-                  identity: asciinema_recent
+                  identity: asciinema_recording
             authentication: browserSession
         input_constraints: []
   "/api/tasks/{task_id}/images/{id}":
@@ -12525,7 +12927,12 @@ paths:
           foreign_account:
             status: 404
             setup:
-            - foreign_task
+            - authenticated
+            path:
+              task_id:
+                fixture:
+                  resource: task
+                  identity: other_tenant_task
             body: {}
           authentication_apiKeyAuth:
             status: 200
@@ -12919,10 +13326,11 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: planning_task
+                  identity: working_task
             body:
               result: passed
               summary: Contract completion
+              noop_reason: Contract completion needs no code change
               agent_session_id:
                 fixture:
                   resource: agent_session
@@ -12952,7 +13360,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: planning_task
+                  identity: working_task_with_stopped_executor
             body:
               agent_session_id:
                 fixture:
@@ -12969,7 +13377,12 @@ paths:
           foreign_account:
             status: 404
             setup:
-            - foreign_task
+            - authenticated
+            path:
+              task_id:
+                fixture:
+                  resource: task
+                  identity: other_tenant_task
             body: {}
           missing_agent_session_id_json:
             status: 422
@@ -12980,7 +13393,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: planning_task
+                  identity: working_task
             body:
               result: passed
               summary: Contract completion
@@ -12999,10 +13412,11 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: planning_task
+                  identity: working_task
             body:
               result: passed
               summary: Contract completion
+              noop_reason: Contract completion needs no code change
               agent_session_id:
                 fixture:
                   resource: agent_session
@@ -13017,10 +13431,11 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: planning_task
+                  identity: working_task
             body:
               result: passed
               summary: Contract completion
+              noop_reason: Contract completion needs no code change
               agent_session_id:
                 fixture:
                   resource: agent_session
@@ -13035,10 +13450,11 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: planning_task
+                  identity: working_task
             body:
               result: passed
               summary: Contract completion
+              noop_reason: Contract completion needs no code change
               agent_session_id:
                 fixture:
                   resource: agent_session
@@ -13053,7 +13469,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: planning_task
+                  identity: working_task
             body:
               result: blocked
               summary: Contract completion
@@ -13071,7 +13487,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: planning_task
+                  identity: working_task
             body:
               result: blocked
               summary: Contract completion
@@ -13083,7 +13499,7 @@ paths:
               credential_set_id:
                 fixture:
                   resource: credential_set
-                  identity: openai_one
+                  identity: openai_credential
           missing_conditional_result:
             status: 201
             setup:
@@ -13093,10 +13509,11 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: planning_task
+                  identity: working_task
             body:
               result: passed
               summary: Contract completion
+              noop_reason: Contract completion needs no code change
               agent_session_id:
                 fixture:
                   resource: agent_session
@@ -13113,7 +13530,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: planning_task
+                  identity: working_task
             body:
               result: blocked
               summary: Contract completion
@@ -13134,7 +13551,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: planning_task
+                  identity: working_task
             body:
               result: blocked
               summary: Contract completion
@@ -13146,7 +13563,7 @@ paths:
               credential_set_id:
                 fixture:
                   resource: credential_set
-                  identity: openai_one
+                  identity: openai_credential
             omit_body_field: credential_set_id
             request_media_type: application/json
             response_media_type: application/vnd.api+json
@@ -13245,7 +13662,12 @@ paths:
           foreign_account:
             status: 404
             setup:
-            - foreign_task
+            - authenticated
+            path:
+              task_id:
+                fixture:
+                  resource: task
+                  identity: other_tenant_task
             body: {}
           unknown_input:
             status: 200
@@ -13355,22 +13777,22 @@ paths:
           success:
             status: 200
             setup:
-            - task_pr
+            - authenticated
             media_type: application/vnd.api+json
             path:
               task_id:
                 fixture:
                   resource: task
-                  identity: planning_task
+                  identity: working_task_with_pr
           error_409:
             status: 409
             setup:
-            - task_pr_merged
+            - authenticated
             path:
               task_id:
                 fixture:
                   resource: task
-                  identity: planning_task
+                  identity: merging_task_with_merged_pr
           error_422:
             status: 422
             setup:
@@ -13387,29 +13809,34 @@ paths:
           foreign_account:
             status: 404
             setup:
-            - foreign_task
+            - authenticated
+            path:
+              task_id:
+                fixture:
+                  resource: task
+                  identity: other_tenant_task
             body: {}
           authentication_apiKeyAuth:
             status: 200
             setup:
-            - task_pr
+            - authenticated
             media_type: application/vnd.api+json
             path:
               task_id:
                 fixture:
                   resource: task
-                  identity: planning_task
+                  identity: working_task_with_pr
             authentication: apiKeyAuth
           authentication_browserSession:
             status: 200
             setup:
-            - task_pr
+            - authenticated
             media_type: application/vnd.api+json
             path:
               task_id:
                 fixture:
                   resource: task
-                  identity: planning_task
+                  identity: working_task_with_pr
             authentication: browserSession
         input_constraints: []
   "/api/tasks/{task_id}/prompt_sync":
@@ -13517,7 +13944,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: implementation_task
+                  identity: working_task
             body:
               local_hash: contract-local-hash
           error_409:
@@ -13528,7 +13955,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: implementation_task
+                  identity: working_task
             body:
               local_hash: contract-local-hash
               prompt_revision: contract-stale-revision
@@ -13552,7 +13979,12 @@ paths:
           foreign_account:
             status: 404
             setup:
-            - foreign_task
+            - authenticated
+            path:
+              task_id:
+                fixture:
+                  resource: task
+                  identity: other_tenant_task
             body: {}
           unknown_input:
             status: 200
@@ -13563,7 +13995,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: implementation_task
+                  identity: working_task
             body:
               local_hash: contract-local-hash
               contract_ignored_input: discarded
@@ -13576,7 +14008,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: implementation_task
+                  identity: working_task
             body:
               local_hash: contract-local-hash
             authentication: apiKeyAuth
@@ -13589,7 +14021,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: implementation_task
+                  identity: working_task
             body:
               local_hash: contract-local-hash
             authentication: browserSession
@@ -13688,7 +14120,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
               id:
                 fixture:
                   resource: comment
@@ -13707,7 +14139,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
               id:
                 fixture:
                   resource: comment
@@ -13722,7 +14154,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
               id:
                 fixture:
                   resource: comment
@@ -13744,12 +14176,12 @@ paths:
           foreign_account:
             status: 404
             setup:
-            - foreign_task
+            - authenticated
             path:
               task_id:
                 fixture:
                   resource: task
-                  identity: pending_task
+                  identity: other_tenant_task
               id:
                 fixture:
                   resource: comment
@@ -13770,10 +14202,14 @@ paths:
             - authenticated
             media_type: application/vnd.api+json
             path:
+              id:
+                fixture:
+                  resource: comment
+                  identity: user_comment
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
               id: '999999999'
           mismatched_comment:
             status: 404
@@ -13784,11 +14220,11 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: pending_task
               id:
                 fixture:
                   resource: comment
-                  identity: comment_with_mention
+                  identity: mention_comment
         input_constraints: []
   "/api/tasks/{task_id}/comments":
     get:
@@ -13906,13 +14342,13 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             query: {}
             assertions:
             - pointer: "/data/0/type"
               equals: comments
             - pointer: "/meta/total_count"
-              equals: 2
+              equals: 7
           error_400:
             status: 400
             setup:
@@ -13922,7 +14358,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             query:
               page: invalid
           unauthenticated:
@@ -13941,7 +14377,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             query: {}
             assertions:
             - pointer: "/meta/current_page"
@@ -13957,7 +14393,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             query:
               page:
                 number: '0'
@@ -13977,7 +14413,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             query:
               page:
                 number: '1'
@@ -13997,7 +14433,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             query:
               page:
                 number: '999'
@@ -14018,7 +14454,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             query:
               page: '1'
             assertions:
@@ -14033,7 +14469,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             query:
               page:
                 number: abc
@@ -14049,7 +14485,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             query:
               page:
                 size: "-1"
@@ -14065,7 +14501,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             query:
               page:
                 size:
@@ -14076,7 +14512,12 @@ paths:
           foreign_account:
             status: 404
             setup:
-            - foreign_task
+            - authenticated
+            path:
+              task_id:
+                fixture:
+                  resource: task
+                  identity: other_tenant_task
             body: {}
             query:
               page[number]: 1
@@ -14090,7 +14531,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             query: {}
             authentication: apiKeyAuth
           authentication_browserSession:
@@ -14102,20 +14543,19 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             query: {}
             authentication: browserSession
           pagination_comments_1:
             status: 200
             setup:
             - authenticated
-            - comment_pages
             media_type: application/vnd.api+json
             path:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             query:
               page:
                 number: '1'
@@ -14125,13 +14565,12 @@ paths:
             status: 200
             setup:
             - authenticated
-            - comment_pages
             media_type: application/vnd.api+json
             path:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             query:
               page:
                 number: '2'
@@ -14141,13 +14580,12 @@ paths:
             status: 200
             setup:
             - authenticated
-            - comment_pages
             media_type: application/vnd.api+json
             path:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             query:
               page:
                 number: '3'
@@ -14162,7 +14600,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: implementation_task
+                  identity: working_task
             query: {}
             assertions:
             - pointer: "/data"
@@ -14299,7 +14737,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             body:
               comment:
                 body: contract-body
@@ -14312,7 +14750,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             body:
               comment:
                 body: ''
@@ -14326,7 +14764,12 @@ paths:
           foreign_account:
             status: 404
             setup:
-            - foreign_task
+            - authenticated
+            path:
+              task_id:
+                fixture:
+                  resource: task
+                  identity: other_tenant_task
             body: {}
           missing_comment_json:
             status: 400
@@ -14337,7 +14780,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             omit_body_field: comment
             request_media_type: application/json
             body:
@@ -14352,7 +14795,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             body:
               comment:
                 body: contract-body
@@ -14366,7 +14809,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             body:
               comment:
                 body: contract-body
@@ -14380,7 +14823,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             body:
               comment:
                 body: contract-body
@@ -14394,7 +14837,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             body:
               comment:
                 body: contract-body
@@ -14412,7 +14855,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             body:
               comment:
                 body: contract-body
@@ -14427,7 +14870,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             body:
               comment:
                 body: contract-body
@@ -14435,9 +14878,9 @@ paths:
               output_tokens: 45
         input_constraints:
         - field: ''
-          operation: require
+          operation: expect
           arguments:
-          - ":comment"
+          - 'comment: [ :body ]'
   "/api/tasks/{task_id}/todos":
     get:
       operationId: get-api-task-todos
@@ -14579,7 +15022,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: pending_task
+                  identity: working_task_with_pr
           success:
             status: 200
             setup:
@@ -14589,7 +15032,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             query: {}
           error_400:
             status: 400
@@ -14600,7 +15043,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             query:
               page: invalid
           unauthenticated:
@@ -14630,7 +15073,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             query: {}
             assertions:
             - pointer: "/meta/current_page"
@@ -14646,7 +15089,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             query:
               page:
                 number: '0'
@@ -14666,7 +15109,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             query:
               page:
                 number: '1'
@@ -14686,7 +15129,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             query:
               page:
                 number: '999'
@@ -14707,7 +15150,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             query:
               page: '1'
             assertions:
@@ -14722,7 +15165,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             query:
               page:
                 number: abc
@@ -14738,7 +15181,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             query:
               page:
                 size: "-1"
@@ -14754,7 +15197,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             query:
               page:
                 size:
@@ -14765,7 +15208,12 @@ paths:
           foreign_account:
             status: 404
             setup:
-            - foreign_task
+            - authenticated
+            path:
+              task_id:
+                fixture:
+                  resource: task
+                  identity: other_tenant_task
             body: {}
             query:
               stage_name: contract-stage_name
@@ -14780,7 +15228,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             query: {}
             authentication: apiKeyAuth
           authentication_browserSession:
@@ -14792,7 +15240,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             query: {}
             authentication: browserSession
           stage_filter:
@@ -14804,7 +15252,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             query:
               stage_name: verifying
             assertions:
@@ -14812,7 +15260,7 @@ paths:
               equals:
                 fixture:
                   resource: todo
-                  identity: first_verification_todo
+                  identity: rework_stage_todo
             - pointer: "/meta/total_count"
               equals: 1
         input_constraints: []
@@ -14969,7 +15417,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: implementation_task
+                  identity: working_task
             body:
               todo:
                 content: contract-content
@@ -14984,7 +15432,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             body: {}
           error_422:
             status: 422
@@ -14995,7 +15443,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
             body:
               todo:
                 content: ''
@@ -15020,7 +15468,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: implementation_task
+                  identity: working_task
             body:
               todos:
               - content: bulk
@@ -15030,7 +15478,12 @@ paths:
           foreign_account:
             status: 404
             setup:
-            - foreign_task
+            - authenticated
+            path:
+              task_id:
+                fixture:
+                  resource: task
+                  identity: other_tenant_task
             body: {}
           unknown_input:
             status: 201
@@ -15041,7 +15494,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: implementation_task
+                  identity: working_task
             body:
               todo:
                 content: contract-content
@@ -15058,7 +15511,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: implementation_task
+                  identity: working_task
             body:
               todo:
                 content: contract-content
@@ -15075,7 +15528,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: implementation_task
+                  identity: working_task
             body:
               todo:
                 content: contract-content
@@ -15092,7 +15545,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: implementation_task
+                  identity: working_task
             body:
               todo:
                 content: contract-content
@@ -15223,7 +15676,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
               id:
                 fixture:
                   resource: id
@@ -15239,7 +15692,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
               id:
                 fixture:
                   resource: id
@@ -15255,7 +15708,12 @@ paths:
           foreign_account:
             status: 404
             setup:
-            - foreign_task
+            - authenticated
+            path:
+              task_id:
+                fixture:
+                  resource: task
+                  identity: other_tenant_task
             body: {}
           unknown_input:
             status: 200
@@ -15266,7 +15724,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
               id:
                 fixture:
                   resource: id
@@ -15283,7 +15741,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
               id:
                 fixture:
                   resource: id
@@ -15300,7 +15758,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
               id:
                 fixture:
                   resource: id
@@ -15429,7 +15887,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
               id:
                 fixture:
                   resource: id
@@ -15445,7 +15903,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
               id:
                 fixture:
                   resource: id
@@ -15461,7 +15919,12 @@ paths:
           foreign_account:
             status: 404
             setup:
-            - foreign_task
+            - authenticated
+            path:
+              task_id:
+                fixture:
+                  resource: task
+                  identity: other_tenant_task
             body: {}
           unknown_input:
             status: 200
@@ -15472,7 +15935,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
               id:
                 fixture:
                   resource: id
@@ -15489,7 +15952,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
               id:
                 fixture:
                   resource: id
@@ -15506,7 +15969,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: contract
+                  identity: working_task_with_pr
               id:
                 fixture:
                   resource: id
@@ -15795,7 +16258,12 @@ paths:
           foreign_account:
             status: 404
             setup:
-            - foreign_task
+            - authenticated
+            path:
+              task_id:
+                fixture:
+                  resource: task
+                  identity: other_tenant_task
             body: {}
             query:
               page[number]: 1
@@ -16105,7 +16573,12 @@ paths:
           foreign_account:
             status: 404
             setup:
-            - foreign_task
+            - authenticated
+            path:
+              task_id:
+                fixture:
+                  resource: task
+                  identity: other_tenant_task
             body: {}
             query:
               page[number]: 1
@@ -16415,7 +16888,12 @@ paths:
           foreign_account:
             status: 404
             setup:
-            - foreign_task
+            - authenticated
+            path:
+              task_id:
+                fixture:
+                  resource: task
+                  identity: other_tenant_task
             body: {}
             query:
               page[number]: 1
@@ -16498,7 +16976,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: implementation_task
+                  identity: working_task
           error_422:
             status: 422
             setup:
@@ -16515,7 +16993,12 @@ paths:
           foreign_account:
             status: 404
             setup:
-            - foreign_task
+            - authenticated
+            path:
+              task_id:
+                fixture:
+                  resource: task
+                  identity: other_tenant_task
             body: {}
           authentication_apiKeyAuth:
             status: 200
@@ -16526,7 +17009,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: implementation_task
+                  identity: working_task
             authentication: apiKeyAuth
           authentication_browserSession:
             status: 200
@@ -16537,7 +17020,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: implementation_task
+                  identity: working_task
             authentication: browserSession
         input_constraints: []
   "/api/tasks/{task_id}/restart":
@@ -16599,7 +17082,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: implementation_task
+                  identity: working_task
           error_422:
             status: 422
             setup:
@@ -16616,7 +17099,12 @@ paths:
           foreign_account:
             status: 404
             setup:
-            - foreign_task
+            - authenticated
+            path:
+              task_id:
+                fixture:
+                  resource: task
+                  identity: other_tenant_task
             body: {}
           authentication_apiKeyAuth:
             status: 200
@@ -16627,7 +17115,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: implementation_task
+                  identity: working_task
             authentication: apiKeyAuth
           authentication_browserSession:
             status: 200
@@ -16638,7 +17126,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: implementation_task
+                  identity: working_task
             authentication: browserSession
         input_constraints: []
   "/api/tasks/{task_id}/unblock":
@@ -16693,13 +17181,13 @@ paths:
           success:
             status: 200
             setup:
-            - task_unblockable
+            - authenticated
             media_type: application/vnd.api+json
             path:
               task_id:
                 fixture:
                   resource: task
-                  identity: blocked_task
+                  identity: blocked_task_with_pr
           error_422:
             status: 422
             setup:
@@ -16716,29 +17204,34 @@ paths:
           foreign_account:
             status: 404
             setup:
-            - foreign_task
+            - authenticated
+            path:
+              task_id:
+                fixture:
+                  resource: task
+                  identity: other_tenant_task
             body: {}
           authentication_apiKeyAuth:
             status: 200
             setup:
-            - task_unblockable
+            - authenticated
             media_type: application/vnd.api+json
             path:
               task_id:
                 fixture:
                   resource: task
-                  identity: blocked_task
+                  identity: blocked_task_with_pr
             authentication: apiKeyAuth
           authentication_browserSession:
             status: 200
             setup:
-            - task_unblockable
+            - authenticated
             media_type: application/vnd.api+json
             path:
               task_id:
                 fixture:
                   resource: task
-                  identity: blocked_task
+                  identity: blocked_task_with_pr
             authentication: browserSession
         input_constraints: []
   "/api/planning_sessions/{planning_session_id}/drafts":
@@ -16789,7 +17282,12 @@ paths:
           foreign_account:
             status: 404
             setup:
-            - foreign_planning_session
+            - authenticated
+            path:
+              planning_session_id:
+                fixture:
+                  resource: planning_session
+                  identity: other_tenant_planning_session
             body: {}
           authentication_apiKeyAuth:
             status: 200
@@ -16895,7 +17393,12 @@ paths:
           foreign_account:
             status: 404
             setup:
-            - foreign_planning_session
+            - authenticated
+            path:
+              planning_session_id:
+                fixture:
+                  resource: planning_session
+                  identity: other_tenant_planning_session
             body: {}
           missing_drafts_json:
             status: 400
@@ -17032,7 +17535,12 @@ paths:
           foreign_account:
             status: 404
             setup:
-            - foreign_planning_session
+            - authenticated
+            path:
+              planning_session_id:
+                fixture:
+                  resource: planning_session
+                  identity: other_tenant_planning_session
             body: {}
           authentication_apiKeyAuth:
             status: 200
@@ -17064,590 +17572,6 @@ paths:
                   resource: id
                   identity: contract
             authentication: browserSession
-        input_constraints: []
-  "/api/projects/{project_slug}/flow_registry_flows":
-    get:
-      operationId: get-api-project-flow-registry-flows
-      summary: Lists active flow registry flows for a project.
-      parameters:
-      - name: project_slug
-        in: path
-        required: true
-        schema:
-          type: string
-        description: Project name/slug
-      - name: page[number]
-        in: query
-        schema:
-          type: integer
-          default: 1
-      - name: page[size]
-        in: query
-        schema:
-          type: integer
-          default: 20
-          minimum: 1
-          maximum: 100
-      responses:
-        '200':
-          description: Paginated list of flow registry flows
-          content:
-            application/vnd.api+json:
-              schema:
-                type: object
-                required:
-                - data
-                - links
-                - meta
-                properties:
-                  data:
-                    type: array
-                    items:
-                      type: object
-                      required:
-                      - type
-                      - id
-                      - attributes
-                      - relationships
-                      - links
-                      properties:
-                        type:
-                          type: string
-                          enum:
-                          - flow_registry_flows
-                        id:
-                          type: string
-                        attributes:
-                          "$ref": "#/components/schemas/FlowRegistryFlowAttributes"
-                        relationships:
-                          type: object
-                          additionalProperties: false
-                          required:
-                          - latest_run
-                          properties:
-                            latest_run:
-                              type: object
-                              additionalProperties: false
-                              required:
-                              - data
-                              properties:
-                                data:
-                                  type: object
-                                  nullable: true
-                                  required:
-                                  - id
-                                  - type
-                                  additionalProperties: false
-                                  properties:
-                                    id:
-                                      type: string
-                                    type:
-                                      type: string
-                                      enum:
-                                      - flow_registry_runs
-                        links:
-                          type: object
-                          required:
-                          - self
-                          properties:
-                            self:
-                              type: string
-                              nullable: true
-                          additionalProperties: false
-                      additionalProperties: false
-                  links:
-                    "$ref": "#/components/schemas/JsonApiLinks"
-                  meta:
-                    "$ref": "#/components/schemas/JsonApiPaginationMeta"
-                additionalProperties: false
-        '400':
-          description: Invalid pagination parameter
-          content:
-            application/vnd.api+json:
-              schema:
-                "$ref": "#/components/schemas/JsonApiErrors"
-        '401':
-          description: Missing or invalid bearer token; the response body is empty.
-        '404':
-          description: Resource not found in the authenticated account.
-          content:
-            application/vnd.api+json:
-              schema:
-                type: object
-                additionalProperties: false
-                required:
-                - errors
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      "$ref": "#/components/schemas/JsonApiModelError"
-      x-loopcontrol-contract:
-        scenarios:
-          success:
-            status: 200
-            setup:
-            - authenticated
-            media_type: application/vnd.api+json
-            path:
-              project_slug:
-                fixture:
-                  resource: project_slug
-                  identity: contract
-            query: {}
-          error_400:
-            status: 400
-            setup:
-            - documented_error
-            media_type: application/vnd.api+json
-            path:
-              project_slug:
-                fixture:
-                  resource: project_slug
-                  identity: contract
-            query:
-              page: invalid
-          unauthenticated:
-            status: 401
-            setup:
-            - unauthenticated
-            query:
-              page[number]: 1
-              page[size]: 1
-          pagination_0:
-            status: 200
-            setup:
-            - authenticated
-            media_type: application/vnd.api+json
-            path:
-              project_slug:
-                fixture:
-                  resource: project_slug
-                  identity: contract
-            query: {}
-            assertions:
-            - pointer: "/meta/current_page"
-              equals: 1
-            - pointer: "/meta/per_page"
-              equals: 20
-          pagination_1:
-            status: 200
-            setup:
-            - authenticated
-            media_type: application/vnd.api+json
-            path:
-              project_slug:
-                fixture:
-                  resource: project_slug
-                  identity: contract
-            query:
-              page:
-                number: '0'
-                size: '0'
-            assertions:
-            - pointer: "/meta/current_page"
-              equals: 1
-            - pointer: "/meta/per_page"
-              equals: 1
-            invalid_request: Accepted pagination normalization boundary
-          pagination_2:
-            status: 200
-            setup:
-            - authenticated
-            media_type: application/vnd.api+json
-            path:
-              project_slug:
-                fixture:
-                  resource: project_slug
-                  identity: contract
-            query:
-              page:
-                number: '1'
-                size: '101'
-            assertions:
-            - pointer: "/meta/current_page"
-              equals: 1
-            - pointer: "/meta/per_page"
-              equals: 100
-            invalid_request: Accepted pagination normalization boundary
-          pagination_3:
-            status: 200
-            setup:
-            - authenticated
-            media_type: application/vnd.api+json
-            path:
-              project_slug:
-                fixture:
-                  resource: project_slug
-                  identity: contract
-            query:
-              page:
-                number: '999'
-                size: '20'
-            assertions:
-            - pointer: "/meta/current_page"
-              equals: 999
-            - pointer: "/meta/per_page"
-              equals: 20
-            - pointer: "/data"
-              equals: []
-          pagination_invalid_0:
-            status: 400
-            setup:
-            - authenticated
-            media_type: application/vnd.api+json
-            path:
-              project_slug:
-                fixture:
-                  resource: project_slug
-                  identity: contract
-            query:
-              page: '1'
-            assertions:
-            - pointer: "/errors/0/status"
-              equals: '400'
-          pagination_invalid_1:
-            status: 400
-            setup:
-            - authenticated
-            media_type: application/vnd.api+json
-            path:
-              project_slug:
-                fixture:
-                  resource: project_slug
-                  identity: contract
-            query:
-              page:
-                number: abc
-            assertions:
-            - pointer: "/errors/0/status"
-              equals: '400'
-          pagination_invalid_2:
-            status: 400
-            setup:
-            - authenticated
-            media_type: application/vnd.api+json
-            path:
-              project_slug:
-                fixture:
-                  resource: project_slug
-                  identity: contract
-            query:
-              page:
-                size: "-1"
-            assertions:
-            - pointer: "/errors/0/status"
-              equals: '400'
-          pagination_invalid_3:
-            status: 400
-            setup:
-            - authenticated
-            media_type: application/vnd.api+json
-            path:
-              project_slug:
-                fixture:
-                  resource: project_slug
-                  identity: contract
-            query:
-              page:
-                size:
-                  nested: '1'
-            assertions:
-            - pointer: "/errors/0/status"
-              equals: '400'
-          authentication_apiKeyAuth:
-            status: 200
-            setup:
-            - authenticated
-            media_type: application/vnd.api+json
-            path:
-              project_slug:
-                fixture:
-                  resource: project_slug
-                  identity: contract
-            query: {}
-            authentication: apiKeyAuth
-          authentication_browserSession:
-            status: 200
-            setup:
-            - authenticated
-            media_type: application/vnd.api+json
-            path:
-              project_slug:
-                fixture:
-                  resource: project_slug
-                  identity: contract
-            query: {}
-            authentication: browserSession
-          missing_resource:
-            status: 404
-            setup:
-            - authenticated
-            path:
-              project_slug: '999999999'
-            query: {}
-        input_constraints: []
-  "/api/flow_registry_flows/{flow_registry_flow_id}/recordings":
-    post:
-      operationId: post-api-flow-registry-flow-recordings
-      summary: Submits an rrweb session recording for a flow.
-      parameters:
-      - name: flow_registry_flow_id
-        in: path
-        required: true
-        schema:
-          type: string
-      requestBody:
-        content:
-          application/json:
-            schema:
-              type: object
-              properties:
-                rrweb_events:
-                  description: An encoded JSON string or a native JSON event array.
-                    Native arrays are serialized before attachment.
-                  oneOf:
-                  - type: string
-                  - type: array
-                    items:
-                      type: object
-                      additionalProperties: true
-                      x-loopcontrol-open-reason: external_payload
-                commit_sha:
-                  type: string
-                recorded_at:
-                  type: string
-              additionalProperties: true
-              x-loopcontrol-open-reason: ignored_inputs
-              x-loopcontrol-input-policy: Unknown top-level input keys are tolerated
-                and discarded. Listed properties define the consumed input vocabulary,
-                enforced independently by source and runtime observation.
-      responses:
-        '201':
-          description: Created recording. Not JSON:API format.
-          content:
-            application/vnd.api+json:
-              schema:
-                type: object
-                properties:
-                  id:
-                    type: integer
-                  flow_registry_flow_id:
-                    type: integer
-                  recording_type:
-                    type: string
-                  commit_sha:
-                    type: string
-                    nullable: true
-                  status:
-                    type: string
-                  recorded_at:
-                    type: string
-                    format: date-time
-                  extracted_steps_count:
-                    type: integer
-                  created_at:
-                    type: string
-                    format: date-time
-                additionalProperties: false
-                required:
-                - id
-                - flow_registry_flow_id
-                - recording_type
-                - commit_sha
-                - status
-                - recorded_at
-                - extracted_steps_count
-                - created_at
-        '401':
-          description: Missing or invalid bearer token; the response body is empty.
-        '404':
-          description: Resource not found in the authenticated account.
-          content:
-            application/vnd.api+json:
-              schema:
-                type: object
-                additionalProperties: false
-                required:
-                - errors
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      "$ref": "#/components/schemas/JsonApiModelError"
-      x-loopcontrol-contract:
-        scenarios:
-          success:
-            status: 201
-            setup:
-            - authenticated
-            media_type: application/vnd.api+json
-            path:
-              flow_registry_flow_id:
-                fixture:
-                  resource: flow_registry_flow
-                  identity: contract
-            body:
-              rrweb_events: "[]"
-          unauthenticated:
-            status: 401
-            setup:
-            - unauthenticated
-            body:
-              rrweb_events: "[]"
-          unknown_input:
-            status: 201
-            setup:
-            - authenticated
-            media_type: application/vnd.api+json
-            path:
-              flow_registry_flow_id:
-                fixture:
-                  resource: flow_registry_flow
-                  identity: contract
-            body:
-              rrweb_events: "[]"
-              contract_ignored_input: discarded
-          authentication_apiKeyAuth:
-            status: 201
-            setup:
-            - authenticated
-            media_type: application/vnd.api+json
-            path:
-              flow_registry_flow_id:
-                fixture:
-                  resource: flow_registry_flow
-                  identity: contract
-            body:
-              rrweb_events: "[]"
-            authentication: apiKeyAuth
-          authentication_browserSession:
-            status: 201
-            setup:
-            - authenticated
-            media_type: application/vnd.api+json
-            path:
-              flow_registry_flow_id:
-                fixture:
-                  resource: flow_registry_flow
-                  identity: contract
-            body:
-              rrweb_events: "[]"
-            authentication: browserSession
-          missing_resource:
-            status: 404
-            setup:
-            - authenticated
-            path:
-              flow_registry_flow_id: '999999999'
-            query: {}
-          native_event_array:
-            status: 201
-            setup:
-            - authenticated
-            media_type: application/vnd.api+json
-            path:
-              flow_registry_flow_id:
-                fixture:
-                  resource: flow_registry_flow
-                  identity: contract
-            body:
-              rrweb_events:
-              - type: 3
-                data:
-                  source: 2
-                  selector: button
-        input_constraints: []
-  "/api/flow_registry_flows/{flow_registry_flow_id}/runs":
-    post:
-      operationId: post-api-flow-registry-flow-runs
-      summary: Triggers a flow replay run for verification.
-      parameters:
-      - name: flow_registry_flow_id
-        in: path
-        required: true
-        schema:
-          type: string
-      responses:
-        '201':
-          description: Created run. Not JSON:API format.
-          content:
-            application/vnd.api+json:
-              schema:
-                type: object
-                properties:
-                  id:
-                    type: integer
-                  status:
-                    type: string
-                  trigger:
-                    type: string
-                additionalProperties: false
-                required:
-                - id
-                - status
-                - trigger
-        '401':
-          description: Missing or invalid bearer token; the response body is empty.
-        '404':
-          description: Resource not found in the authenticated account.
-          content:
-            application/vnd.api+json:
-              schema:
-                type: object
-                additionalProperties: false
-                required:
-                - errors
-                properties:
-                  errors:
-                    type: array
-                    items:
-                      "$ref": "#/components/schemas/JsonApiModelError"
-      x-loopcontrol-contract:
-        scenarios:
-          success:
-            status: 201
-            setup:
-            - authenticated
-            media_type: application/vnd.api+json
-            path:
-              flow_registry_flow_id:
-                fixture:
-                  resource: flow_registry_flow
-                  identity: contract
-          unauthenticated:
-            status: 401
-            setup:
-            - unauthenticated
-          authentication_apiKeyAuth:
-            status: 201
-            setup:
-            - authenticated
-            media_type: application/vnd.api+json
-            path:
-              flow_registry_flow_id:
-                fixture:
-                  resource: flow_registry_flow
-                  identity: contract
-            authentication: apiKeyAuth
-          authentication_browserSession:
-            status: 201
-            setup:
-            - authenticated
-            media_type: application/vnd.api+json
-            path:
-              flow_registry_flow_id:
-                fixture:
-                  resource: flow_registry_flow
-                  identity: contract
-            authentication: browserSession
-          missing_resource:
-            status: 404
-            setup:
-            - authenticated
-            path:
-              flow_registry_flow_id: '999999999'
-            query: {}
         input_constraints: []
   "/api/github/organizations":
     get:
@@ -17719,6 +17643,8 @@ paths:
             status: 503
             setup:
             - documented_error
+            headers:
+              Authorization: Bearer test_token_two
           unauthenticated:
             status: 401
             setup:
@@ -17727,6 +17653,8 @@ paths:
             status: 503
             setup:
             - documented_error
+            headers:
+              Authorization: Bearer test_token_two
           provider_401:
             status: 401
             setup:
@@ -17882,6 +17810,8 @@ paths:
               type: contract-type
               page: 1
               per_page: 1
+            headers:
+              Authorization: Bearer test_token_two
           provider_401:
             status: 401
             setup:
@@ -18267,6 +18197,8 @@ paths:
               type: contract-type
               page: 1
               per_page: 1
+            headers:
+              Authorization: Bearer test_token_two
           provider_401:
             status: 401
             setup:
@@ -18592,6 +18524,8 @@ paths:
             - documented_error
             body:
               name: contract-name
+            headers:
+              Authorization: Bearer test_token_two
           provider_401:
             status: 401
             setup:
@@ -18759,6 +18693,8 @@ paths:
             query:
               page: 1
               per_page: 1
+            headers:
+              Authorization: Bearer test_token_two
           provider_401:
             status: 401
             setup:
@@ -19335,7 +19271,7 @@ paths:
                 pipeline_id:
                   fixture:
                     resource: pipeline
-                    identity: contract
+                    identity: release_pipeline
           success:
             status: 200
             setup:
@@ -19597,7 +19533,7 @@ paths:
                 pipeline_id:
                   fixture:
                     resource: pipeline
-                    identity: contract
+                    identity: release_pipeline
           success:
             status: 200
             setup:
@@ -20626,7 +20562,7 @@ paths:
   "/api/environments":
     get:
       operationId: get-api-environments
-      summary: Lists environments accessible to the current user.
+      summary: Lists unarchived environments accessible to the current user.
       parameters:
       - name: page[number]
         in: query
@@ -20925,13 +20861,13 @@ paths:
                 name: Contract Environment
         input_constraints:
         - field: ''
-          operation: require
+          operation: expect
           arguments:
-          - ":environment"
+          - 'environment: [ :name, :description, :shared, :default ]'
   "/api/environments/{id}":
     get:
       operationId: get-api-environment
-      summary: Returns a single environment.
+      summary: Returns a single unarchived environment; an archived environment responds 404.
       parameters:
       - name: id
         in: path
@@ -20990,7 +20926,7 @@ paths:
               id:
                 fixture:
                   resource: environment
-                  identity: one
+                  identity: default_environment
           not_found:
             status: 404
             setup:
@@ -21093,7 +21029,7 @@ paths:
               id:
                 fixture:
                   resource: environment
-                  identity: one
+                  identity: default_environment
             body:
               environment:
                 name: Contract Environment Updated
@@ -21106,7 +21042,7 @@ paths:
               id:
                 fixture:
                   resource: environment
-                  identity: one
+                  identity: default_environment
             body:
               environment:
                 name: ''
@@ -21129,7 +21065,7 @@ paths:
               id:
                 fixture:
                   resource: environment
-                  identity: one
+                  identity: default_environment
             omit_body_field: environment
             request_media_type: application/json
             body:
@@ -21144,9 +21080,9 @@ paths:
                 name: Contract Environment Updated
         input_constraints:
         - field: ''
-          operation: require
+          operation: expect
           arguments:
-          - ":environment"
+          - 'environment: [ :name, :description, :shared, :default ]'
     put:
       operationId: put-api-environment
       summary: Updates an environment.
@@ -21237,7 +21173,7 @@ paths:
               id:
                 fixture:
                   resource: environment
-                  identity: one
+                  identity: default_environment
             body:
               environment:
                 name: Contract Environment Updated
@@ -21250,7 +21186,7 @@ paths:
               id:
                 fixture:
                   resource: environment
-                  identity: one
+                  identity: default_environment
             body:
               environment:
                 name: ''
@@ -21273,7 +21209,7 @@ paths:
               id:
                 fixture:
                   resource: environment
-                  identity: one
+                  identity: default_environment
             omit_body_field: environment
             request_media_type: application/json
             body:
@@ -21288,9 +21224,9 @@ paths:
                 name: Contract Environment Updated
         input_constraints:
         - field: ''
-          operation: require
+          operation: expect
           arguments:
-          - ":environment"
+          - 'environment: [ :name, :description, :shared, :default ]'
   "/api/environments/{environment_id}/entries":
     get:
       operationId: get-api-environment-entries
@@ -21388,7 +21324,7 @@ paths:
               environment_id:
                 fixture:
                   resource: environment
-                  identity: one
+                  identity: default_environment
             query: {}
           error_400:
             status: 400
@@ -21399,7 +21335,7 @@ paths:
               environment_id:
                 fixture:
                   resource: environment
-                  identity: one
+                  identity: default_environment
             query:
               page: invalid
           not_found:
@@ -21418,7 +21354,7 @@ paths:
               environment_id:
                 fixture:
                   resource: environment
-                  identity: one
+                  identity: default_environment
             query:
               page[number]: 1
               page[size]: 1
@@ -21431,7 +21367,7 @@ paths:
               environment_id:
                 fixture:
                   resource: environment
-                  identity: one
+                  identity: default_environment
             query: {}
             assertions:
             - pointer: "/meta/current_page"
@@ -21447,7 +21383,7 @@ paths:
               environment_id:
                 fixture:
                   resource: environment
-                  identity: one
+                  identity: default_environment
             query:
               page:
                 number: '0'
@@ -21467,7 +21403,7 @@ paths:
               environment_id:
                 fixture:
                   resource: environment
-                  identity: one
+                  identity: default_environment
             query:
               page:
                 number: '1'
@@ -21487,7 +21423,7 @@ paths:
               environment_id:
                 fixture:
                   resource: environment
-                  identity: one
+                  identity: default_environment
             query:
               page:
                 number: '999'
@@ -21508,7 +21444,7 @@ paths:
               environment_id:
                 fixture:
                   resource: environment
-                  identity: one
+                  identity: default_environment
             query:
               page: '1'
             assertions:
@@ -21523,7 +21459,7 @@ paths:
               environment_id:
                 fixture:
                   resource: environment
-                  identity: one
+                  identity: default_environment
             query:
               page:
                 number: abc
@@ -21539,7 +21475,7 @@ paths:
               environment_id:
                 fixture:
                   resource: environment
-                  identity: one
+                  identity: default_environment
             query:
               page:
                 size: "-1"
@@ -21555,7 +21491,7 @@ paths:
               environment_id:
                 fixture:
                   resource: environment
-                  identity: one
+                  identity: default_environment
             query:
               page:
                 size:
@@ -21663,7 +21599,7 @@ paths:
               environment_id:
                 fixture:
                   resource: environment
-                  identity: one
+                  identity: default_environment
             body:
               entry:
                 env_var: CONTRACT_CUSTOM_VAR
@@ -21678,7 +21614,7 @@ paths:
               environment_id:
                 fixture:
                   resource: environment
-                  identity: one
+                  identity: default_environment
             body:
               entry:
                 env_var: CONTRACT_CUSTOM_VAR
@@ -21705,7 +21641,7 @@ paths:
               environment_id:
                 fixture:
                   resource: environment
-                  identity: one
+                  identity: default_environment
             omit_body_field: entry
             request_media_type: application/json
             body:
@@ -21721,7 +21657,7 @@ paths:
               environment_id:
                 fixture:
                   resource: environment
-                  identity: one
+                  identity: default_environment
             body:
               entry:
                 env_var: CONTRACT_CUSTOM_VAR
@@ -21729,9 +21665,9 @@ paths:
                 custom_value: contract-value
         input_constraints:
         - field: ''
-          operation: require
+          operation: expect
           arguments:
-          - ":entry"
+          - 'entry: [ :env_var, :entry_type, :custom_value, :credential_set_id ]'
   "/api/environments/{environment_id}/entries/{id}":
     patch:
       operationId: patch-api-environment-entry
@@ -21837,11 +21773,11 @@ paths:
               environment_id:
                 fixture:
                   resource: environment
-                  identity: one
+                  identity: default_environment
               id:
                 fixture:
                   resource: credential_assignment
-                  identity: one_claude
+                  identity: claude_entry
             body:
               entry:
                 env_var: UPDATED_VAR
@@ -21854,11 +21790,11 @@ paths:
               environment_id:
                 fixture:
                   resource: environment
-                  identity: one
+                  identity: default_environment
               id:
                 fixture:
                   resource: credential_assignment
-                  identity: one_claude
+                  identity: claude_entry
             body:
               entry:
                 entry_type: invalid_type
@@ -21882,11 +21818,11 @@ paths:
               environment_id:
                 fixture:
                   resource: environment
-                  identity: one
+                  identity: default_environment
               id:
                 fixture:
                   resource: credential_assignment
-                  identity: one_claude
+                  identity: claude_entry
             omit_body_field: entry
             request_media_type: application/json
             body:
@@ -21900,19 +21836,19 @@ paths:
               environment_id:
                 fixture:
                   resource: environment
-                  identity: one
+                  identity: default_environment
               id:
                 fixture:
                   resource: credential_assignment
-                  identity: one_claude
+                  identity: claude_entry
             body:
               entry:
                 env_var: UPDATED_VAR
         input_constraints:
         - field: ''
-          operation: require
+          operation: expect
           arguments:
-          - ":entry"
+          - 'entry: [ :env_var, :entry_type, :custom_value, :credential_set_id ]'
     put:
       operationId: put-api-environment-entry
       summary: Updates an environment entry.
@@ -22017,11 +21953,11 @@ paths:
               environment_id:
                 fixture:
                   resource: environment
-                  identity: one
+                  identity: default_environment
               id:
                 fixture:
                   resource: credential_assignment
-                  identity: one_claude
+                  identity: claude_entry
             body:
               entry:
                 env_var: UPDATED_VAR
@@ -22034,11 +21970,11 @@ paths:
               environment_id:
                 fixture:
                   resource: environment
-                  identity: one
+                  identity: default_environment
               id:
                 fixture:
                   resource: credential_assignment
-                  identity: one_claude
+                  identity: claude_entry
             body:
               entry:
                 entry_type: invalid_type
@@ -22062,11 +21998,11 @@ paths:
               environment_id:
                 fixture:
                   resource: environment
-                  identity: one
+                  identity: default_environment
               id:
                 fixture:
                   resource: credential_assignment
-                  identity: one_claude
+                  identity: claude_entry
             omit_body_field: entry
             request_media_type: application/json
             body:
@@ -22080,19 +22016,19 @@ paths:
               environment_id:
                 fixture:
                   resource: environment
-                  identity: one
+                  identity: default_environment
               id:
                 fixture:
                   resource: credential_assignment
-                  identity: one_claude
+                  identity: claude_entry
             body:
               entry:
                 env_var: UPDATED_VAR
         input_constraints:
         - field: ''
-          operation: require
+          operation: expect
           arguments:
-          - ":entry"
+          - 'entry: [ :env_var, :entry_type, :custom_value, :credential_set_id ]'
     delete:
       operationId: delete-api-environment-entry
       summary: Removes an entry from an environment.
@@ -22125,11 +22061,11 @@ paths:
               environment_id:
                 fixture:
                   resource: environment
-                  identity: one
+                  identity: default_environment
               id:
                 fixture:
                   resource: credential_assignment
-                  identity: one_claude
+                  identity: claude_entry
           not_found:
             status: 404
             setup:
@@ -22146,11 +22082,11 @@ paths:
               environment_id:
                 fixture:
                   resource: environment
-                  identity: one
+                  identity: default_environment
               id:
                 fixture:
                   resource: credential_assignment
-                  identity: one_claude
+                  identity: claude_entry
         input_constraints: []
 x-loopcontrol-implicit-head:
   description: Rails implicitly handles HEAD through each mounted GET operation. Status

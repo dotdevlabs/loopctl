@@ -9,9 +9,6 @@ import (
 	"strings"
 	"testing"
 	"time"
-
-	"encoding/json"
-	"gopkg.in/yaml.v3"
 )
 
 func TestLoad(t *testing.T) {
@@ -38,16 +35,13 @@ func TestLoad(t *testing.T) {
 		"POST /api/pipelines",
 		"PATCH /api/pipelines/:id",
 		"POST /api/task_kinds",
+		"PATCH /api/task_kinds/:id",
 		"PATCH /api/account_pipeline_defaults/:kind",
 		"DELETE /api/account_pipeline_defaults/:kind",
 	} {
 		if !found[want] {
 			t.Errorf("Load() missing endpoint %q", want)
 		}
-	}
-	// PATCH /api/task_kinds/:id must NOT be present (not in spec).
-	if found["PATCH /api/task_kinds/:id"] {
-		t.Error("Load() must not contain PATCH /api/task_kinds/:id (not in spec)")
 	}
 }
 
@@ -454,18 +448,11 @@ func TestSchemaSourceSync(t *testing.T) {
 		t.Fatalf("reading source spec: %v", err)
 	}
 
-	// Normalize both YAML documents to JSON for byte-stable comparison.
-	var sourceParsed, localParsed any
-	if err := yaml.Unmarshal(source, &sourceParsed); err != nil {
-		t.Fatalf("parsing source YAML: %v", err)
-	}
-	if err := yaml.Unmarshal(fixtureData, &localParsed); err != nil {
-		t.Fatalf("parsing local YAML: %v", err)
-	}
-	sourceNorm, _ := json.Marshal(sourceParsed)
-	localNorm, _ := json.Marshal(localParsed)
-
-	if !bytes.Equal(sourceNorm, localNorm) {
+	// Compare bytes directly: the sync script does a verbatim cp, so the embedded fixture
+	// must be byte-identical to the published source. YAML normalization is avoided here
+	// because the spec may contain duplicate mapping keys in x-loopcontrol-contract sections
+	// (a server-internal annotation) that cause yaml.Unmarshal to error on interface{} targets.
+	if !bytes.Equal(source, fixtureData) {
 		t.Fatal("testdata/api_spec.yaml diverges from the published source spec; update the file to match")
 	}
 }
