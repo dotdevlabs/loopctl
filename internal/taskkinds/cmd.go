@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/dotdevlabs/ctlkit/pkg/clierror"
 	"github.com/dotdevlabs/ctlkit/pkg/ctxutil"
 	"github.com/dotdevlabs/ctlkit/pkg/output"
 
@@ -16,8 +17,9 @@ import (
 
 // TaskKindAttrs holds the attributes returned by /api/task_kinds.
 type TaskKindAttrs struct {
-	Name    string `json:"name"`
-	BuiltIn bool   `json:"built_in"`
+	Name              string `json:"name"`
+	BuiltIn           bool   `json:"built_in"`
+	CreatePullRequest bool   `json:"create_pull_request"`
 }
 
 // AccountPipelineDefaultAttrs holds the attributes returned by /api/account_pipeline_defaults.
@@ -34,6 +36,7 @@ func NewCmd() *cobra.Command {
 	}
 	cmd.AddCommand(listCmd())
 	cmd.AddCommand(createCmd())
+	cmd.AddCommand(updateCmd())
 	cmd.AddCommand(listDefaultPipelinesCmd())
 	cmd.AddCommand(setDefaultPipelineCmd())
 	cmd.AddCommand(clearDefaultPipelineCmd())
@@ -58,6 +61,7 @@ func listCmd() *cobra.Command {
 				{Header: "ID"},
 				{Header: "NAME"},
 				{Header: "BUILT_IN"},
+				{Header: "CREATE_PR"},
 			}
 			rows := make([][]string, len(col.Data))
 			for i, k := range col.Data {
@@ -65,7 +69,11 @@ func listCmd() *cobra.Command {
 				if k.Attributes.BuiltIn {
 					builtIn = "true"
 				}
-				rows[i] = []string{k.ID, k.Attributes.Name, builtIn}
+				createPR := "false"
+				if k.Attributes.CreatePullRequest {
+					createPR = "true"
+				}
+				rows[i] = []string{k.ID, k.Attributes.Name, builtIn, createPR}
 			}
 			return r.Render(cols, rows, col)
 		},
@@ -73,7 +81,10 @@ func listCmd() *cobra.Command {
 }
 
 func createCmd() *cobra.Command {
-	var name string
+	var (
+		name     string
+		createPR bool
+	)
 
 	cmd := &cobra.Command{
 		Use:   "create",
@@ -81,21 +92,21 @@ func createCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 
+			tk := map[string]any{"name": name}
+			if cmd.Flags().Changed("create-pull-request") {
+				tk["create_pull_request"] = createPR
+			}
+
 			if ctxutil.GlobalFlagsFrom(ctx).DryRun {
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(),
-					"dry-run: would POST /api/task_kinds {name=%q}\n",
-					name)
+					"dry-run: would POST /api/task_kinds %v\n", tk)
 				return nil
 			}
 
 			activeCtx := ctxutil.ActiveContextFrom(ctx)
 			r := ctxutil.RendererFrom(ctx)
 
-			body := map[string]any{
-				"task_kind": map[string]any{
-					"name": name,
-				},
-			}
+			body := map[string]any{"task_kind": tk}
 			res, err := apiclient.PostJSONBodyJSONAPIResponse[TaskKindAttrs](ctx, activeCtx, "/api/task_kinds", body)
 			if err != nil {
 				return err
@@ -112,7 +123,79 @@ func createCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&name, "name", "", "Identifier/slug for the task kind")
+	cmd.Flags().BoolVar(&createPR, "create-pull-request", false, "Whether this task kind opens a branch and pull request")
 	_ = cmd.MarkFlagRequired("name")
+	return cmd
+}
+
+func updateCmd() *cobra.Command {
+	var (
+		name       string
+		createPR   bool
+		noCreatePR bool
+	)
+
+	cmd := &cobra.Command{
+		Use:   "update <id>",
+		Short: "Update a task kind's name or pull request setting",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+
+			if cmd.Flags().Changed("create-pull-request") && cmd.Flags().Changed("no-create-pull-request") {
+				return clierror.New(clierror.CodeUsage, "cannot specify both --create-pull-request and --no-create-pull-request", "")
+			}
+
+			patch := map[string]any{}
+			if cmd.Flags().Changed("name") {
+				patch["name"] = name
+			}
+			if cmd.Flags().Changed("create-pull-request") {
+				patch["create_pull_request"] = createPR
+			}
+			if cmd.Flags().Changed("no-create-pull-request") {
+				patch["create_pull_request"] = !noCreatePR
+			}
+
+			if len(patch) == 0 {
+				return clierror.New(clierror.CodeUsage, "no fields to update",
+					"provide at least one flag such as --name or --create-pull-request")
+			}
+
+			if ctxutil.GlobalFlagsFrom(ctx).DryRun {
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(),
+					"dry-run: would PATCH /api/task_kinds/%s %v\n", args[0], patch)
+				return nil
+			}
+
+			activeCtx := ctxutil.ActiveContextFrom(ctx)
+			r := ctxutil.RendererFrom(ctx)
+
+			body := map[string]any{"task_kind": patch}
+			path := "/api/task_kinds/" + url.PathEscape(args[0])
+			res, err := apiclient.PatchJSONBodyJSONAPIResponse[TaskKindAttrs](ctx, activeCtx, path, body)
+			if err != nil {
+				return err
+			}
+
+			cpr := "false"
+			if res.Attributes.CreatePullRequest {
+				cpr = "true"
+			}
+			cols := []output.Column{
+				{Header: "ID"},
+				{Header: "NAME"},
+				{Header: "CREATE_PR"},
+			}
+			rows := [][]string{{res.ID, res.Attributes.Name, cpr}}
+			return r.Render(cols, rows, res)
+		},
+	}
+
+	cmd.Flags().StringVar(&name, "name", "", "New name for the task kind")
+	cmd.Flags().BoolVar(&createPR, "create-pull-request", false, "Set create_pull_request to true")
+	cmd.Flags().BoolVar(&noCreatePR, "no-create-pull-request", false, "Set create_pull_request to false")
+
 	return cmd
 }
 

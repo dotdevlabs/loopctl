@@ -136,15 +136,44 @@ func TestConformance_TaskKindsClearDefaultPipeline(t *testing.T) {
 }
 
 // TestConformance_ViolationDetection_ForbiddenTaskKindPatchField verifies that
-// PATCH /api/task_kinds/:id is NOT in the spec and any request to it is a violation.
+// sending a forbidden field (built_in) in PATCH /api/task_kinds/:id is a violation.
+// The endpoint is in the spec but built_in is not an allowed field.
 func TestConformance_ViolationDetection_ForbiddenTaskKindPatchField(t *testing.T) {
 	endpoints := loadSchemaOrSkip(t)
-	// PATCH /api/task_kinds/:id is not in the spec at all.
+	// built_in is not a writable field in PATCH /api/task_kinds/:id.
 	body := `{"task_kind":{"built_in":true}}`
 	req, _ := http.NewRequest(http.MethodPatch, "http://x/api/task_kinds/kind1", strings.NewReader(body))
 	violations := schema.CheckRequest(req, endpoints)
 	if len(violations) == 0 {
-		t.Fatal("expected violation for PATCH /api/task_kinds/:id (endpoint not in spec); got none")
+		t.Fatal("expected violation for 'built_in' field in task_kinds PATCH body; got none")
+	}
+}
+
+// TestConformance_TaskKindsUpdate verifies PATCH /api/task_kinds/{id} conforms to the spec.
+func TestConformance_TaskKindsUpdate(t *testing.T) {
+	endpoints := loadSchemaOrSkip(t)
+	var violations []string
+	var gotContentType string
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotContentType = r.Header.Get("Content-Type")
+		violations = schema.CheckRequest(r, endpoints)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"task_kinds","id":"k1","attributes":{"name":"updated","built_in":false,"create_pull_request":false}}}`)
+	}))
+	defer ts.Close()
+
+	ctx := makeCtx(t, ts.URL, "tok", false, io.Discard)
+	cmd := updateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(io.Discard)
+	_ = cmd.Flags().Set("name", "updated")
+	_ = cmd.RunE(cmd, []string{"k1"})
+
+	if len(violations) != 0 {
+		t.Errorf("conformance violations for task-kinds update: %v", violations)
+	}
+	if gotContentType != "application/json" {
+		t.Errorf("task-kinds update Content-Type = %q; want application/json", gotContentType)
 	}
 }
 

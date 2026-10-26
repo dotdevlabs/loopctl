@@ -41,7 +41,7 @@ func TestTaskKindsList(t *testing.T) {
 			t.Errorf("missing/wrong auth header: %s", r.Header.Get("Authorization"))
 		}
 		w.Header().Set("Content-Type", "application/vnd.api+json")
-		_, _ = fmt.Fprint(w, `{"data":[{"type":"task_kinds","id":"kind1","attributes":{"name":"feature","built_in":true}}]}`)
+		_, _ = fmt.Fprint(w, `{"data":[{"type":"task_kinds","id":"kind1","attributes":{"name":"feature","built_in":true,"create_pull_request":true}}]}`)
 	}))
 	defer ts.Close()
 
@@ -64,6 +64,9 @@ func TestTaskKindsList(t *testing.T) {
 	}
 	if !strings.Contains(got, "true") {
 		t.Errorf("output missing built_in:\n%s", got)
+	}
+	if !strings.Contains(got, "CREATE_PR") {
+		t.Errorf("output missing CREATE_PR column:\n%s", got)
 	}
 }
 
@@ -360,6 +363,382 @@ func mapKeys[V any](m map[string]V) []string {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+func TestTaskKindsCreateWithPullRequest(t *testing.T) {
+	var gotBody []byte
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = fmt.Fprint(w, `{"data":{"type":"task_kinds","id":"kind-new","attributes":{"name":"my-kind","built_in":false,"create_pull_request":true}}}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := createCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	if err := cmd.Flags().Set("name", "my-kind"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.Flags().Set("create-pull-request", "true"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("create with pull request failed: %v", err)
+	}
+
+	var parsed map[string]json.RawMessage
+	if err := json.Unmarshal(gotBody, &parsed); err != nil {
+		t.Fatalf("request body is not valid JSON: %v\nbody: %s", err, gotBody)
+	}
+	rawKind, ok := parsed["task_kind"]
+	if !ok {
+		t.Fatalf("request body missing task_kind wrapper; got: %s", gotBody)
+	}
+	var kindObj map[string]json.RawMessage
+	if err := json.Unmarshal(rawKind, &kindObj); err != nil {
+		t.Fatalf("task_kind is not a JSON object: %v", err)
+	}
+	var cpr bool
+	if err := json.Unmarshal(kindObj["create_pull_request"], &cpr); err != nil {
+		t.Fatalf("create_pull_request is not a bool: %v", err)
+	}
+	if !cpr {
+		t.Errorf("expected create_pull_request=true in request body; got: %s", gotBody)
+	}
+}
+
+func TestTaskKindsUpdateName(t *testing.T) {
+	var gotMethod, gotPath string
+	var gotBody []byte
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotMethod = r.Method
+		gotPath = r.URL.Path
+		gotBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"task_kinds","id":"kind1","attributes":{"name":"new-name","built_in":false,"create_pull_request":false}}}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := updateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	if err := cmd.Flags().Set("name", "new-name"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := cmd.RunE(cmd, []string{"kind1"}); err != nil {
+		t.Fatalf("update failed: %v", err)
+	}
+
+	if gotMethod != http.MethodPatch {
+		t.Errorf("expected PATCH; got %s", gotMethod)
+	}
+	if gotPath != "/api/task_kinds/kind1" {
+		t.Errorf("expected path /api/task_kinds/kind1; got %s", gotPath)
+	}
+	var parsed map[string]json.RawMessage
+	if err := json.Unmarshal(gotBody, &parsed); err != nil {
+		t.Fatalf("body not valid JSON: %v", err)
+	}
+	rawKind := parsed["task_kind"]
+	var kindObj map[string]json.RawMessage
+	if err := json.Unmarshal(rawKind, &kindObj); err != nil {
+		t.Fatalf("task_kind not a JSON object: %v", err)
+	}
+	var name string
+	if err := json.Unmarshal(kindObj["name"], &name); err != nil {
+		t.Fatalf("name not a string: %v", err)
+	}
+	if name != "new-name" {
+		t.Errorf("expected name=new-name; got %s", name)
+	}
+	got := out.String()
+	if !strings.Contains(got, "kind1") {
+		t.Errorf("output missing id:\n%s", got)
+	}
+}
+
+func TestTaskKindsUpdateCreatePullRequest(t *testing.T) {
+	var gotBody []byte
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"task_kinds","id":"k1","attributes":{"name":"feat","built_in":false,"create_pull_request":true}}}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := updateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	if err := cmd.Flags().Set("create-pull-request", "true"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := cmd.RunE(cmd, []string{"k1"}); err != nil {
+		t.Fatalf("update failed: %v", err)
+	}
+
+	var parsed map[string]json.RawMessage
+	if err := json.Unmarshal(gotBody, &parsed); err != nil {
+		t.Fatalf("body not valid JSON: %v", err)
+	}
+	var kindObj map[string]json.RawMessage
+	if err := json.Unmarshal(parsed["task_kind"], &kindObj); err != nil {
+		t.Fatalf("task_kind not a JSON object: %v", err)
+	}
+	var cpr bool
+	if err := json.Unmarshal(kindObj["create_pull_request"], &cpr); err != nil {
+		t.Fatalf("create_pull_request not a bool: %v", err)
+	}
+	if !cpr {
+		t.Errorf("expected create_pull_request=true; got %v", cpr)
+	}
+	if _, hasName := kindObj["name"]; hasName {
+		t.Errorf("body should not contain name when only --create-pull-request given; got: %s", gotBody)
+	}
+	got := out.String()
+	if !strings.Contains(got, "CREATE_PR") {
+		t.Errorf("output missing CREATE_PR column:\n%s", got)
+	}
+}
+
+func TestTaskKindsUpdateNoCreatePullRequest(t *testing.T) {
+	var gotBody []byte
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"task_kinds","id":"k1","attributes":{"name":"feat","built_in":false,"create_pull_request":false}}}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := updateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	if err := cmd.Flags().Set("no-create-pull-request", "true"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := cmd.RunE(cmd, []string{"k1"}); err != nil {
+		t.Fatalf("update failed: %v", err)
+	}
+
+	var parsed map[string]json.RawMessage
+	if err := json.Unmarshal(gotBody, &parsed); err != nil {
+		t.Fatalf("body not valid JSON: %v", err)
+	}
+	var kindObj map[string]json.RawMessage
+	if err := json.Unmarshal(parsed["task_kind"], &kindObj); err != nil {
+		t.Fatalf("task_kind not a JSON object: %v", err)
+	}
+	var cpr bool
+	if err := json.Unmarshal(kindObj["create_pull_request"], &cpr); err != nil {
+		t.Fatalf("create_pull_request not a bool: %v", err)
+	}
+	if cpr {
+		t.Errorf("expected create_pull_request=false; got %v", cpr)
+	}
+}
+
+func TestTaskKindsUpdateNoFlags(t *testing.T) {
+	called := false
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := updateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	err := cmd.RunE(cmd, []string{"k1"})
+	if err == nil {
+		t.Fatal("expected error when no flags given")
+	}
+	if !strings.Contains(err.Error(), "no fields to update") {
+		t.Errorf("expected 'no fields to update' in error; got: %v", err)
+	}
+	if called {
+		t.Error("server should not be called when no flags given")
+	}
+}
+
+func TestTaskKindsUpdate404(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = fmt.Fprint(w, `{"errors":[{"status":"404","detail":"task kind not found"}]}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := updateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	if err := cmd.Flags().Set("name", "x"); err != nil {
+		t.Fatal(err)
+	}
+
+	err := cmd.RunE(cmd, []string{"999"})
+	if err == nil {
+		t.Fatal("expected error on 404")
+	}
+	if !strings.Contains(err.Error(), "task kind not found") {
+		t.Errorf("expected error detail in message; got: %v", err)
+	}
+}
+
+func TestTaskKindsUpdate422(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		w.WriteHeader(http.StatusUnprocessableEntity)
+		_, _ = fmt.Fprint(w, `{"errors":[{"status":"422","detail":"name can't be blank"}]}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := updateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	if err := cmd.Flags().Set("name", ""); err != nil {
+		t.Fatal(err)
+	}
+
+	err := cmd.RunE(cmd, []string{"k1"})
+	if err == nil {
+		t.Fatal("expected error on 422")
+	}
+	if !strings.Contains(err.Error(), "name can't be blank") {
+		t.Errorf("expected error detail in message; got: %v", err)
+	}
+}
+
+func TestTaskKindsUpdateDryRun(t *testing.T) {
+	called := false
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{DryRun: true})
+
+	cmd := updateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	if err := cmd.Flags().Set("name", "new-name"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := cmd.RunE(cmd, []string{"k1"}); err != nil {
+		t.Fatalf("update dry-run failed: %v", err)
+	}
+	if called {
+		t.Error("dry-run should not make HTTP calls")
+	}
+	if !strings.Contains(out.String(), "dry-run") {
+		t.Errorf("expected dry-run in output; got:\n%s", out.String())
+	}
+}
+
+func TestTaskKindsUpdateJSON(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"task_kinds","id":"kind1","attributes":{"name":"updated","built_in":false,"create_pull_request":true}}}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", true, &out)
+
+	cmd := updateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	if err := cmd.Flags().Set("name", "updated"); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := cmd.RunE(cmd, []string{"kind1"}); err != nil {
+		t.Fatalf("update json failed: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, `"id"`) {
+		t.Errorf("expected 'id' in JSON output; got:\n%s", got)
+	}
+	if !strings.Contains(got, "kind1") {
+		t.Errorf("expected id value in JSON output; got:\n%s", got)
+	}
+}
+
+// TestUpdateTaskKindRequestBodyShape verifies PATCH /api/task_kinds/{id}
+// sends {"task_kind": {"name": "..."}} with no extra fields.
+func TestUpdateTaskKindRequestBodyShape(t *testing.T) {
+	var gotBody []byte
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"task_kinds","id":"k1","attributes":{"name":"updated","built_in":false,"create_pull_request":false}}}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := updateCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+	if err := cmd.Flags().Set("name", "updated"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.RunE(cmd, []string{"k1"}); err != nil {
+		t.Fatalf("update failed: %v", err)
+	}
+
+	var parsed map[string]json.RawMessage
+	if err := json.Unmarshal(gotBody, &parsed); err != nil {
+		t.Fatalf("body not valid JSON: %v\nbody: %s", err, gotBody)
+	}
+
+	rawKind, ok := parsed["task_kind"]
+	if !ok {
+		t.Fatalf("body missing top-level 'task_kind'; got keys: %v\nbody: %s", mapKeys(parsed), gotBody)
+	}
+	var kindObj map[string]json.RawMessage
+	if err := json.Unmarshal(rawKind, &kindObj); err != nil {
+		t.Fatalf("task_kind not a JSON object: %v", err)
+	}
+
+	if _, ok := kindObj["name"]; !ok {
+		t.Errorf("task_kind missing 'name'; got keys: %v", mapKeys(kindObj))
+	}
+	for k := range kindObj {
+		if k != "name" {
+			t.Errorf("task_kind contains unexpected field %q; only 'name' expected", k)
+		}
+	}
 }
 
 // TestTaskKindsSetDefaultPipeline verifies the new endpoint: PATCH /api/account_pipeline_defaults/{kind}.

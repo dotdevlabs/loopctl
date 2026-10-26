@@ -659,7 +659,7 @@ loopctl task-kinds list
 loopctl task-kinds list --json
 ```
 
-Output columns: `ID`, `NAME`, `BUILT_IN`.
+Output columns: `ID`, `NAME`, `BUILT_IN`, `CREATE_PR`.
 
 **API:** `GET /api/task_kinds`
 
@@ -669,6 +669,7 @@ Create a new custom task kind for your account.
 
 ```bash
 loopctl task-kinds create --name my-kind
+loopctl task-kinds create --name my-kind --create-pull-request
 loopctl task-kinds create --name my-kind --dry-run
 ```
 
@@ -677,12 +678,36 @@ loopctl task-kinds create --name my-kind --dry-run
 | Flag | Required | Description |
 |------|----------|-------------|
 | `--name` | yes | Slug/identifier for the task kind |
+| `--create-pull-request` | no | Whether tasks of this kind open a branch and pull request (default: false) |
 
 Output columns on success: `ID`, `NAME`.
 
 Attempting to create a built-in task kind surfaces the API's human-readable error.
 
 **API:** `POST /api/task_kinds`
+
+#### task-kinds update
+
+Update an existing task kind's name or pull request setting. Only the flags you provide are changed — unset flags are not sent to the API.
+
+```bash
+loopctl task-kinds update <id> --name "new-name"
+loopctl task-kinds update <id> --create-pull-request
+loopctl task-kinds update <id> --no-create-pull-request
+loopctl task-kinds update <id> --name "new-name" --dry-run
+```
+
+**Flags:**
+
+| Flag | Description |
+|------|-------------|
+| `--name` | New name for the task kind |
+| `--create-pull-request` | Set create_pull_request to true |
+| `--no-create-pull-request` | Set create_pull_request to false (`--create-pull-request` and `--no-create-pull-request` are mutually exclusive) |
+
+At least one flag must be provided. Output columns on success: `ID`, `NAME`, `CREATE_PR`. Use `--json` for the full resource.
+
+**API:** `PATCH /api/task_kinds/:id`
 
 #### task-kinds list-default-pipelines
 
@@ -1429,6 +1454,13 @@ loopctl pipelines stages remove <pipeline-id> review --dry-run
 ```bash
 loopctl task-kinds create --name my-kind
 
+# Create a kind that opens a branch and pull request for each task
+loopctl task-kinds create --name my-kind --create-pull-request
+
+# Update whether an existing kind opens a pull request
+loopctl task-kinds update <id> --create-pull-request
+loopctl task-kinds update <id> --no-create-pull-request
+
 # Set a pipeline as the default for the kind (use kind name, not ID)
 loopctl task-kinds set-default-pipeline my-kind --pipeline-id <integer-pipeline-id>
 
@@ -1475,6 +1507,7 @@ loopctl pipelines stages add <pipeline-id> --name review --dry-run
 loopctl pipelines stages update <pipeline-id> <stage-id> --gate manual --dry-run
 loopctl pipelines stages remove <pipeline-id> review --dry-run
 loopctl task-kinds create --name my-kind --dry-run
+loopctl task-kinds update <id> --name "new-name" --dry-run
 loopctl task-kinds set-default-pipeline <kind-name> --pipeline-id <integer-pipeline-id> --dry-run
 loopctl task-kinds clear-default-pipeline <kind-name> --dry-run
 loopctl environments create --name production --dry-run
