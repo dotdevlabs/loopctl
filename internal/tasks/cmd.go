@@ -18,33 +18,41 @@ import (
 	"github.com/dotdevlabs/loopctl/internal/apiclient"
 )
 
+// ComputeCost holds the cost breakdown returned by the LoopControl API.
+type ComputeCost struct {
+	AmountCents int    `json:"amount_cents"`
+	Currency    string `json:"currency"`
+	Final       bool   `json:"final"`
+}
+
 // TaskAttrs holds the attributes nested under JSON:API data.attributes.
 type TaskAttrs struct {
-	ProjectID                   string   `json:"project_id"`
-	Kind                        string   `json:"kind"`
-	Title                       string   `json:"title"`
-	Description                 string   `json:"description"`
-	Status                      string   `json:"status"`
-	Stage                       string   `json:"stage"`
-	CurrentState                string   `json:"current_state"`
-	PRNumber                    int      `json:"pr_number"`
-	PRURL                       string   `json:"pr_url"`
-	PRMergedAt                  string   `json:"pr_merged_at"`
-	MergeCommitSHA              string   `json:"merge_commit_sha"`
-	CIStatus                    string   `json:"ci_status"`
-	CIStatusURL                 string   `json:"ci_status_url"`
-	CodeReviewStatus            string   `json:"code_review_status"`
-	BlockedReason               string   `json:"blocked_reason"`
-	CompletedAt                 string   `json:"completed_at"`
-	PickedUpAt                  string   `json:"picked_up_at"`
-	PromptHash                  string   `json:"prompt_hash"`
-	DependsOn                   []string `json:"depends_on"`
-	DependenciesMet             bool     `json:"dependencies_met"`
-	BlockingDependencyIDs       []string `json:"blocking_dependency_ids"`
-	CreatedAt                   string   `json:"created_at"`
-	UpdatedAt                   string   `json:"updated_at"`
-	BillableComputeMinutes      int      `json:"billable_compute_minutes"`
-	BillableComputeMinutesFinal bool     `json:"billable_compute_minutes_final"`
+	ProjectID                   string       `json:"project_id"`
+	Kind                        string       `json:"kind"`
+	Title                       string       `json:"title"`
+	Description                 string       `json:"description"`
+	Status                      string       `json:"status"`
+	Stage                       string       `json:"stage"`
+	CurrentState                string       `json:"current_state"`
+	PRNumber                    int          `json:"pr_number"`
+	PRURL                       string       `json:"pr_url"`
+	PRMergedAt                  string       `json:"pr_merged_at"`
+	MergeCommitSHA              string       `json:"merge_commit_sha"`
+	CIStatus                    string       `json:"ci_status"`
+	CIStatusURL                 string       `json:"ci_status_url"`
+	CodeReviewStatus            string       `json:"code_review_status"`
+	BlockedReason               string       `json:"blocked_reason"`
+	CompletedAt                 string       `json:"completed_at"`
+	PickedUpAt                  string       `json:"picked_up_at"`
+	PromptHash                  string       `json:"prompt_hash"`
+	DependsOn                   []string     `json:"depends_on"`
+	DependenciesMet             bool         `json:"dependencies_met"`
+	BlockingDependencyIDs       []string     `json:"blocking_dependency_ids"`
+	CreatedAt                   string       `json:"created_at"`
+	UpdatedAt                   string       `json:"updated_at"`
+	BillableComputeMinutes      int          `json:"billable_compute_minutes"`
+	BillableComputeMinutesFinal bool         `json:"billable_compute_minutes_final"`
+	ComputeCost                 *ComputeCost `json:"compute_cost,omitempty"`
 }
 
 // ActivityAttrs holds the attributes nested under JSON:API data.attributes for task activities.
@@ -94,7 +102,7 @@ func listCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List tasks for a project",
-		Long:  "List tasks for a project. Output includes billable_compute_minutes (integer, cumulative billable compute minutes) and billable_compute_minutes_final (boolean, true when the task is terminal and billing is closed).",
+		Long:  "List tasks for a project. Output includes billable_compute_minutes (integer, cumulative billable compute minutes), billable_compute_minutes_final (boolean, true when the task is terminal and billing is closed), and compute_cost (object with amount_cents, currency, and final fields).",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			activeCtx := ctxutil.ActiveContextFrom(ctx)
@@ -118,6 +126,8 @@ func listCmd() *cobra.Command {
 				{Header: "BLOCKED_REASON"},
 				{Header: "BILLABLE_MINS"},
 				{Header: "MINS_FINAL"},
+				{Header: "COMPUTE_COST"},
+				{Header: "COST_FINAL"},
 			}
 			rows := make([][]string, len(col.Data))
 			for i, t := range col.Data {
@@ -130,6 +140,8 @@ func listCmd() *cobra.Command {
 					t.Attributes.BlockedReason,
 					fmt.Sprintf("%d", t.Attributes.BillableComputeMinutes),
 					fmt.Sprintf("%v", t.Attributes.BillableComputeMinutesFinal),
+					computeCostStr(t.Attributes.ComputeCost),
+					computeCostFinalStr(t.Attributes.ComputeCost),
 				}
 			}
 			return r.Render(cols, rows, col)
@@ -144,7 +156,7 @@ func getCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "get <id>",
 		Short: "Get a task by ID",
-		Long:  "Get a task by ID. Output includes billable_compute_minutes (integer, cumulative billable compute minutes) and billable_compute_minutes_final (boolean, true when the task is terminal and billing is closed).",
+		Long:  "Get a task by ID. Output includes billable_compute_minutes (integer, cumulative billable compute minutes), billable_compute_minutes_final (boolean, true when the task is terminal and billing is closed), and compute_cost (object with amount_cents, currency, and final fields).",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -168,6 +180,8 @@ func getCmd() *cobra.Command {
 				{Header: "DEPENDENCIES_MET"},
 				{Header: "BILLABLE_MINS"},
 				{Header: "MINS_FINAL"},
+				{Header: "COMPUTE_COST"},
+				{Header: "COST_FINAL"},
 			}
 			rows := [][]string{{
 				res.ID,
@@ -179,6 +193,8 @@ func getCmd() *cobra.Command {
 				fmt.Sprintf("%v", t.DependenciesMet),
 				fmt.Sprintf("%d", t.BillableComputeMinutes),
 				fmt.Sprintf("%v", t.BillableComputeMinutesFinal),
+				computeCostStr(t.ComputeCost),
+				computeCostFinalStr(t.ComputeCost),
 			}}
 			return r.Render(cols, rows, res)
 		},
@@ -448,6 +464,20 @@ func unblockCmd() *cobra.Command {
 			return nil
 		},
 	}
+}
+
+func computeCostStr(c *ComputeCost) string {
+	if c == nil {
+		return ""
+	}
+	return fmt.Sprintf("%d %s", c.AmountCents, c.Currency)
+}
+
+func computeCostFinalStr(c *ComputeCost) string {
+	if c == nil {
+		return ""
+	}
+	return fmt.Sprintf("%v", c.Final)
 }
 
 func watchTask(
