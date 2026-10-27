@@ -768,9 +768,11 @@ Manage LoopControl tasks.
 
 #### tasks list
 
-List tasks across the entire account, or filter to a single project. Output columns: `ID`, `KIND`, `TITLE`, `STAGE`, `STATUS`, `BLOCKED_REASON`, `BILLABLE_MINS`, `MINS_FINAL`. Pagination is followed automatically; when `--project-id` is set, the filter is preserved across all pages. `--json` and template output include the full index representation (all `TaskListAttributes` fields).
+List tasks across the entire account, or filter to a single project. Output columns: `ID`, `KIND`, `TITLE`, `STAGE`, `STATUS`, `BLOCKED_REASON`, `BILLABLE_MINS`, `MINS_FINAL`, `COMPUTE_COST`, `COST_FINAL`. Pagination is followed automatically; when `--project-id` is set, the filter is preserved across all pages. `--json` and template output include the full index representation (all `TaskListAttributes` fields).
 
 `BILLABLE_MINS` is the cumulative billable compute minutes accrued by the task (integer; 0 while no billable time has accrued). `MINS_FINAL` is `true` once the task is in a terminal state and all billing periods are closed.
+
+`COMPUTE_COST` shows the task's compute cost as `<amount_cents> <currency>` (e.g. `250 usd`). `COST_FINAL` is `true` once the cost will not change (task is terminal and all billing periods are closed). Both columns are blank when no cost has been reported yet.
 
 ```bash
 # List all account tasks (global index)
@@ -791,9 +793,11 @@ loopctl tasks list --project-id <project-id> --json
 
 #### tasks get
 
-Get a task by ID. Output columns: `ID`, `KIND`, `TITLE`, `STAGE`, `STATUS`, `BLOCKED_REASON`, `DEPENDENCIES_MET`, `BILLABLE_MINS`, `MINS_FINAL`.
+Get a task by ID. Output columns: `ID`, `KIND`, `TITLE`, `STAGE`, `STATUS`, `BLOCKED_REASON`, `DEPENDENCIES_MET`, `BILLABLE_MINS`, `MINS_FINAL`, `COMPUTE_COST`, `COST_FINAL`.
 
 `BILLABLE_MINS` is the cumulative billable compute minutes accrued by the task (integer; 0 while no billable time has accrued). `MINS_FINAL` is `true` once the task is in a terminal state and all billing periods are closed.
+
+`COMPUTE_COST` shows the task's compute cost as `<amount_cents> <currency>` (e.g. `250 usd`). `COST_FINAL` is `true` once the cost will not change (task is terminal and all billing periods are closed). Both columns are blank when no cost has been reported yet.
 
 ```bash
 loopctl tasks get <id>
