@@ -1757,6 +1757,12 @@ components:
           format: date-time
         provider_capacity:
           "$ref": "#/components/schemas/TaskProviderCapacity"
+        billable_compute_minutes:
+          type: integer
+          description: Cumulative billable compute minutes accrued by this task.
+        billable_compute_minutes_final:
+          type: boolean
+          description: True when the task is in a terminal state and all billing periods are closed.
       additionalProperties: false
       required:
       - title
@@ -1786,6 +1792,8 @@ components:
       - created_at
       - updated_at
       - provider_capacity
+      - billable_compute_minutes
+      - billable_compute_minutes_final
     TaskShowAttributes:
       type: object
       properties:
@@ -1869,6 +1877,12 @@ components:
           format: date-time
         provider_capacity:
           "$ref": "#/components/schemas/TaskProviderCapacity"
+        billable_compute_minutes:
+          type: integer
+          description: Cumulative billable compute minutes accrued by this task.
+        billable_compute_minutes_final:
+          type: boolean
+          description: True when the task is in a terminal state and all billing periods are closed.
       additionalProperties: false
       required:
       - title
@@ -1898,6 +1912,8 @@ components:
       - created_at
       - updated_at
       - provider_capacity
+      - billable_compute_minutes
+      - billable_compute_minutes_final
     TaskCreateResponseAttributes:
       type: object
       properties:
@@ -10672,6 +10688,42 @@ paths:
             media_type: application/vnd.api+json
             query: {}
             authentication: browserSession
+          compute_running:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            query:
+              project_id:
+                fixture:
+                  resource: project
+                  identity: rails_project
+              query: working task with pr
+              page:
+                number: '1'
+                size: '1'
+            assertions:
+            - pointer: "/data/0/attributes/billable_compute_minutes_final"
+              equals: false
+          compute_terminal:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            query:
+              project_id:
+                fixture:
+                  resource: project
+                  identity: rails_project
+              query: completed compute task
+              page:
+                number: '1'
+                size: '1'
+            assertions:
+            - pointer: "/data/0/attributes/billable_compute_minutes_final"
+              equals: true
+            - pointer: "/data/0/attributes/billable_compute_minutes"
+              equals: 90
         input_constraints: []
     post:
       operationId: post-api-tasks
@@ -11095,6 +11147,34 @@ paths:
                   resource: id
                   identity: contract
             authentication: browserSession
+          compute_running:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: task
+                  identity: working_task_with_pr
+            assertions:
+            - pointer: "/data/attributes/billable_compute_minutes_final"
+              equals: false
+          compute_terminal:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: task
+                  identity: completed_compute_task
+            assertions:
+            - pointer: "/data/attributes/billable_compute_minutes_final"
+              equals: true
+            - pointer: "/data/attributes/billable_compute_minutes"
+              equals: 90
         input_constraints: []
     patch:
       operationId: patch-api-task
