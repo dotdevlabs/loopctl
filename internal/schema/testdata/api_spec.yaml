@@ -1763,6 +1763,8 @@ components:
         billable_compute_minutes_final:
           type: boolean
           description: True when the task is in a terminal state and all billing periods are closed.
+        compute_cost:
+          "$ref": "#/components/schemas/TaskComputeCost"
       additionalProperties: false
       required:
       - title
@@ -1794,6 +1796,7 @@ components:
       - provider_capacity
       - billable_compute_minutes
       - billable_compute_minutes_final
+      - compute_cost
     TaskShowAttributes:
       type: object
       properties:
@@ -1883,6 +1886,8 @@ components:
         billable_compute_minutes_final:
           type: boolean
           description: True when the task is in a terminal state and all billing periods are closed.
+        compute_cost:
+          "$ref": "#/components/schemas/TaskComputeCost"
       additionalProperties: false
       required:
       - title
@@ -1914,6 +1919,7 @@ components:
       - provider_capacity
       - billable_compute_minutes
       - billable_compute_minutes_final
+      - compute_cost
     TaskCreateResponseAttributes:
       type: object
       properties:
@@ -2828,6 +2834,23 @@ components:
       - source
       - diagnostic
       nullable: true
+    TaskComputeCost:
+      type: object
+      additionalProperties: false
+      required:
+      - amount_cents
+      - currency
+      - final
+      properties:
+        amount_cents:
+          type: integer
+          description: Compute cost in minor currency units (cents). Ceiling of rate × minutes; 0 when no compute.
+        currency:
+          type: string
+          description: ISO 4217 currency code, lowercase (e.g. "usd").
+        final:
+          type: boolean
+          description: True exactly when billable_compute_minutes_final is true.
     TaskProviderCapacity:
       description: Outer fields preserve the historical blocking observation when
         present, otherwise the current observation. The current field independently
@@ -10705,6 +10728,12 @@ paths:
             assertions:
             - pointer: "/data/0/attributes/billable_compute_minutes_final"
               equals: false
+            - pointer: "/data/0/attributes/compute_cost/amount_cents"
+              equals: 98
+            - pointer: "/data/0/attributes/compute_cost/currency"
+              equals: usd
+            - pointer: "/data/0/attributes/compute_cost/final"
+              equals: false
           compute_terminal:
             status: 200
             setup:
@@ -10724,6 +10753,12 @@ paths:
               equals: true
             - pointer: "/data/0/attributes/billable_compute_minutes"
               equals: 90
+            - pointer: "/data/0/attributes/compute_cost/amount_cents"
+              equals: 147
+            - pointer: "/data/0/attributes/compute_cost/currency"
+              equals: usd
+            - pointer: "/data/0/attributes/compute_cost/final"
+              equals: true
         input_constraints: []
     post:
       operationId: post-api-tasks
@@ -11160,6 +11195,12 @@ paths:
             assertions:
             - pointer: "/data/attributes/billable_compute_minutes_final"
               equals: false
+            - pointer: "/data/attributes/compute_cost/amount_cents"
+              equals: 98
+            - pointer: "/data/attributes/compute_cost/currency"
+              equals: usd
+            - pointer: "/data/attributes/compute_cost/final"
+              equals: false
           compute_terminal:
             status: 200
             setup:
@@ -11175,6 +11216,12 @@ paths:
               equals: true
             - pointer: "/data/attributes/billable_compute_minutes"
               equals: 90
+            - pointer: "/data/attributes/compute_cost/amount_cents"
+              equals: 147
+            - pointer: "/data/attributes/compute_cost/currency"
+              equals: usd
+            - pointer: "/data/attributes/compute_cost/final"
+              equals: true
         input_constraints: []
     patch:
       operationId: patch-api-task

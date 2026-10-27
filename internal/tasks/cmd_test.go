@@ -1786,3 +1786,158 @@ func TestTasksList_BillableMinutes(t *testing.T) {
 		}
 	})
 }
+
+func TestTasksGet_ComputeCost_Running(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t20","attributes":{"kind":"feature","title":"Running Task","stage":"implementing","status":"open","billable_compute_minutes":0,"billable_compute_minutes_final":false,"compute_cost":{"amount_cents":250,"currency":"usd","final":false}}}}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := getCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	if err := cmd.RunE(cmd, []string{"t20"}); err != nil {
+		t.Fatalf("get running compute_cost failed: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "250") {
+		t.Errorf("output missing compute_cost amount_cents 250:\n%s", got)
+	}
+	if !strings.Contains(got, "usd") {
+		t.Errorf("output missing compute_cost currency usd:\n%s", got)
+	}
+	if !strings.Contains(got, "false") {
+		t.Errorf("output missing compute_cost final=false:\n%s", got)
+	}
+}
+
+func TestTasksGet_ComputeCost_Terminal(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t21","attributes":{"kind":"feature","title":"Terminal Task","stage":"completed","status":"open","billable_compute_minutes":90,"billable_compute_minutes_final":true,"compute_cost":{"amount_cents":9000,"currency":"usd","final":true}}}}`)
+	}))
+	defer ts.Close()
+
+	t.Run("text", func(t *testing.T) {
+		var out bytes.Buffer
+		ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+		cmd := getCmd()
+		cmd.SetContext(ctx)
+		cmd.SetOut(&out)
+
+		if err := cmd.RunE(cmd, []string{"t21"}); err != nil {
+			t.Fatalf("get terminal compute_cost text failed: %v", err)
+		}
+		got := out.String()
+		if !strings.Contains(got, "9000") {
+			t.Errorf("output missing compute_cost amount_cents 9000:\n%s", got)
+		}
+		if !strings.Contains(got, "usd") {
+			t.Errorf("output missing compute_cost currency usd:\n%s", got)
+		}
+		if !strings.Contains(got, "true") {
+			t.Errorf("output missing compute_cost final=true:\n%s", got)
+		}
+	})
+
+	t.Run("json", func(t *testing.T) {
+		var out bytes.Buffer
+		ctx := makeCtx(t, ts.URL, "tok", true, &out)
+
+		cmd := getCmd()
+		cmd.SetContext(ctx)
+		cmd.SetOut(&out)
+
+		if err := cmd.RunE(cmd, []string{"t21"}); err != nil {
+			t.Fatalf("get terminal compute_cost json failed: %v", err)
+		}
+		got := out.String()
+		if !strings.Contains(got, `"compute_cost"`) {
+			t.Errorf("JSON output missing compute_cost key:\n%s", got)
+		}
+		if !strings.Contains(got, `"amount_cents"`) {
+			t.Errorf("JSON output missing amount_cents key:\n%s", got)
+		}
+		if !strings.Contains(got, `"currency"`) {
+			t.Errorf("JSON output missing currency key:\n%s", got)
+		}
+		if !strings.Contains(got, `"final"`) {
+			t.Errorf("JSON output missing final key:\n%s", got)
+		}
+		if !strings.Contains(got, "9000") {
+			t.Errorf("JSON output missing value 9000:\n%s", got)
+		}
+		if !strings.Contains(got, "true") {
+			t.Errorf("JSON output missing true:\n%s", got)
+		}
+	})
+}
+
+func TestTasksList_ComputeCost(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":[`+
+			`{"type":"tasks","id":"t30","attributes":{"kind":"feature","title":"Task Running","stage":"implementing","status":"open","billable_compute_minutes":0,"billable_compute_minutes_final":false,"compute_cost":{"amount_cents":250,"currency":"usd","final":false}}},`+
+			`{"type":"tasks","id":"t31","attributes":{"kind":"bug","title":"Task Done","stage":"completed","status":"open","billable_compute_minutes":90,"billable_compute_minutes_final":true,"compute_cost":{"amount_cents":9000,"currency":"usd","final":true}}}`+
+			`]}`)
+	}))
+	defer ts.Close()
+
+	t.Run("text", func(t *testing.T) {
+		var out bytes.Buffer
+		ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+		cmd := listCmd()
+		cmd.SetContext(ctx)
+		cmd.SetOut(&out)
+
+		if err := cmd.RunE(cmd, nil); err != nil {
+			t.Fatalf("list compute_cost text failed: %v", err)
+		}
+		got := out.String()
+		if !strings.Contains(got, "250") {
+			t.Errorf("output missing compute_cost amount_cents 250:\n%s", got)
+		}
+		if !strings.Contains(got, "9000") {
+			t.Errorf("output missing compute_cost amount_cents 9000:\n%s", got)
+		}
+		if !strings.Contains(got, "false") {
+			t.Errorf("output missing compute_cost final=false:\n%s", got)
+		}
+		if !strings.Contains(got, "true") {
+			t.Errorf("output missing compute_cost final=true:\n%s", got)
+		}
+	})
+
+	t.Run("json", func(t *testing.T) {
+		var out bytes.Buffer
+		ctx := makeCtx(t, ts.URL, "tok", true, &out)
+
+		cmd := listCmd()
+		cmd.SetContext(ctx)
+		cmd.SetOut(&out)
+
+		if err := cmd.RunE(cmd, nil); err != nil {
+			t.Fatalf("list compute_cost json failed: %v", err)
+		}
+		got := out.String()
+		if !strings.Contains(got, `"compute_cost"`) {
+			t.Errorf("JSON output missing compute_cost key:\n%s", got)
+		}
+		if !strings.Contains(got, `"amount_cents"`) {
+			t.Errorf("JSON output missing amount_cents key:\n%s", got)
+		}
+		if !strings.Contains(got, `"currency"`) {
+			t.Errorf("JSON output missing currency key:\n%s", got)
+		}
+		if !strings.Contains(got, `"final"`) {
+			t.Errorf("JSON output missing final key:\n%s", got)
+		}
+	})
+}
