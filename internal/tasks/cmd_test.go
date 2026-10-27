@@ -1626,3 +1626,163 @@ func TestTasksCreateWatch_Timeout(t *testing.T) {
 		t.Errorf("expected 'timed out' in error; got: %v", err)
 	}
 }
+
+func TestTasksGet_BillableMinutes_Running(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t10","attributes":{"kind":"feature","title":"Running Task","stage":"implementing","status":"open","billable_compute_minutes":5,"billable_compute_minutes_final":false}}}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := getCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	if err := cmd.RunE(cmd, []string{"t10"}); err != nil {
+		t.Fatalf("get running failed: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "5") {
+		t.Errorf("output missing billable_compute_minutes value 5:\n%s", got)
+	}
+	if !strings.Contains(got, "false") {
+		t.Errorf("output missing billable_compute_minutes_final=false:\n%s", got)
+	}
+}
+
+func TestTasksGet_BillableMinutes_Terminal(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t11","attributes":{"kind":"feature","title":"Terminal Task","stage":"completed","status":"open","billable_compute_minutes":12,"billable_compute_minutes_final":true}}}`)
+	}))
+	defer ts.Close()
+
+	t.Run("text", func(t *testing.T) {
+		var out bytes.Buffer
+		ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+		cmd := getCmd()
+		cmd.SetContext(ctx)
+		cmd.SetOut(&out)
+
+		if err := cmd.RunE(cmd, []string{"t11"}); err != nil {
+			t.Fatalf("get terminal text failed: %v", err)
+		}
+		got := out.String()
+		if !strings.Contains(got, "12") {
+			t.Errorf("output missing billable_compute_minutes value 12:\n%s", got)
+		}
+		if !strings.Contains(got, "true") {
+			t.Errorf("output missing billable_compute_minutes_final=true:\n%s", got)
+		}
+	})
+
+	t.Run("json", func(t *testing.T) {
+		var out bytes.Buffer
+		ctx := makeCtx(t, ts.URL, "tok", true, &out)
+
+		cmd := getCmd()
+		cmd.SetContext(ctx)
+		cmd.SetOut(&out)
+
+		if err := cmd.RunE(cmd, []string{"t11"}); err != nil {
+			t.Fatalf("get terminal json failed: %v", err)
+		}
+		got := out.String()
+		if !strings.Contains(got, `"billable_compute_minutes"`) {
+			t.Errorf("JSON output missing billable_compute_minutes key:\n%s", got)
+		}
+		if !strings.Contains(got, `"billable_compute_minutes_final"`) {
+			t.Errorf("JSON output missing billable_compute_minutes_final key:\n%s", got)
+		}
+		if !strings.Contains(got, "12") {
+			t.Errorf("JSON output missing value 12:\n%s", got)
+		}
+		if !strings.Contains(got, "true") {
+			t.Errorf("JSON output missing true:\n%s", got)
+		}
+	})
+}
+
+func TestTasksGet_BillableMinutes_Zero(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t12","attributes":{"kind":"feature","title":"Zero Task","stage":"planning","status":"open","billable_compute_minutes":0,"billable_compute_minutes_final":false}}}`)
+	}))
+	defer ts.Close()
+
+	var out bytes.Buffer
+	ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+	cmd := getCmd()
+	cmd.SetContext(ctx)
+	cmd.SetOut(&out)
+
+	if err := cmd.RunE(cmd, []string{"t12"}); err != nil {
+		t.Fatalf("get zero minutes failed: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "0") {
+		t.Errorf("output missing billable_compute_minutes value 0:\n%s", got)
+	}
+	if !strings.Contains(got, "false") {
+		t.Errorf("output missing billable_compute_minutes_final=false:\n%s", got)
+	}
+}
+
+func TestTasksList_BillableMinutes(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":[`+
+			`{"type":"tasks","id":"t1","attributes":{"kind":"feature","title":"Task One","stage":"implementing","status":"open","billable_compute_minutes":3,"billable_compute_minutes_final":false}},`+
+			`{"type":"tasks","id":"t2","attributes":{"kind":"bug","title":"Task Two","stage":"completed","status":"open","billable_compute_minutes":8,"billable_compute_minutes_final":true}}`+
+			`]}`)
+	}))
+	defer ts.Close()
+
+	t.Run("text", func(t *testing.T) {
+		var out bytes.Buffer
+		ctx := makeCtx(t, ts.URL, "tok", false, &out)
+
+		cmd := listCmd()
+		cmd.SetContext(ctx)
+		cmd.SetOut(&out)
+
+		if err := cmd.RunE(cmd, nil); err != nil {
+			t.Fatalf("list text failed: %v", err)
+		}
+		got := out.String()
+		if !strings.Contains(got, "3") {
+			t.Errorf("output missing value 3:\n%s", got)
+		}
+		if !strings.Contains(got, "8") {
+			t.Errorf("output missing value 8:\n%s", got)
+		}
+		if !strings.Contains(got, "true") {
+			t.Errorf("output missing true for final=true:\n%s", got)
+		}
+	})
+
+	t.Run("json", func(t *testing.T) {
+		var out bytes.Buffer
+		ctx := makeCtx(t, ts.URL, "tok", true, &out)
+
+		cmd := listCmd()
+		cmd.SetContext(ctx)
+		cmd.SetOut(&out)
+
+		if err := cmd.RunE(cmd, nil); err != nil {
+			t.Fatalf("list json failed: %v", err)
+		}
+		got := out.String()
+		if !strings.Contains(got, `"billable_compute_minutes"`) {
+			t.Errorf("JSON output missing billable_compute_minutes key:\n%s", got)
+		}
+		if !strings.Contains(got, `"billable_compute_minutes_final"`) {
+			t.Errorf("JSON output missing billable_compute_minutes_final key:\n%s", got)
+		}
+	})
+}
