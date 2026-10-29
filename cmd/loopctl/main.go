@@ -99,7 +99,7 @@ func loopWorkflows() []airef.Workflow {
 		},
 		{
 			Name:        "Watch a task to completion",
-			Description: "Stream stage transitions of a running task until it reaches a terminal state.",
+			Description: "Stream stage transitions of a running task until it completes or is reviewed (exit 0), or is rejected or blocked (non-zero; the blocked reason is shown), or the timeout runs out. Container errors are printed but do not end the watch.",
 			Steps: []string{
 				`loopctl tasks watch <task-id>`,
 				`loopctl tasks watch <task-id> --interval 30s --timeout 60m`,

@@ -3,6 +3,7 @@ package tasks
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -424,35 +425,156 @@ func TestTasksWatch_Rejected(t *testing.T) {
 	}
 }
 
-func TestTasksWatch_ContainerError(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+// watchStub serves a scripted sequence of (task attrs JSON, activities JSON)
+// per poll; the last step repeats.
+type watchStep struct{ task, acts string }
+
+func watchStub(t *testing.T, id string, steps []watchStep, taskGets *int32) *httptest.Server {
+	t.Helper()
+	var actGets int32
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/vnd.api+json")
+		pick := func(n int32) watchStep {
+			i := int(n) - 1
+			if i >= len(steps) {
+				i = len(steps) - 1
+			}
+			return steps[i]
+		}
 		switch r.URL.Path {
-		case "/api/tasks/t1":
-			_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{"stage":"implementing","pr_number":0}}}`)
-		case "/api/tasks/t1/activities":
-			_, _ = fmt.Fprint(w, `{"data":[{"type":"task_activities","id":"a1","attributes":{"action":"container.error","details":"OOM killed","created_at":"2026-01-01T00:00:00Z"}}]}`)
+		case "/api/tasks/" + id:
+			n := atomic.AddInt32(taskGets, 1)
+			_, _ = fmt.Fprintf(w, `{"data":{"type":"tasks","id":%q,"attributes":%s}}`, id, pick(n).task)
+		case "/api/tasks/" + id + "/activities":
+			n := atomic.AddInt32(&actGets, 1)
+			_, _ = fmt.Fprintf(w, `{"data":%s}`, pick(n).acts)
 		}
 	}))
-	defer ts.Close()
+}
 
+const containerErrAct = `[{"type":"task_activities","id":"a1","attributes":{"action":"container.error","details":"Container provisioning timed out","created_at":"2026-01-01T00:00:00Z"}}]`
+
+func runWatch(t *testing.T, url string, jsonMode bool, timeout string) (string, error) {
+	t.Helper()
 	var out bytes.Buffer
-	ctx := makeCtx(t, ts.URL, "tok", false, &out)
-
+	ctx := makeCtx(t, url, "tok", jsonMode, &out)
 	cmd := watchCmd()
 	cmd.SetContext(ctx)
 	cmd.SetOut(&out)
 	_ = cmd.Flags().Set("interval", "10ms")
-
+	if timeout != "" {
+		_ = cmd.Flags().Set("timeout", timeout)
+	}
 	err := cmd.RunE(cmd, []string{"t1"})
-	if err == nil {
-		t.Fatal("expected non-nil error for container.error")
+	return out.String(), err
+}
+
+func TestTasksWatch_ExistingContainerErrorBeforeStart(t *testing.T) {
+	var gets int32
+	ts := watchStub(t, "t1", []watchStep{
+		{`{"stage":"implementing"}`, containerErrAct},
+		{`{"stage":"implementing"}`, containerErrAct},
+		{`{"stage":"completed"}`, containerErrAct},
+	}, &gets)
+	defer ts.Close()
+
+	got, err := runWatch(t, ts.URL, false, "")
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
 	}
-	if !strings.Contains(err.Error(), "container error") {
-		t.Errorf("expected 'container error' in error; got: %v", err)
+	if atomic.LoadInt32(&gets) < 3 {
+		t.Errorf("expected watch to keep polling, got %d task GETs", gets)
 	}
-	if !strings.Contains(out.String(), "OOM killed") {
-		t.Errorf("expected detail 'OOM killed' in output:\n%s", out.String())
+	if strings.Contains(got, "container error") {
+		t.Errorf("old container error must not be reported as new:\n%s", got)
+	}
+}
+
+func TestTasksWatch_NewContainerErrorThenStageChange(t *testing.T) {
+	var gets int32
+	ts := watchStub(t, "t1", []watchStep{
+		{`{"stage":"planned"}`, `[]`},
+		{`{"stage":"planned"}`, containerErrAct},
+		{`{"stage":"implementing"}`, containerErrAct},
+		{`{"stage":"completed"}`, containerErrAct},
+	}, &gets)
+	defer ts.Close()
+
+	got, err := runWatch(t, ts.URL, false, "")
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if !strings.Contains(got, "container error: Container provisioning timed out") {
+		t.Errorf("expected container error detail in output:\n%s", got)
+	}
+	if !strings.Contains(got, "stage=implementing") || !strings.Contains(got, "stage=completed") {
+		t.Errorf("expected watch to continue through stages:\n%s", got)
+	}
+}
+
+func TestTasksWatch_ContainerErrorJSONMode(t *testing.T) {
+	var gets int32
+	ts := watchStub(t, "t1", []watchStep{
+		{`{"stage":"planned"}`, `[]`},
+		{`{"stage":"completed"}`, containerErrAct},
+	}, &gets)
+	defer ts.Close()
+
+	got, err := runWatch(t, ts.URL, true, "")
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if strings.Contains(got, "container error") {
+		t.Errorf("JSON mode must not print text lines:\n%s", got)
+	}
+	var v map[string]any
+	if err := json.Unmarshal([]byte(got), &v); err != nil {
+		t.Errorf("expected a single JSON document: %v\n%s", err, got)
+	}
+}
+
+func TestTasksWatch_Blocked(t *testing.T) {
+	cases := []struct {
+		name, attrs, want string
+		json              bool
+	}{
+		{"stage", `{"stage":"blocked","blocked_reason":"needs a human"}`, "needs a human", false},
+		{"status", `{"stage":"implementing","status":"blocked","blocked_reason":"needs a human"}`, "needs a human", false},
+		{"empty reason", `{"stage":"blocked"}`, "", false},
+		{"json", `{"stage":"blocked","blocked_reason":"needs a human"}`, "needs a human", true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			var gets int32
+			ts := watchStub(t, "t1", []watchStep{{`{"stage":"implementing"}`, `[]`}, {c.attrs, `[]`}}, &gets)
+			defer ts.Close()
+			got, err := runWatch(t, ts.URL, c.json, "")
+			if err == nil {
+				t.Fatal("expected error for blocked task")
+			}
+			if !strings.Contains(err.Error(), "task blocked") || !strings.Contains(err.Error(), c.want) {
+				t.Errorf("unexpected error: %v", err)
+			}
+			if c.want != "" && !strings.Contains(got, c.want) {
+				t.Errorf("expected reason in output:\n%s", got)
+			}
+			if c.want == "" && strings.HasSuffix(err.Error(), ":") {
+				t.Errorf("dangling colon in error: %v", err)
+			}
+		})
+	}
+}
+
+func TestTasksWatch_Reviewed(t *testing.T) {
+	var gets int32
+	ts := watchStub(t, "t1", []watchStep{{`{"stage":"implementing"}`, `[]`}, {`{"stage":"reviewed"}`, `[]`}}, &gets)
+	defer ts.Close()
+	got, err := runWatch(t, ts.URL, false, "")
+	if err != nil {
+		t.Fatalf("expected nil error, got %v", err)
+	}
+	if !strings.Contains(got, "stage=reviewed") {
+		t.Errorf("expected stage=reviewed:\n%s", got)
 	}
 }
 
@@ -953,14 +1075,19 @@ func TestTasksCreateWatch_Rejected(t *testing.T) {
 	}
 }
 
-func TestTasksCreateWatch_ContainerError(t *testing.T) {
+func TestTasksCreateWatch_ExistingContainerErrorThenBlocked(t *testing.T) {
+	var taskGets int32
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/vnd.api+json")
 		switch {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/tasks":
 			_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"tnew","attributes":{"project_id":"proj1","kind":"feature","title":"Watch Task","stage":"planning","status":"open"}}}`)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/tasks/tnew":
-			_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"tnew","attributes":{"stage":"implementing","pr_number":0}}}`)
+			stage := "implementing"
+			if atomic.AddInt32(&taskGets, 1) > 2 {
+				stage = "blocked"
+			}
+			_, _ = fmt.Fprintf(w, `{"data":{"type":"tasks","id":"tnew","attributes":{"stage":%q,"blocked_reason":"stuck on review","pr_number":0}}}`, stage)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/tasks/tnew/activities":
 			_, _ = fmt.Fprint(w, `{"data":[{"type":"task_activities","id":"a1","attributes":{"action":"container.error","details":"OOM killed","created_at":"2026-01-01T00:00:00Z"}}]}`)
 		}
@@ -982,13 +1109,13 @@ func TestTasksCreateWatch_ContainerError(t *testing.T) {
 
 	err := cmd.RunE(cmd, nil)
 	if err == nil {
-		t.Fatal("expected non-nil error for container.error")
+		t.Fatal("expected non-nil error for blocked task")
 	}
-	if !strings.Contains(err.Error(), "container error") {
-		t.Errorf("expected 'container error' in error; got: %v", err)
+	if !strings.Contains(err.Error(), "task blocked: stuck on review") {
+		t.Errorf("expected blocked reason in error; got: %v", err)
 	}
-	if !strings.Contains(out.String(), "OOM killed") {
-		t.Errorf("expected 'OOM killed' detail in output:\n%s", out.String())
+	if atomic.LoadInt32(&taskGets) < 3 {
+		t.Errorf("existing container.error must not end the watch; task GETs=%d", taskGets)
 	}
 }
 
