@@ -508,6 +508,7 @@ func watchTask(
 	var lastStage string
 	var lastPRNumber int
 	var lastActID string
+	firstPoll := true
 
 	poll := func() (bool, error) {
 		res, err := apiclient.GetJSONAPISingleFull[TaskAttrs](ctx, activeCtx, taskPath)
@@ -537,7 +538,13 @@ func watchTask(
 
 		stageChanged := t.Stage != lastStage
 		prChanged := t.PRNumber != lastPRNumber
-		actChanged := newestID != "" && newestID != lastActID
+		// Activity that exists when the watch starts is already seen, not new.
+		actChanged := !firstPoll && newestID != "" && newestID != lastActID
+		if firstPoll {
+			lastActID = newestID
+			stageChanged = true
+			firstPoll = false
+		}
 
 		if stageChanged || prChanged || actChanged {
 			lastStage = t.Stage
@@ -556,17 +563,25 @@ func watchTask(
 			}
 		}
 
-		// Container error check takes priority over terminal state.
-		if actChanged && newestAction == "container.error" {
-			if !jsonMode {
-				_, _ = fmt.Fprintf(out, "container error detail: %s\n", newestDetails)
-			} else {
-				_ = output.JSONTo(out, res)
-			}
-			return true, clierror.New(clierror.CodeServerError, "container error: "+newestDetails, "")
+		// A container error is recoverable (LoopControl retries the container),
+		// so it is reported but never ends the watch.
+		if actChanged && newestAction == "container.error" && !jsonMode {
+			_, _ = fmt.Fprintf(out, "container error: %s\n", newestDetails)
 		}
 
 		// Terminal state check.
+		if t.Stage == "blocked" || t.Status == "blocked" {
+			msg := "task blocked"
+			if t.BlockedReason != "" {
+				msg += ": " + t.BlockedReason
+			}
+			if jsonMode {
+				_ = output.JSONTo(out, res)
+			} else {
+				_, _ = fmt.Fprintf(out, "blocked reason: %s\n", t.BlockedReason)
+			}
+			return true, clierror.New(clierror.CodeServerError, msg, "")
+		}
 		switch t.Stage {
 		case "completed", "reviewed":
 			if jsonMode {

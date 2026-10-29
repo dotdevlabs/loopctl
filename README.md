@@ -924,7 +924,7 @@ loopctl tasks unblock <id> --dry-run
 
 #### tasks watch
 
-Follow a task to a terminal state, streaming stage and activity changes as they occur. Exits with code 0 when the task reaches `completed` or `reviewed`; exits non-zero on `rejected`, container error, or timeout.
+Follow a task to a terminal state, streaming stage and activity changes as they occur. Exits with code 0 when the task reaches `completed` or `reviewed`; exits non-zero on `rejected`, on `blocked` (the blocked reason is printed and included in the error), or on timeout. Activity that already exists when the watch starts is not reported. A new `container.error` activity is printed with its detail but does not end the watch, because LoopControl retries the container.
 
 ```bash
 loopctl tasks watch <id>
@@ -942,7 +942,9 @@ loopctl tasks watch <id> --json
 
 **Exit codes:**
 - `0` — task reached `completed` or `reviewed`
-- non-zero — task `rejected`, `container.error` activity received, timeout exceeded, or network error
+- non-zero — task `rejected`, task `blocked` (with its reason), timeout exceeded, or network error
+
+`container.error` activities never change the exit code on their own.
 
 **APIs:** `GET /api/tasks/:id`, `GET /api/tasks/:id/activities`
 
