@@ -12,6 +12,7 @@ import (
 	"github.com/dotdevlabs/ctlkit/pkg/output"
 
 	"github.com/dotdevlabs/loopctl/internal/apiclient"
+	"github.com/dotdevlabs/loopctl/internal/flagmeta"
 )
 
 // TodoAttrs holds the attributes for a task todo (list/get responses).
@@ -178,10 +179,12 @@ func todosCreateCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&content, "content", "", "Todo content (required unless --bulk-json)")
 	cmd.Flags().StringVar(&status, "status", "pending", "Todo status (pending, in_progress, completed)")
+	flagmeta.Enum(cmd, "status", "pending", "in_progress", "completed")
 	cmd.Flags().StringVar(&stageName, "stage-name", "", "Stage name this todo belongs to")
 	cmd.Flags().StringVar(&activeForm, "active-form", "", "Active form description shown while working")
 	cmd.Flags().IntVar(&position, "position", 0, "Display position (0-indexed)")
 	cmd.Flags().StringVar(&bulkJSON, "bulk-json", "", "JSON array of todo objects for bulk creation")
+	flagmeta.Schema(cmd, "bulk-json", `{"type":"array","items":{"type":"object","properties":{"content":{"type":"string"},"status":{"type":"string","enum":["pending","in_progress","completed"]},"stage_name":{"type":"string"},"active_form":{"type":"string"}},"required":["content"]}}`)
 	return cmd
 }
 
@@ -243,6 +246,7 @@ func todosUpdateCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&status, "status", "", "New status (pending, in_progress, completed)")
+	flagmeta.Enum(cmd, "status", "pending", "in_progress", "completed")
 	cmd.Flags().StringVar(&content, "content", "", "New content text")
 	cmd.Flags().StringVar(&activeForm, "active-form", "", "New active form description")
 	return cmd

@@ -13,6 +13,7 @@ import (
 	"github.com/dotdevlabs/ctlkit/pkg/ctxutil"
 
 	"github.com/dotdevlabs/loopctl/internal/apiclient"
+	"github.com/dotdevlabs/loopctl/internal/flagmeta"
 	"github.com/dotdevlabs/loopctl/internal/wallet"
 )
 
@@ -85,6 +86,7 @@ func newCmdWithPayer(payer Payer) *cobra.Command {
 
 	cmd.Flags().StringVar(&product, "product", "topup",
 		"Product to fund: trial, topup, or subscription")
+	flagmeta.Enum(cmd, "product", "trial", "topup", "subscription")
 	return cmd
 }
 
