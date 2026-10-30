@@ -1242,6 +1242,8 @@ loopctl ai           # markdown output
 loopctl ai --json    # structured JSON for agent ingestion
 ```
 
+In the JSON reference each flag may carry `enum` (the fixed set of accepted values, e.g. `--status`, `--gate`, `--on-failure`, entry `--type`, `--product`) and `schema` (a JSON Schema for flags whose value is JSON, e.g. `--stages`, `--prompt-sections`, `--stage-triggers`, `--advance-requirements`, `--bulk-json`), plus `annotations`. Open-ended flags such as `tasks create --kind` declare no enum.
+
 ### onboard
 
 Register a new machine and persist API credentials in a single step. Does not require any prior configuration. Calls `POST /api/registrations` (unauthenticated), then writes the returned token into `~/.config/atmt/loopcontrol.yaml` under the specified context name.

@@ -10,6 +10,7 @@ import (
 	"github.com/dotdevlabs/ctlkit/pkg/output"
 
 	"github.com/dotdevlabs/loopctl/internal/apiclient"
+	"github.com/dotdevlabs/loopctl/internal/flagmeta"
 )
 
 // PipelineStageAttrs captures the attributes returned by the single-stage PATCH response.
@@ -250,15 +251,20 @@ func stagesAddCmd() *cobra.Command {
 	cmd.Flags().StringVar(&customStageName, "custom-stage-name", "", "custom_stage_name (custom type only)")
 	cmd.Flags().StringVar(&instructions, "instructions", "", "Instructions / prompt text (deprecated: use --prompt-sections)")
 	cmd.Flags().StringVar(&gate, "gate", "", "Advance gate (automated or human)")
+	flagmeta.Enum(cmd, "gate", "automated", "human")
 	cmd.Flags().StringVar(&advanceNotice, "advance-notice", "", "Advance notice value")
 	cmd.Flags().IntVar(&position, "position", 0, "Explicit position override")
 	cmd.Flags().StringVar(&onFailure, "on-failure", "", "Failure mode: rework or block")
+	flagmeta.Enum(cmd, "on-failure", "rework", "block")
 	cmd.Flags().IntVar(&maxReworkCount, "max-rework-count", 0, "Maximum number of rework iterations")
 	cmd.Flags().IntVar(&reworkToPosition, "rework-to-position", 0, "Stage position to rework to")
 	cmd.Flags().BoolVar(&runsInContainer, "runs-in-container", false, "runs_in_container_override flag")
 	cmd.Flags().StringVar(&promptSectionsJSON, "prompt-sections", "", "JSON object of prompt section overrides")
+	flagmeta.Schema(cmd, "prompt-sections", `{"type":"object"}`)
 	cmd.Flags().StringVar(&stageTriggersJSON, "stage-triggers", "", "JSON array of stage trigger objects")
+	flagmeta.Schema(cmd, "stage-triggers", `{"type":"array","items":{"type":"object"}}`)
 	cmd.Flags().StringVar(&advanceReqJSON, "advance-requirements", "", "JSON array of requirement strings")
+	flagmeta.Schema(cmd, "advance-requirements", `{"type":"array","items":{"type":"string"}}`)
 	_ = cmd.MarkFlagRequired("name")
 	return cmd
 }
@@ -410,15 +416,20 @@ func stagesUpdateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&customStageName, "custom-stage-name", "", "custom_stage_name (custom type only)")
 	cmd.Flags().StringVar(&instructions, "instructions", "", "Instructions / prompt text (deprecated: use --prompt-sections)")
 	cmd.Flags().StringVar(&gate, "gate", "", "Advance gate (automated or human)")
+	flagmeta.Enum(cmd, "gate", "automated", "human")
 	cmd.Flags().StringVar(&advanceNotice, "advance-notice", "", "Advance notice value")
 	cmd.Flags().IntVar(&position, "position", 0, "Explicit position override")
 	cmd.Flags().StringVar(&onFailure, "on-failure", "", "Failure mode: rework or block")
+	flagmeta.Enum(cmd, "on-failure", "rework", "block")
 	cmd.Flags().IntVar(&maxReworkCount, "max-rework-count", 0, "Maximum number of rework iterations")
 	cmd.Flags().IntVar(&reworkToPosition, "rework-to-position", 0, "Stage position to rework to")
 	cmd.Flags().BoolVar(&runsInContainer, "runs-in-container", false, "runs_in_container_override flag")
 	cmd.Flags().StringVar(&promptSectionsJSON, "prompt-sections", "", "JSON object of prompt section overrides")
+	flagmeta.Schema(cmd, "prompt-sections", `{"type":"object"}`)
 	cmd.Flags().StringVar(&stageTriggersJSON, "stage-triggers", "", "JSON array of stage trigger objects")
+	flagmeta.Schema(cmd, "stage-triggers", `{"type":"array","items":{"type":"object"}}`)
 	cmd.Flags().StringVar(&advanceReqJSON, "advance-requirements", "", "JSON array of requirement strings")
+	flagmeta.Schema(cmd, "advance-requirements", `{"type":"array","items":{"type":"string"}}`)
 	return cmd
 }
 
