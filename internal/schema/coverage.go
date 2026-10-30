@@ -105,6 +105,7 @@ var Excluded = map[OperationKey]string{
 	{Method: "PATCH", Path: "/api/agent_sessions/:id"}:                      "container-internal: agent session lifecycle management",
 	{Method: "PATCH", Path: "/api/agent_sessions/:agent_session_id/stream"}: "container-internal: agent session transcript stream",
 	{Method: "PUT", Path: "/api/agent_sessions/:agent_session_id/stream"}:   "container-internal: agent session transcript stream (PUT alias)",
+	{Method: "GET", Path: "/api/me"}:                                        "token identity lookup; not yet implemented in loopctl",
 	// PUT aliases for PATCH operations — loopctl uses PATCH exclusively.
 	{Method: "PUT", Path: "/api/pipelines/:id"}:                            "PUT alias for PATCH /api/pipelines/:id; loopctl uses PATCH",
 	{Method: "PUT", Path: "/api/projects/:id"}:                             "PUT alias for PATCH /api/projects/:id; loopctl uses PATCH",
