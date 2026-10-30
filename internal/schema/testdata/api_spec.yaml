@@ -822,6 +822,44 @@ components:
       - built_in
       - environment_variables
       - required_secrets
+    MeAttributes:
+      type: object
+      properties:
+        token_name:
+          type: string
+        account:
+          type: object
+          properties:
+            id:
+              type: string
+            name:
+              type: string
+          additionalProperties: false
+          required:
+          - id
+          - name
+        user:
+          type: object
+          nullable: true
+          properties:
+            id:
+              type: string
+            email_address:
+              type: string
+          additionalProperties: false
+          required:
+          - id
+          - email_address
+        scopes:
+          type: array
+          items:
+            type: string
+      additionalProperties: false
+      required:
+      - token_name
+      - account
+      - user
+      - scopes
     TaskKindAttributes:
       type: object
       properties:
@@ -5385,6 +5423,68 @@ paths:
                   identity: contract
             authentication: browserSession
         input_constraints: []
+  "/api/me":
+    get:
+      operationId: get-api-me
+      summary: Returns the identity of the API token that made the request.
+      description: Authenticates by API token only (bearer or X-Api-Token); a cookie session is not accepted.
+      responses:
+        '200':
+          description: The token's account, user (null for agent tokens), token name and scopes
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: object
+                    required:
+                    - type
+                    - id
+                    - attributes
+                    - links
+                    properties:
+                      type:
+                        type: string
+                        enum:
+                        - me
+                      id:
+                        type: string
+                      attributes:
+                        "$ref": "#/components/schemas/MeAttributes"
+                      links:
+                        type: object
+                        required:
+                        - self
+                        properties:
+                          self:
+                            type: string
+                            nullable: true
+                        additionalProperties: false
+                    additionalProperties: false
+                additionalProperties: false
+        '401':
+          description: Missing, invalid or expired API token
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+      x-loopcontrol-contract:
+        scenarios:
+          success:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            query: {}
+          unauthenticated:
+            status: 401
+            setup:
+            - unauthenticated
+            media_type: application/vnd.api+json
+            query: {}
   "/api/task_kinds":
     get:
       operationId: get-api-task-kinds

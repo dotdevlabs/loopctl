@@ -64,15 +64,6 @@ func main() {
 		return nil
 	}
 
-	// Replace the nil-renderer ai command with one that honours --json.
-	for _, sub := range cmd.Commands() {
-		if sub.Name() == "ai" {
-			cmd.RemoveCommand(sub)
-			break
-		}
-	}
-	cmd.AddCommand(newAICmd(ver, wfs))
-
 	if err := cmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

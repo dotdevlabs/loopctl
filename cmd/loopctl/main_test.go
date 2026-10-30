@@ -2,17 +2,13 @@ package main
 
 import (
 	"bytes"
-	"context"
+	"encoding/json"
 	"io"
-	"net/http"
-	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/dotdevlabs/ctlkit/pkg/airef"
-	"github.com/dotdevlabs/ctlkit/pkg/ctxutil"
-	"github.com/dotdevlabs/ctlkit/pkg/httpclient"
-	"github.com/dotdevlabs/ctlkit/pkg/output"
 	"github.com/dotdevlabs/ctlkit/pkg/root"
 	"github.com/dotdevlabs/ctlkit/pkg/version"
 	"github.com/spf13/cobra"
@@ -44,13 +40,6 @@ func buildRoot() *cobra.Command {
 		},
 		Workflows: wfs,
 	})
-	for _, sub := range cmd.Commands() {
-		if sub.Name() == "ai" {
-			cmd.RemoveCommand(sub)
-			break
-		}
-	}
-	cmd.AddCommand(newAICmd(ver, wfs))
 	return cmd
 }
 
@@ -90,82 +79,81 @@ func TestRootHasBuiltinCommands(t *testing.T) {
 	}
 }
 
-func TestAICommandMarkdown(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	defer ts.Close()
-
+// runAI executes the real root with the given args and returns stdout.
+func runAI(t *testing.T, args ...string) string {
+	t.Helper()
+	cmd := buildRoot()
 	var out bytes.Buffer
-	client := httpclient.NewWithTransport(ts.URL, "tok", http.DefaultTransport)
-	renderer := output.New(false, "", &out, io.Discard)
-
-	ctx := ctxutil.WithClient(context.Background(), client)
-	ctx = ctxutil.WithRenderer(ctx, renderer)
-	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{})
-
-	ver := version.Current("loopctl")
-	wfs := loopWorkflows()
-	aiCmd := newAICmd(ver, wfs)
-	aiCmd.SetContext(ctx)
-	aiCmd.SetOut(&out)
-
-	if err := aiCmd.RunE(aiCmd, nil); err != nil {
-		t.Fatalf("ai cmd failed: %v", err)
+	cmd.SetOut(&out)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs(args)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("%v failed: %v", args, err)
 	}
-	got := out.String()
-	if !strings.Contains(got, "loopctl Command Reference") {
-		t.Errorf("expected markdown heading; got:\n%s", got)
+	return out.String()
+}
+
+func findCommand(cmds []airef.CommandRef, use string) *airef.CommandRef {
+	for i := range cmds {
+		if strings.Fields(cmds[i].Use)[0] == use {
+			return &cmds[i]
+		}
 	}
-	if !strings.Contains(got, "Common Workflows") {
-		t.Errorf("expected workflows section; got:\n%s", got)
+	return nil
+}
+
+func TestAIJSON(t *testing.T) {
+	dec := json.NewDecoder(strings.NewReader(runAI(t, "ai", "--json")))
+	dec.DisallowUnknownFields()
+	var ref airef.Reference
+	if err := dec.Decode(&ref); err != nil {
+		t.Fatalf("ai --json is not an airef.Reference: %v", err)
+	}
+	if ref.Product != "loopctl" {
+		t.Errorf("product = %q, want loopctl", ref.Product)
+	}
+	if len(ref.Commands) == 0 {
+		t.Fatal("no commands in reference")
+	}
+	if !reflect.DeepEqual(ref.Workflows, loopWorkflows()) {
+		t.Errorf("workflows differ from loopWorkflows()")
+	}
+
+	tasksRef := findCommand(ref.Commands, "tasks")
+	if tasksRef == nil {
+		t.Fatal("tasks command missing")
+	}
+	create := findCommand(tasksRef.Subcommands, "create")
+	if create == nil {
+		t.Fatal("tasks create missing")
+	}
+	required := map[string]bool{}
+	for _, f := range create.Flags {
+		required[f.Name] = f.Required
+	}
+	for _, name := range []string{"project-id", "kind", "title", "description"} {
+		if !required[name] {
+			t.Errorf("flag --%s should be marked required", name)
+		}
+	}
+	if req, ok := required["depends-on"]; !ok || req {
+		t.Errorf("flag --depends-on should exist and be optional (present=%v required=%v)", ok, req)
 	}
 }
 
-func TestAICommandJSON(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
-	defer ts.Close()
-
-	var out bytes.Buffer
-	client := httpclient.NewWithTransport(ts.URL, "tok", http.DefaultTransport)
-	renderer := output.New(true, "", &out, io.Discard)
-
-	ctx := ctxutil.WithClient(context.Background(), client)
-	ctx = ctxutil.WithRenderer(ctx, renderer)
-	ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{JSON: true})
-
-	// Build root so the ai command has a parent with the --json flag.
-	rootCmd := buildRoot()
-	rootCmd.SetOut(&out)
-
-	// Find the ai command.
-	var aiCmd *cobra.Command
-	for _, sub := range rootCmd.Commands() {
-		if sub.Name() == "ai" {
-			aiCmd = sub
-			break
+func TestAIMarkdown(t *testing.T) {
+	got := runAI(t, "ai")
+	if json.Valid([]byte(got)) {
+		t.Errorf("expected markdown, got JSON:\n%s", got)
+	}
+	wfs := loopWorkflows()
+	for _, want := range []string{"# loopctl Command Reference", "## Common Workflows", wfs[0].Name} {
+		if !strings.Contains(got, want) {
+			t.Errorf("markdown missing %q; got:\n%s", want, got)
 		}
 	}
-	if aiCmd == nil {
-		t.Fatal("ai command not found")
-	}
-	aiCmd.SetContext(ctx)
-	aiCmd.SetOut(&out)
-	_ = renderer
-	_ = client
-
-	// Set --json on root's persistent flags.
-	if err := rootCmd.PersistentFlags().Set("json", "true"); err != nil {
-		t.Fatal(err)
-	}
-
-	if err := aiCmd.RunE(aiCmd, nil); err != nil {
-		t.Fatalf("ai cmd failed: %v", err)
-	}
-	got := out.String()
-	if !strings.Contains(got, `"product"`) {
-		t.Errorf("expected JSON with product field; got:\n%s", got)
-	}
-	if !strings.Contains(got, `"loopctl"`) {
-		t.Errorf("expected loopctl in JSON; got:\n%s", got)
+	if !strings.Contains(got, "| yes |") {
+		t.Errorf("markdown missing a required-flag row; got:\n%s", got)
 	}
 }
 
@@ -181,27 +169,5 @@ func TestLoopWorkflows(t *testing.T) {
 		if len(wf.Steps) == 0 {
 			t.Errorf("workflow %q has no steps", wf.Name)
 		}
-	}
-}
-
-func TestRenderAIMarkdown(t *testing.T) {
-	ref := airef.Reference{
-		Product:  "loopctl",
-		Version:  "dev",
-		Commands: []airef.CommandRef{{Use: "projects", Short: "Manage projects"}},
-		Workflows: []airef.Workflow{
-			{Name: "Test workflow", Description: "A test", Steps: []string{"step 1"}},
-		},
-	}
-	var buf bytes.Buffer
-	if err := renderAIMarkdown(&buf, ref); err != nil {
-		t.Fatal(err)
-	}
-	out := buf.String()
-	if !strings.Contains(out, "loopctl Command Reference") {
-		t.Error("missing heading")
-	}
-	if !strings.Contains(out, "Test workflow") {
-		t.Error("missing workflow name")
 	}
 }
