@@ -203,8 +203,6 @@ Output columns: `ID`, `NAME`, `SLUG`, `INSTALL_COMMAND`, `LAUNCH_COMMAND`.
 
 **API:** `GET /api/agents/:id`
 
----
-
 #### agents update
 
 Update an agent. Only the flags you pass are sent; at least one is required.
