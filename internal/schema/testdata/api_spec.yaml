@@ -2,7 +2,7 @@
 openapi: 3.0.3
 info:
   title: LoopControl API
-  version: 1.2.0
+  version: 1.3.0
   description: API for managing containerized agent environments on a Kubernetes cluster.
 servers:
 - url: "/"
@@ -743,11 +743,20 @@ components:
           type: string
         slug:
           type: string
+        description:
+          type: string
+          nullable: true
         install_command:
           type: string
           nullable: true
         launch_command:
           type: string
+        rate_limit_rpm:
+          type: integer
+          nullable: true
+        rate_limit_tpm:
+          type: integer
+          nullable: true
         credentials_schema:
           type: array
           items:
@@ -756,9 +765,39 @@ components:
       required:
       - name
       - slug
+      - description
       - install_command
       - launch_command
+      - rate_limit_rpm
+      - rate_limit_tpm
       - credentials_schema
+    BalanceCreditAttributes:
+      type: object
+      properties:
+        minutes:
+          type: integer
+        bucket:
+          type: string
+          enum:
+          - monthly
+          - topup
+        description:
+          type: string
+        monthly_balance_after:
+          type: integer
+        topup_balance_after:
+          type: integer
+        created_at:
+          type: string
+          format: date-time
+      additionalProperties: false
+      required:
+      - minutes
+      - bucket
+      - description
+      - monthly_balance_after
+      - topup_balance_after
+      - created_at
     PlatformEnvironmentVariable:
       type: object
       properties:
@@ -5113,6 +5152,523 @@ paths:
                   identity: contract
             authentication: browserSession
         input_constraints: []
+    patch:
+      operationId: patch-api-agent
+      summary: Updates an agent's operator-editable attributes (launch command and similar).
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+        description: Agent ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - agent
+              properties:
+                agent:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    description:
+                      type: string
+                    launch_command:
+                      type: string
+                    install_command:
+                      type: string
+                    rate_limit_rpm:
+                      type: integer
+                    rate_limit_tpm:
+                      type: integer
+                  additionalProperties: true
+                  x-loopcontrol-open-reason: ignored_inputs
+                  x-loopcontrol-input-policy: Unknown keys (slug, account_id, built_in) are discarded by Rails strong parameters.
+              additionalProperties: true
+              x-loopcontrol-open-reason: ignored_inputs
+              x-loopcontrol-input-policy: Unknown top-level keys are discarded.
+      responses:
+        '200':
+          description: Updated agent
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: object
+                    required:
+                    - type
+                    - id
+                    - attributes
+                    - links
+                    properties:
+                      type:
+                        type: string
+                        enum:
+                        - agents
+                      id:
+                        type: string
+                      attributes:
+                        "$ref": "#/components/schemas/AgentAttributes"
+                      links:
+                        type: object
+                        required:
+                        - self
+                        properties:
+                          self:
+                            type: string
+                            nullable: true
+                        additionalProperties: false
+                    additionalProperties: false
+                additionalProperties: false
+        '404':
+          description: Agent not found or not owned by the account
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+        '422':
+          description: Validation failed (e.g. blank launch command)
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+        '401':
+          description: Missing or invalid bearer token; the response body is empty.
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+      x-loopcontrol-contract:
+        scenarios:
+          success:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: agent
+                  identity: default_agent
+            body:
+              agent:
+                launch_command: contract-agent --run
+          error_422:
+            status: 422
+            setup:
+            - documented_error
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: agent
+                  identity: default_agent
+            body:
+              agent:
+                launch_command: ''
+          not_found:
+            status: 404
+            setup:
+            - documented_error
+            media_type: application/vnd.api+json
+            path:
+              id: '0'
+            body:
+              agent:
+                launch_command: contract-agent --run
+          missing_agent_json:
+            status: 400
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: agent
+                  identity: default_agent
+            omit_body_field: agent
+            request_media_type: application/json
+            body:
+              agent:
+                launch_command: contract-agent --run
+          unauthenticated:
+            status: 401
+            setup:
+            - unauthenticated
+            path:
+              id: '1'
+            body:
+              agent:
+                launch_command: contract-agent --run
+        input_constraints:
+        - field: ''
+          operation: expect
+          arguments:
+          - 'agent: [ :name, :description, :launch_command, :install_command, :rate_limit_rpm, :rate_limit_tpm ]'
+    put:
+      operationId: put-api-agent
+      summary: Updates an agent's operator-editable attributes (launch command and similar).
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: integer
+        description: Agent ID
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - agent
+              properties:
+                agent:
+                  type: object
+                  properties:
+                    name:
+                      type: string
+                    description:
+                      type: string
+                    launch_command:
+                      type: string
+                    install_command:
+                      type: string
+                    rate_limit_rpm:
+                      type: integer
+                    rate_limit_tpm:
+                      type: integer
+                  additionalProperties: true
+                  x-loopcontrol-open-reason: ignored_inputs
+                  x-loopcontrol-input-policy: Unknown keys (slug, account_id, built_in) are discarded by Rails strong parameters.
+              additionalProperties: true
+              x-loopcontrol-open-reason: ignored_inputs
+              x-loopcontrol-input-policy: Unknown top-level keys are discarded.
+      responses:
+        '200':
+          description: Updated agent
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: object
+                    required:
+                    - type
+                    - id
+                    - attributes
+                    - links
+                    properties:
+                      type:
+                        type: string
+                        enum:
+                        - agents
+                      id:
+                        type: string
+                      attributes:
+                        "$ref": "#/components/schemas/AgentAttributes"
+                      links:
+                        type: object
+                        required:
+                        - self
+                        properties:
+                          self:
+                            type: string
+                            nullable: true
+                        additionalProperties: false
+                    additionalProperties: false
+                additionalProperties: false
+        '404':
+          description: Agent not found or not owned by the account
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+        '422':
+          description: Validation failed (e.g. blank launch command)
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+        '401':
+          description: Missing or invalid bearer token; the response body is empty.
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+      x-loopcontrol-contract:
+        scenarios:
+          success:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: agent
+                  identity: default_agent
+            body:
+              agent:
+                launch_command: contract-agent --run
+          error_422:
+            status: 422
+            setup:
+            - documented_error
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: agent
+                  identity: default_agent
+            body:
+              agent:
+                launch_command: ''
+          not_found:
+            status: 404
+            setup:
+            - documented_error
+            media_type: application/vnd.api+json
+            path:
+              id: '0'
+            body:
+              agent:
+                launch_command: contract-agent --run
+          missing_agent_json:
+            status: 400
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: agent
+                  identity: default_agent
+            omit_body_field: agent
+            request_media_type: application/json
+            body:
+              agent:
+                launch_command: contract-agent --run
+          unauthenticated:
+            status: 401
+            setup:
+            - unauthenticated
+            path:
+              id: '1'
+            body:
+              agent:
+                launch_command: contract-agent --run
+        input_constraints:
+        - field: ''
+          operation: expect
+          arguments:
+          - 'agent: [ :name, :description, :launch_command, :install_command, :rate_limit_rpm, :rate_limit_tpm ]'
+  "/api/balance_credits":
+    post:
+      operationId: post-api-balance-credits
+      summary: Credits compute minutes to the current account (platform admin only; idempotent by description).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - balance_credit
+              properties:
+                balance_credit:
+                  type: object
+                  properties:
+                    minutes:
+                      type: integer
+                      minimum: 1
+                      description: Required; a missing or non-positive value is rejected with 422.
+                    bucket:
+                      type: string
+                      enum:
+                      - monthly
+                      - topup
+                      default: topup
+                    description:
+                      type: string
+                      description: Idempotency key; a repeated description returns the original credit.
+                  additionalProperties: true
+                  x-loopcontrol-open-reason: ignored_inputs
+                  x-loopcontrol-input-policy: Unknown keys are discarded by Rails strong parameters; the credited account is always the token's account.
+              additionalProperties: true
+              x-loopcontrol-open-reason: ignored_inputs
+              x-loopcontrol-input-policy: Unknown top-level keys are discarded.
+      responses:
+        '201':
+          description: Credit recorded
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: object
+                    required:
+                    - type
+                    - id
+                    - attributes
+                    - links
+                    properties:
+                      type:
+                        type: string
+                        enum:
+                        - balance_credits
+                      id:
+                        type: string
+                      attributes:
+                        "$ref": "#/components/schemas/BalanceCreditAttributes"
+                      links:
+                        type: object
+                        required:
+                        - self
+                        properties:
+                          self:
+                            type: string
+                            nullable: true
+                        additionalProperties: false
+                    additionalProperties: false
+                additionalProperties: false
+        '200':
+          description: A credit with this description already exists; returned unchanged
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required:
+                - data
+                properties:
+                  data:
+                    type: object
+                    required:
+                    - type
+                    - id
+                    - attributes
+                    - links
+                    properties:
+                      type:
+                        type: string
+                        enum:
+                        - balance_credits
+                      id:
+                        type: string
+                      attributes:
+                        "$ref": "#/components/schemas/BalanceCreditAttributes"
+                      links:
+                        type: object
+                        required:
+                        - self
+                        properties:
+                          self:
+                            type: string
+                            nullable: true
+                        additionalProperties: false
+                    additionalProperties: false
+                additionalProperties: false
+        '403':
+          description: Token user is not a platform admin
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+        '422':
+          description: Invalid minutes, bucket or description
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+        '401':
+          description: Missing or invalid bearer token; the response body is empty.
+        '400':
+          "$ref": "#/components/responses/BadRequest"
+      x-loopcontrol-contract:
+        scenarios:
+          success:
+            status: 201
+            setup:
+            - authenticated
+            - platform_admin
+            media_type: application/vnd.api+json
+            body:
+              balance_credit:
+                minutes: 60
+                bucket: topup
+                description: contract credit
+          replay:
+            status: 200
+            setup:
+            - authenticated
+            - platform_admin
+            - existing_credit
+            media_type: application/vnd.api+json
+            body:
+              balance_credit:
+                minutes: 60
+                bucket: topup
+                description: contract replay
+          forbidden:
+            status: 403
+            setup:
+            - documented_error
+            media_type: application/vnd.api+json
+            body:
+              balance_credit:
+                minutes: 60
+                bucket: topup
+                description: contract credit
+          error_422:
+            status: 422
+            setup:
+            - documented_error
+            - platform_admin
+            media_type: application/vnd.api+json
+            body:
+              balance_credit:
+                minutes: 0
+                bucket: topup
+                description: contract credit
+          unauthenticated:
+            status: 401
+            setup:
+            - unauthenticated
+            body:
+              balance_credit:
+                minutes: 60
+                bucket: topup
+                description: contract credit
+          missing_balance_credit_json:
+            status: 400
+            setup:
+            - authenticated
+            - platform_admin
+            media_type: application/vnd.api+json
+            omit_body_field: balance_credit
+            request_media_type: application/json
+            body:
+              balance_credit:
+                minutes: 60
+                bucket: topup
+                description: contract credit
+        input_constraints:
+        - field: ''
+          operation: expect
+          arguments:
+          - 'balance_credit: [ :minutes, :bucket, :description ]'
   "/api/platforms":
     get:
       operationId: get-api-platforms

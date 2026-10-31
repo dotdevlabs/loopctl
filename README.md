@@ -205,6 +205,53 @@ Output columns: `ID`, `NAME`, `SLUG`, `INSTALL_COMMAND`, `LAUNCH_COMMAND`.
 
 ---
 
+#### agents update
+
+Update an agent. Only the flags you pass are sent; at least one is required.
+
+```bash
+loopctl agents update <id> --launch-command "claude --run"
+loopctl agents update <id> --name "Claude" --rate-limit-rpm 50 --rate-limit-tpm 40000
+```
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--name` | string | Agent name |
+| `--description` | string | Agent description |
+| `--launch-command` | string | Command that launches the agent |
+| `--install-command` | string | Command that installs the agent |
+| `--rate-limit-rpm` | int | Requests per minute limit |
+| `--rate-limit-tpm` | int | Tokens per minute limit |
+
+Output columns: `ID`, `NAME`, `SLUG`, `INSTALL_COMMAND`, `LAUNCH_COMMAND`. Supports `--dry-run`.
+
+**API:** `PATCH /api/agents/:id`
+
+---
+
+### account
+
+#### account credit
+
+Credit compute minutes to the current account. Platform-admin tokens only (otherwise 403). Idempotent by `--description`: repeating a description returns the original credit unchanged (HTTP 200 instead of 201).
+
+```bash
+loopctl account credit --minutes 60
+loopctl account credit --minutes 120 --bucket monthly --description "2026-11 grant"
+```
+
+| Flag | Type | Description |
+|------|------|-------------|
+| `--minutes` | int | Required; at least 1 |
+| `--bucket` | `monthly` or `topup` | Balance bucket (server default `topup`) |
+| `--description` | string | Idempotency key |
+
+Output columns: `ID`, `MINUTES`, `BUCKET`, `DESCRIPTION`, `MONTHLY_BALANCE_AFTER`, `TOPUP_BALANCE_AFTER`, `CREATED_AT`. Supports `--dry-run`.
+
+**API:** `POST /api/balance_credits`
+
+---
+
 ### credentials
 
 List and inspect credentials available to your account. Credential values are never printed.
@@ -1076,6 +1123,19 @@ loopctl tasks todos update <task-id> <todo-id> --dry-run
 **API:** `PATCH /api/tasks/:id/todos/:todo_id`
 
 ---
+
+#### tasks containers
+
+List the containers that ran a task. Pagination is followed automatically.
+
+```bash
+loopctl tasks containers <task-id>
+loopctl tasks containers <task-id> --json
+```
+
+Output columns: `ID`, `UID`, `STATUS`, `AGENT_STATUS`, `STATUS_MESSAGE`, `UPDATED_AT`.
+
+**API:** `GET /api/tasks/:task_id/containers`
 
 #### tasks recordings list
 

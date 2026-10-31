@@ -11,6 +11,7 @@ import (
 	"github.com/dotdevlabs/ctlkit/pkg/root"
 	"github.com/dotdevlabs/ctlkit/pkg/version"
 
+	"github.com/dotdevlabs/loopctl/internal/account"
 	"github.com/dotdevlabs/loopctl/internal/agents"
 	"github.com/dotdevlabs/loopctl/internal/apiclient"
 	"github.com/dotdevlabs/loopctl/internal/credentials"
@@ -34,6 +35,7 @@ func main() {
 		Short:   "CLI for managing LoopControl",
 		Version: ver,
 		Commands: []*cobra.Command{
+			account.NewCmd(),
 			agents.NewCmd(),
 			credentials.NewCmd(),
 			environments.NewCmd(),
