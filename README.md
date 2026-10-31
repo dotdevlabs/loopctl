@@ -1242,7 +1242,9 @@ loopctl ai           # markdown output
 loopctl ai --json    # structured JSON for agent ingestion
 ```
 
-In the JSON reference each flag may carry `enum` (the fixed set of accepted values, e.g. `--status`, `--gate`, `--on-failure`, entry `--type`, `--product`) and `schema` (a JSON Schema for flags whose value is JSON, e.g. `--stages`, `--prompt-sections`, `--stage-triggers`, `--advance-requirements`, `--bulk-json`), plus `annotations`. Open-ended flags such as `tasks create --kind` declare no enum.
+In the JSON reference each flag may carry `enum` (the fixed set of accepted values, e.g. `--status`, `--gate`, `--on-failure`, entry `--type`, `--product`) and `schema` (a JSON Schema for flags whose value is JSON, e.g. `--stages`, `--prompt-sections`, `--stage-triggers`, `--advance-requirements`, `--bulk-json`), plus `annotations`. Open-ended flags such as `tasks create --kind` declare no enum. Enums and schemas are read from the embedded API spec copy (`internal/schema/testdata/api_spec.yaml`), never typed by hand; tests fail on any difference.
+
+Set `LOOPCTL_BASE_URL` (and optionally `LOOPCTL_TOKEN`) to override the API address; with no context selected, these alone are enough to run commands.
 
 ### onboard
 

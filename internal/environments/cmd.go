@@ -440,7 +440,7 @@ func entriesAddCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&envVar, "env-var", "", "Environment variable name")
 	cmd.Flags().StringVar(&entryType, "type", "", "Entry type: \"custom\" or \"credential\"")
-	flagmeta.Enum(cmd, "type", "custom", "credential")
+	flagmeta.EnumFromSpec(cmd, "type", "#/components/schemas/EnvironmentEntryAttributes/properties/entry_type")
 	cmd.Flags().StringVar(&value, "value", "", "Custom value (for --type custom; reads from stdin if omitted)")
 	cmd.Flags().IntVar(&credentialSetID, "credential-set-id", 0, "Credential set ID (for --type credential)")
 
@@ -536,7 +536,7 @@ func entriesChangeCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&envVar, "env-var", "", "Environment variable name")
 	cmd.Flags().StringVar(&entryType, "type", "", "Entry type: \"custom\" or \"credential\"")
-	flagmeta.Enum(cmd, "type", "custom", "credential")
+	flagmeta.EnumFromSpec(cmd, "type", "#/components/schemas/EnvironmentEntryAttributes/properties/entry_type")
 	cmd.Flags().StringVar(&value, "value", "", "Custom value")
 	cmd.Flags().IntVar(&credentialSetID, "credential-set-id", 0, "Credential set ID")
 

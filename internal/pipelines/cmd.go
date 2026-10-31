@@ -130,7 +130,7 @@ func createCmd() *cobra.Command {
 	cmd.Flags().StringVar(&kind, "kind", "", "Task kind name the pipeline belongs to")
 	cmd.Flags().StringVar(&description, "description", "", "Optional description for the pipeline")
 	cmd.Flags().StringVar(&stagesJSON, "stages", "", `JSON array of stages, e.g. '[{"name":"plan","role":"planning","instructions":"..."}]'`)
-	flagmeta.Schema(cmd, "stages", `{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"role":{"type":"string"},"stage_type":{"type":"string"},"custom_stage_name":{"type":"string"},"instructions":{"type":"string"},"gate":{"type":"string","enum":["automated","human"]},"advance_notice":{"type":"string"},"on_failure":{"type":"string","enum":["rework","block"]},"max_rework_count":{"type":"integer"},"rework_to_position":{"type":"integer"},"runs_in_container_override":{"type":"boolean"},"position":{"type":"integer"},"prompt_sections":{"type":"object"},"stage_triggers":{"type":"array","items":{"type":"object"}},"advance_requirements":{"type":"array","items":{"type":"string"}}},"required":["name"]}}`)
+	flagmeta.SchemaFromSpec(cmd, "stages", "#/components/schemas/PipelineStageInput", true)
 	_ = cmd.MarkFlagRequired("name")
 	return cmd
 }
@@ -203,6 +203,6 @@ func updateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&kind, "kind", "", "Task kind name the pipeline belongs to")
 	cmd.Flags().StringVar(&description, "description", "", "Human-readable description")
 	cmd.Flags().StringVar(&stagesJSON, "stages", "", `JSON array of stages, e.g. '[{"name":"plan","role":"planning","instructions":"..."}]'`)
-	flagmeta.Schema(cmd, "stages", `{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"role":{"type":"string"},"stage_type":{"type":"string"},"custom_stage_name":{"type":"string"},"instructions":{"type":"string"},"gate":{"type":"string","enum":["automated","human"]},"advance_notice":{"type":"string"},"on_failure":{"type":"string","enum":["rework","block"]},"max_rework_count":{"type":"integer"},"rework_to_position":{"type":"integer"},"runs_in_container_override":{"type":"boolean"},"position":{"type":"integer"},"prompt_sections":{"type":"object"},"stage_triggers":{"type":"array","items":{"type":"object"}},"advance_requirements":{"type":"array","items":{"type":"string"}}},"required":["name"]}}`)
+	flagmeta.SchemaFromSpec(cmd, "stages", "#/components/schemas/PipelineStageInput", true)
 	return cmd
 }

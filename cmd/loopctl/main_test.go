@@ -4,9 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"reflect"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 
 	"github.com/dotdevlabs/ctlkit/pkg/airef"
 	"github.com/dotdevlabs/ctlkit/pkg/root"
@@ -217,9 +221,9 @@ func TestAIJSONFlagEnums(t *testing.T) {
 		{"pipelines stages update", "gate", []string{"automated", "human"}},
 		{"pipelines stages add", "on-failure", []string{"rework", "block"}},
 		{"pipelines stages update", "on-failure", []string{"rework", "block"}},
-		{"environments entries add", "type", []string{"custom", "credential"}},
-		{"environments entries change", "type", []string{"custom", "credential"}},
-		{"topup", "product", []string{"trial", "topup", "subscription"}},
+		{"environments entries add", "type", []string{"credential", "custom"}},
+		{"environments entries change", "type", []string{"credential", "custom"}},
+		{"topup", "product", []string{"trial", "topup", "subscription_prepay"}},
 	}
 	for _, c := range cases {
 		f, ok := flags[c.path][c.flag]
@@ -262,5 +266,150 @@ func TestAIJSONFlagSchemas(t *testing.T) {
 		if err := json.Unmarshal(f.Schema, &s); err != nil || s.Type != c.typ {
 			t.Errorf("%s --%s schema = %s (type %q err %v), want type %q", c.path, c.flag, f.Schema, s.Type, err, c.typ)
 		}
+	}
+}
+
+// specNode walks the raw embedded spec YAML along a pointer, independently of
+// the production helpers: first match wins on repeated keys, and a segment
+// absent from a oneOf node is searched in its alternatives.
+func specNode(n *yaml.Node, segs []string) []*yaml.Node {
+	if len(segs) == 0 {
+		return []*yaml.Node{n}
+	}
+	if n.Kind == yaml.DocumentNode {
+		return specNode(n.Content[0], segs)
+	}
+	if n.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		if n.Content[i].Value == segs[0] {
+			return specNode(n.Content[i+1], segs[1:])
+		}
+	}
+	var out []*yaml.Node
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		if n.Content[i].Value == "oneOf" {
+			for _, alt := range n.Content[i+1].Content {
+				out = append(out, specNode(alt, segs)...)
+			}
+		}
+	}
+	return out
+}
+
+func rawSpecEnum(t *testing.T, ptr string) []string {
+	t.Helper()
+	var doc yaml.Node
+	if err := yaml.Unmarshal(schema.FixtureData(), &doc); err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, n := range specNode(&doc, strings.Split(ptr, "/")) {
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			if n.Content[i].Value == "enum" {
+				for _, v := range n.Content[i+1].Content {
+					out = append(out, v.Value)
+				}
+			}
+		}
+	}
+	return out
+}
+
+// TestAIJSONFlagsMatchSpec fails when any flag enum differs from the spec copy.
+func TestAIJSONFlagsMatchSpec(t *testing.T) {
+	flags := aiFlags(t)
+	c := "components/schemas/"
+	cases := []struct{ path, flag, ptr string }{
+		{"tasks todos create", "status", c + "TodoAttributes/properties/status"},
+		{"tasks todos update", "status", c + "TodoAttributes/properties/status"},
+		{"pipelines stages add", "gate", c + "PipelineStageInput/properties/gate"},
+		{"pipelines stages update", "gate", c + "PipelineStageInput/properties/gate"},
+		{"pipelines stages add", "on-failure", c + "PipelineStageInput/properties/on_failure"},
+		{"pipelines stages update", "on-failure", c + "PipelineStageInput/properties/on_failure"},
+		{"environments entries add", "type", c + "EnvironmentEntryAttributes/properties/entry_type"},
+		{"environments entries change", "type", c + "EnvironmentEntryAttributes/properties/entry_type"},
+		{"topup", "product", c + "FundingEnvelopeProduct/properties/kind"},
+	}
+	mapped := map[string]bool{}
+	for _, tc := range cases {
+		mapped[tc.path+" --"+tc.flag] = true
+		want := rawSpecEnum(t, tc.ptr)
+		if len(want) == 0 {
+			t.Fatalf("%s: spec has no enum", tc.ptr)
+		}
+		if got := flags[tc.path][tc.flag].Enum; !reflect.DeepEqual(got, want) {
+			t.Errorf("%s --%s enum = %v, spec %v", tc.path, tc.flag, got, want)
+		}
+	}
+	for path, fm := range flags {
+		for name, f := range fm {
+			if len(f.Enum) > 0 && !mapped[path+" --"+name] {
+				t.Errorf("%s --%s has an enum with no spec mapping", path, name)
+			}
+		}
+	}
+}
+
+func TestAIJSONStageTriggersSchema(t *testing.T) {
+	flags := aiFlags(t)
+	for _, path := range []string{"pipelines stages add", "pipelines stages update"} {
+		var s struct {
+			Type  string `json:"type"`
+			Items struct {
+				Type                 string   `json:"type"`
+				Required             []string `json:"required"`
+				AdditionalProperties bool     `json:"additionalProperties"`
+				Properties           map[string]struct {
+					Type string   `json:"type"`
+					Enum []string `json:"enum"`
+				} `json:"properties"`
+			} `json:"items"`
+		}
+		if err := json.Unmarshal(flags[path]["stage-triggers"].Schema, &s); err != nil {
+			t.Fatal(err)
+		}
+		it := s.Items
+		if s.Type != "array" || it.Type != "object" || it.AdditionalProperties {
+			t.Errorf("%s: schema = %s", path, flags[path]["stage-triggers"].Schema)
+		}
+		if !reflect.DeepEqual(it.Required, []string{"timing", "handler", "config"}) {
+			t.Errorf("%s: required = %v", path, it.Required)
+		}
+		if !reflect.DeepEqual(it.Properties["timing"].Enum, rawSpecEnum(t, "components/schemas/PipelineStageTrigger/properties/timing")) ||
+			len(it.Properties["timing"].Enum) != 4 {
+			t.Errorf("%s: timing enum = %v", path, it.Properties["timing"].Enum)
+		}
+		if it.Properties["handler"].Type != "string" || it.Properties["config"].Type != "object" {
+			t.Errorf("%s: handler/config = %v", path, it.Properties)
+		}
+	}
+}
+
+// TestBaseURLEnvWithoutContext proves LOOPCTL_BASE_URL alone selects the server.
+func TestBaseURLEnvWithoutContext(t *testing.T) {
+	hits := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits++
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = w.Write([]byte(`{"data":[]}`))
+	}))
+	defer srv.Close()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", home)
+	t.Setenv("LOOPCTL_CONTEXT", "")
+	t.Setenv("LOOPCTL_BASE_URL", srv.URL)
+	t.Setenv("LOOPCTL_TOKEN", "tok")
+	cmd := buildRoot()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"tasks", "todos", "list", "1", "--json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if hits == 0 {
+		t.Fatal("request did not reach LOOPCTL_BASE_URL server")
 	}
 }
