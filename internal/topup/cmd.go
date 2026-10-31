@@ -86,7 +86,7 @@ func newCmdWithPayer(payer Payer) *cobra.Command {
 
 	cmd.Flags().StringVar(&product, "product", "topup",
 		"Product to fund: trial, topup, or subscription")
-	flagmeta.Enum(cmd, "product", "trial", "topup", "subscription")
+	flagmeta.EnumFromSpec(cmd, "product", "#/components/schemas/FundingEnvelopeProduct/properties/kind")
 	return cmd
 }
 

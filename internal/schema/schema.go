@@ -420,3 +420,7 @@ func CheckRequest(r *http.Request, endpoints []EndpointAttrs) []string {
 	}
 	return violations
 }
+
+// FixtureData returns the embedded API spec copy, for tests that re-derive
+// values from the raw document.
+func FixtureData() []byte { return fixtureData }
