@@ -14,45 +14,14 @@ import (
 
 	"github.com/dotdevlabs/ctlkit/pkg/airef"
 	"github.com/dotdevlabs/ctlkit/pkg/root"
-	"github.com/dotdevlabs/ctlkit/pkg/version"
+	"github.com/dotdevlabs/ctlkit/pkg/root/roottest"
 	"github.com/spf13/cobra"
 
-	"github.com/dotdevlabs/loopctl/internal/agents"
-	"github.com/dotdevlabs/loopctl/internal/credentials"
-	"github.com/dotdevlabs/loopctl/internal/environments"
-	"github.com/dotdevlabs/loopctl/internal/onboard"
-	"github.com/dotdevlabs/loopctl/internal/pipelines"
-	"github.com/dotdevlabs/loopctl/internal/platforms"
-	"github.com/dotdevlabs/loopctl/internal/projects"
 	"github.com/dotdevlabs/loopctl/internal/schema"
-	"github.com/dotdevlabs/loopctl/internal/taskkinds"
-	"github.com/dotdevlabs/loopctl/internal/tasks"
-	"github.com/dotdevlabs/loopctl/internal/topup"
 )
 
 func buildRoot() *cobra.Command {
-	wfs := loopWorkflows()
-	ver := version.Current("loopctl")
-	cmd := root.New(root.BuildConfig{
-		Product: "loopctl",
-		Short:   "CLI for managing LoopControl",
-		Version: ver,
-		Commands: []*cobra.Command{
-			agents.NewCmd(),
-			credentials.NewCmd(),
-			environments.NewCmd(),
-			onboard.NewCmd(),
-			platforms.NewCmd(),
-			pipelines.NewCmd(),
-			projects.NewCmd(),
-			schema.NewCmd(),
-			tasks.NewCmd(),
-			taskkinds.NewCmd(),
-			topup.NewCmd(),
-		},
-		Workflows: wfs,
-	})
-	return cmd
+	return root.New(rootConfig())
 }
 
 func TestRootHasGlobalFlags(t *testing.T) {
@@ -331,6 +300,7 @@ func TestAIJSONFlagsMatchSpec(t *testing.T) {
 		{"environments entries add", "type", c + "EnvironmentEntryAttributes/properties/entry_type"},
 		{"environments entries change", "type", c + "EnvironmentEntryAttributes/properties/entry_type"},
 		{"topup", "product", c + "FundingEnvelopeProduct/properties/kind"},
+		{"account credit", "bucket", c + "BalanceCreditAttributes/properties/bucket"},
 	}
 	mapped := map[string]bool{}
 	for _, tc := range cases {
@@ -411,5 +381,59 @@ func TestBaseURLEnvWithoutContext(t *testing.T) {
 	}
 	if hits == 0 {
 		t.Fatal("request did not reach LOOPCTL_BASE_URL server")
+	}
+}
+
+// TestRootBuildsWithDefault uses ctlkit's check that the root builds and a
+// clean environment resolves to the built-in default.
+func TestRootBuildsWithDefault(t *testing.T) {
+	roottest.AssertBuilds(t, rootConfig())
+	if got := rootConfig().DefaultBaseURL; got != "https://loopcontrol.ai" {
+		t.Errorf("DefaultBaseURL = %q", got)
+	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
+
+// TestDefaultBaseURLWithTokenOnly proves that with no context file and only
+// the token variable set, requests target https://loopcontrol.ai.
+func TestDefaultBaseURLWithTokenOnly(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("XDG_CONFIG_HOME", home)
+	t.Setenv("LOOPCTL_CONTEXT", "")
+	t.Setenv("LOOPCTL_BASE_URL", "")
+	t.Setenv("LOOPCTL_TOKEN", "tok")
+
+	var got *http.Request
+	prev := http.DefaultClient.Transport
+	http.DefaultClient.Transport = roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		got = r
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Type": []string{"application/vnd.api+json"}},
+			Body:       io.NopCloser(strings.NewReader(`{"data":[]}`)),
+			Request:    r,
+		}, nil
+	})
+	t.Cleanup(func() { http.DefaultClient.Transport = prev })
+
+	cmd := buildRoot()
+	cmd.SetOut(io.Discard)
+	cmd.SetErr(io.Discard)
+	cmd.SetArgs([]string{"tasks", "todos", "list", "1", "--json"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("execute: %v", err)
+	}
+	if got == nil {
+		t.Fatal("no request sent")
+	}
+	if got.URL.Scheme != "https" || got.URL.Host != "loopcontrol.ai" {
+		t.Errorf("request went to %s://%s, want https://loopcontrol.ai", got.URL.Scheme, got.URL.Host)
+	}
+	if auth := got.Header.Get("Authorization"); !strings.Contains(auth, "tok") {
+		t.Errorf("Authorization = %q, want token", auth)
 	}
 }

@@ -4,7 +4,7 @@ go 1.24.5
 
 require (
 	github.com/decred/dcrd/dcrec/secp256k1/v4 v4.4.1
-	github.com/dotdevlabs/ctlkit v0.0.0-20261031133510-b33db47b6249
+	github.com/dotdevlabs/ctlkit v0.0.0-20261101095512-dfd03780e3ae
 	github.com/spf13/cobra v1.10.2
 	golang.org/x/crypto v0.22.0
 	gopkg.in/yaml.v3 v3.0.1
