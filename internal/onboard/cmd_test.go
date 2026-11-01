@@ -17,11 +17,13 @@ import (
 	"github.com/dotdevlabs/loopctl/internal/schema"
 )
 
+const testDefaultURL = "https://default.example"
+
 const successBody = `{"data":{"type":"registrations","id":"r1","attributes":{"account_name":"Acme","account_slug":"acme","owner_email":"user@example.com","api_token":"tok-xyz","api_token_name":"onboard-label"}}}`
 
 func newCmd(t *testing.T, ts *httptest.Server, name string) *cobra.Command {
 	t.Helper()
-	cmd := NewCmd()
+	cmd := NewCmd(testDefaultURL)
 	cmd.SetContext(context.Background())
 	if err := cmd.Flags().Set("url", ts.URL); err != nil {
 		t.Fatal(err)
@@ -289,4 +291,68 @@ func newRootWithJSON() *cobra.Command {
 	root := &cobra.Command{Use: "loopctl"}
 	root.PersistentFlags().Bool("json", false, "Output as JSON")
 	return root
+}
+
+func TestResolveBaseURL(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("LOOPCTL_CONTEXT", "")
+
+	t.Run("default", func(t *testing.T) {
+		t.Setenv("LOOPCTL_BASE_URL", "")
+		got, err := resolveBaseURL("", testDefaultURL)
+		if err != nil || got != testDefaultURL {
+			t.Fatalf("got %q, %v; want %q", got, err, testDefaultURL)
+		}
+	})
+	t.Run("env override", func(t *testing.T) {
+		t.Setenv("LOOPCTL_BASE_URL", "https://env.example")
+		got, err := resolveBaseURL("", testDefaultURL)
+		if err != nil || got != "https://env.example" {
+			t.Fatalf("got %q, %v", got, err)
+		}
+	})
+	t.Run("flag wins", func(t *testing.T) {
+		t.Setenv("LOOPCTL_BASE_URL", "https://env.example")
+		got, err := resolveBaseURL("https://flag.example", testDefaultURL)
+		if err != nil || got != "https://flag.example" {
+			t.Fatalf("got %q, %v", got, err)
+		}
+	})
+	t.Run("resolve error", func(t *testing.T) {
+		t.Setenv("LOOPCTL_BASE_URL", "")
+		t.Setenv("LOOPCTL_CONTEXT", "missing")
+		if _, err := resolveBaseURL("", testDefaultURL); err == nil {
+			t.Fatal("expected error for unknown context")
+		}
+	})
+}
+
+func TestOnboard_UsesEnvOverrideWithoutURLFlag(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		w.WriteHeader(http.StatusCreated)
+		_, _ = fmt.Fprint(w, successBody)
+	}))
+	defer ts.Close()
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	t.Setenv("LOOPCTL_CONTEXT", "")
+	t.Setenv("LOOPCTL_BASE_URL", ts.URL)
+
+	cmd := NewCmd(testDefaultURL)
+	cmd.SetContext(context.Background())
+	cmd.SetOut(io.Discard)
+	if err := cmd.Flags().Set("email", "user@example.com"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("RunE: %v", err)
+	}
+	cfg, err := config.Load("loopctl")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Contexts["default"].BaseURL != ts.URL {
+		t.Errorf("saved base URL = %q, want %q", cfg.Contexts["default"].BaseURL, ts.URL)
+	}
 }

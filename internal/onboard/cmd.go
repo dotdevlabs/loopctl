@@ -16,8 +16,6 @@ import (
 	"github.com/dotdevlabs/ctlkit/pkg/output"
 )
 
-const defaultBaseURL = "https://app.loopcontrol.ai"
-
 // RegistrationAttrs holds the attributes returned by POST /api/registrations.
 type RegistrationAttrs struct {
 	AccountName  string `json:"account_name"`
@@ -27,8 +25,9 @@ type RegistrationAttrs struct {
 	APITokenName string `json:"api_token_name"`
 }
 
-// NewCmd returns the "onboard" command.
-func NewCmd() *cobra.Command {
+// NewCmd returns the "onboard" command. defaultBaseURL is the product's
+// built-in server address, used when neither --url nor LOOPCTL_BASE_URL is set.
+func NewCmd(defaultBaseURL string) *cobra.Command {
 	var (
 		baseURL     string
 		contextName string
@@ -49,7 +48,12 @@ func NewCmd() *cobra.Command {
 				ctx = context.Background()
 			}
 
-			attrs, err := postRegistration(ctx, baseURL, email, tokenName, accountName)
+			serverURL, err := resolveBaseURL(baseURL, defaultBaseURL)
+			if err != nil {
+				return err
+			}
+
+			attrs, err := postRegistration(ctx, serverURL, email, tokenName, accountName)
 			if err != nil {
 				return err
 			}
@@ -60,7 +64,7 @@ func NewCmd() *cobra.Command {
 			}
 
 			cfg.Contexts[contextName] = config.Context{
-				BaseURL: baseURL,
+				BaseURL: serverURL,
 				Token:   attrs.APIToken,
 			}
 			if cfg.CurrentContext == "" {
@@ -88,7 +92,7 @@ func NewCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&baseURL, "url", defaultBaseURL, "LoopControl API base URL")
+	cmd.Flags().StringVar(&baseURL, "url", "", "LoopControl API base URL (default: LOOPCTL_BASE_URL, else the built-in address)")
 	cmd.Flags().StringVar(&contextName, "name", "default", "Context name to store credentials under")
 	cmd.Flags().StringVar(&email, "email", "", "Email address for the new account (required)")
 	cmd.Flags().StringVar(&tokenName, "token-name", "", "Label for the generated API token")
@@ -97,6 +101,20 @@ func NewCmd() *cobra.Command {
 	_ = cmd.MarkFlagRequired("email")
 
 	return cmd
+}
+
+// resolveBaseURL returns the explicit --url if given; otherwise ctlkit resolves
+// the address from LOOPCTL_BASE_URL or the built-in default. No saved context
+// is consulted: onboarding registers a new one.
+func resolveBaseURL(flagURL, defaultBaseURL string) (string, error) {
+	if flagURL != "" {
+		return flagURL, nil
+	}
+	ctx, _, err := config.Resolve("loopctl", &config.Config{}, config.ResolveOptions{DefaultBaseURL: defaultBaseURL})
+	if err != nil {
+		return "", err
+	}
+	return ctx.BaseURL, nil
 }
 
 // postRegistration calls POST {baseURL}/api/registrations (unauthenticated) and returns

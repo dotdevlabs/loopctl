@@ -26,20 +26,23 @@ import (
 	"github.com/dotdevlabs/loopctl/internal/topup"
 )
 
-func main() {
-	wfs := loopWorkflows()
-	ver := version.Current("loopctl")
+// defaultBaseURL is the built-in server address; ctlkit resolves context,
+// LOOPCTL_BASE_URL override and this default.
+const defaultBaseURL = "https://loopcontrol.ai"
 
-	cmd := root.New(root.BuildConfig{
-		Product: "loopctl",
-		Short:   "CLI for managing LoopControl",
-		Version: ver,
+// rootConfig returns the root command configuration shared by main and tests.
+func rootConfig() root.BuildConfig {
+	return root.BuildConfig{
+		Product:        "loopctl",
+		Short:          "CLI for managing LoopControl",
+		Version:        version.Current("loopctl"),
+		DefaultBaseURL: defaultBaseURL,
 		Commands: []*cobra.Command{
 			account.NewCmd(),
 			agents.NewCmd(),
 			credentials.NewCmd(),
 			environments.NewCmd(),
-			onboard.NewCmd(),
+			onboard.NewCmd(defaultBaseURL),
 			platforms.NewCmd(),
 			pipelines.NewCmd(),
 			projects.NewCmd(),
@@ -48,8 +51,12 @@ func main() {
 			taskkinds.NewCmd(),
 			topup.NewCmd(),
 		},
-		Workflows: wfs,
-	})
+		Workflows: loopWorkflows(),
+	}
+}
+
+func main() {
+	cmd := root.New(rootConfig())
 
 	// Wrap PersistentPreRunE to inject the verbose writer when --verbose is set.
 	prev := cmd.PersistentPreRunE

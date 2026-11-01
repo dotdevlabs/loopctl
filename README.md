@@ -1302,7 +1302,7 @@ loopctl ai --json    # structured JSON for agent ingestion
 
 In the JSON reference each flag may carry `enum` (the fixed set of accepted values, e.g. `--status`, `--gate`, `--on-failure`, entry `--type`, `--product`) and `schema` (a JSON Schema for flags whose value is JSON, e.g. `--stages`, `--prompt-sections`, `--stage-triggers`, `--advance-requirements`, `--bulk-json`), plus `annotations`. Open-ended flags such as `tasks create --kind` declare no enum. Enums and schemas are read from the embedded API spec copy (`internal/schema/testdata/api_spec.yaml`), never typed by hand; tests fail on any difference.
 
-Set `LOOPCTL_BASE_URL` (and optionally `LOOPCTL_TOKEN`) to override the API address; with no context selected, these alone are enough to run commands.
+The built-in server address is `https://loopcontrol.ai`, so with no context selected `LOOPCTL_TOKEN` alone is enough to run commands. Set `LOOPCTL_BASE_URL` to override the address (a context's own `base_url` takes precedence).
 
 ### onboard
 
@@ -1331,7 +1331,7 @@ loopctl onboard --email you@example.com --json
 |------|----------|---------|-------------|
 | `--email` | yes | | Email address for the new account |
 | `--name` | no | `"default"` | Context name to store credentials under |
-| `--url` | no | `"https://app.loopcontrol.ai"` | LoopControl API base URL |
+| `--url` | no | `LOOPCTL_BASE_URL`, else `"https://loopcontrol.ai"` | LoopControl API base URL |
 | `--token-name` | no | | Label for the generated API token |
 | `--account-name` | no | | Account name |
 
