@@ -368,7 +368,7 @@ At least one flag must be provided. Output columns on success: `ID`, `NAME`, `SH
 
 #### environments entries
 
-Manage entries within an environment. Each entry binds an environment variable name to either a custom string value or a credential reference. Credential values are never printed.
+Manage entries within an environment. Each entry binds either an environment variable name or a file path (with an optional `raw` or `base64` encoding) to a custom string value or a credential reference. Credential values are never printed.
 
 ##### environments entries list
 
