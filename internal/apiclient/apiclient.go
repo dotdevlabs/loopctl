@@ -136,7 +136,7 @@ func GetJSONAPISingleFull[T any](ctx context.Context, activeCtx *config.Context,
 		return SingleResult[T]{Resource: res, SelfLink: doc.Data.Links.Self}, nil
 	}
 
-	return SingleResult[T]{}, errorRespJSONAPI(respBody, resp.StatusCode)
+	return SingleResult[T]{}, &HTTPError{StatusCode: resp.StatusCode, Err: errorRespJSONAPI(respBody, resp.StatusCode)}
 }
 
 // rawCollectionDoc is the wire-format wrapper for a JSON:API collection response.
@@ -207,7 +207,7 @@ func fetchJSONAPICollectionPage[T any](ctx context.Context, token, fullURL strin
 		return col, nil
 	}
 
-	return httpclient.Collection[T]{}, errorRespJSONAPI(respBody, resp.StatusCode)
+	return httpclient.Collection[T]{}, &HTTPError{StatusCode: resp.StatusCode, Err: errorRespJSONAPI(respBody, resp.StatusCode)}
 }
 
 // GetJSONAPICollection GETs path and decodes the JSON:API collection response.
@@ -822,7 +822,7 @@ func extractJSONAPIOrFlatError(body []byte, status int) string {
 			}
 		}
 	}
-	return http.StatusText(status)
+	return extractAPIError(body, status)
 }
 
 func extractAPIError(body []byte, status int) string {
@@ -843,6 +843,9 @@ func extractAPIError(body []byte, status int) string {
 				return errBody.Error
 			}
 		}
+	}
+	if raw := strings.TrimSpace(string(body)); raw != "" {
+		return raw
 	}
 	return http.StatusText(status)
 }
