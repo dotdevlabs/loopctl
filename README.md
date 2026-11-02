@@ -913,7 +913,7 @@ loopctl tasks create \
 | `--interval` | no | `15s` | Poll interval when `--watch` is set (e.g. `15s`, `1m`) |
 | `--timeout` | no | _(none)_ | Give up after this duration when `--watch` is set (e.g. `30m`); empty means no timeout |
 
-When `--watch` is set, the command first prints the created task row, then streams stage and activity changes until the task reaches a terminal state — identical behavior to `tasks watch`. Exit codes match those of `tasks watch`.
+When `--watch` is set, the command first prints the created task row, then streams stage and activity changes until the task reaches a terminal state — identical behavior to `tasks watch`. Exit codes match those of `tasks watch`. The same retry and timeout rules described below apply to watching; retries do not create the task again.
 
 **API:** `POST /api/tasks` (followed by `GET /api/tasks/:id` and `GET /api/tasks/:id/activities` when `--watch` is set)
 
@@ -993,13 +993,18 @@ loopctl tasks watch <id> --json
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--interval` | `15s` | Poll interval (e.g. `15s`, `1m`) |
-| `--timeout` | _(none)_ | Give up after this duration (e.g. `30m`); empty means no timeout |
+| `--interval` | `15s` | Positive poll interval (e.g. `15s`, `1m`); also caps retry delays |
+| `--timeout` | _(none)_ | Positive duration limiting the entire watch (e.g. `30m`), including requests and retry waits; empty means no timeout |
 | `--json` | — | Emit final task state as a JSON:API resource on exit (`{"id":"...","type":"tasks","attributes":{...}}`) |
 
+Temporary failures while fetching the task or its activities (including activity pagination) are retried: connection errors, request timeouts, EOF or unexpected EOF, and HTTP 408, 429, and 500–599. Consecutive failures wait 1 second initially (or the poll interval if shorter), then double the delay up to `--interval`. A fully successful poll resets the backoff. There is no retry count limit; `--timeout` starts before the first watch request and bounds requests and waits. Interrupting the command also stops the watch.
+
+Each scheduled retry prints its error and delay to stderr, including with `--json`; retry diagnostics never appear on JSON stdout. A watch timeout emits `{"error":"timeout"}` on JSON stdout and exits non-zero. Other HTTP 4xx responses end the watch immediately with the API error body/detail. Permanent local errors, such as invalid configuration or malformed complete JSON responses, also end the watch.
+
 **Exit codes:**
+
 - `0` — task reached `completed` or `reviewed`
-- non-zero — task `rejected`, task `blocked` (with its reason), timeout exceeded, or network error
+- non-zero — task `rejected`, task `blocked` (with its reason), timeout exceeded, cancellation, or a non-retryable error
 
 `container.error` activities never change the exit code on their own.
 
