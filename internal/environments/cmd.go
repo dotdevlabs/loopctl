@@ -34,8 +34,42 @@ type EnvironmentEntryAttrs struct {
 	CredentialID   *string `json:"credential_id"`
 	CredentialName *string `json:"credential_name"`
 	CustomValue    *string `json:"custom_value"`
+	FilePath       *string `json:"file_path"`
+	Encoding       *string `json:"encoding"`
 	CreatedAt      string  `json:"created_at"`
 	UpdatedAt      string  `json:"updated_at"`
+}
+
+var entryColumns = []output.Column{
+	{Header: "ID"},
+	{Header: "ENV_VAR"},
+	{Header: "FILE_PATH"},
+	{Header: "ENCODING"},
+	{Header: "TYPE"},
+	{Header: "CREDENTIAL_ID"},
+	{Header: "CREDENTIAL_NAME"},
+	{Header: "CREATED_AT"},
+}
+
+func strOrEmpty(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
+}
+
+// entryRow renders one environment entry as a table row matching entryColumns.
+func entryRow(id string, a EnvironmentEntryAttrs) []string {
+	return []string{
+		id,
+		strOrEmpty(a.EnvVar),
+		strOrEmpty(a.FilePath),
+		strOrEmpty(a.Encoding),
+		a.EntryType,
+		strOrEmpty(a.CredentialID),
+		strOrEmpty(a.CredentialName),
+		a.CreatedAt,
+	}
 }
 
 // NewCmd returns the "environments" parent command with all verb subcommands.
@@ -313,38 +347,11 @@ func entriesListCmd() *cobra.Command {
 				return err
 			}
 
-			cols := []output.Column{
-				{Header: "ID"},
-				{Header: "ENV_VAR"},
-				{Header: "TYPE"},
-				{Header: "CREDENTIAL_ID"},
-				{Header: "CREDENTIAL_NAME"},
-				{Header: "CREATED_AT"},
-			}
 			rows := make([][]string, len(col.Data))
 			for i, e := range col.Data {
-				envVar := ""
-				if e.Attributes.EnvVar != nil {
-					envVar = *e.Attributes.EnvVar
-				}
-				credID := ""
-				if e.Attributes.CredentialID != nil {
-					credID = *e.Attributes.CredentialID
-				}
-				credName := ""
-				if e.Attributes.CredentialName != nil {
-					credName = *e.Attributes.CredentialName
-				}
-				rows[i] = []string{
-					e.ID,
-					envVar,
-					e.Attributes.EntryType,
-					credID,
-					credName,
-					e.Attributes.CreatedAt,
-				}
+				rows[i] = entryRow(e.ID, e.Attributes)
 			}
-			return r.Render(cols, rows, col)
+			return r.Render(entryColumns, rows, col)
 		},
 	}
 }
@@ -352,6 +359,8 @@ func entriesListCmd() *cobra.Command {
 func entriesAddCmd() *cobra.Command {
 	var (
 		envVar          string
+		filePath        string
+		encoding        string
 		entryType       string
 		value           string
 		credentialSetID int
@@ -377,9 +386,23 @@ func entriesAddCmd() *cobra.Command {
 				value = strings.TrimRight(string(b), "\r\n")
 			}
 
-			entry := map[string]any{
-				"env_var":    envVar,
-				"entry_type": entryType,
+			if !cmd.Flags().Changed("env-var") && !cmd.Flags().Changed("file-path") {
+				return clierror.New(clierror.CodeUsage,
+					"an entry needs a target: --env-var or --file-path", "")
+			}
+			if err := validateEncoding(cmd, encoding); err != nil {
+				return err
+			}
+
+			entry := map[string]any{"entry_type": entryType}
+			if cmd.Flags().Changed("env-var") {
+				entry["env_var"] = envVar
+			}
+			if cmd.Flags().Changed("file-path") {
+				entry["file_path"] = filePath
+			}
+			if cmd.Flags().Changed("encoding") {
+				entry["encoding"] = encoding
 			}
 			if entryType == "custom" {
 				entry["custom_value"] = value
@@ -405,46 +428,19 @@ func entriesAddCmd() *cobra.Command {
 				return err
 			}
 
-			envVarOut := ""
-			if res.Attributes.EnvVar != nil {
-				envVarOut = *res.Attributes.EnvVar
-			}
-			credID := ""
-			if res.Attributes.CredentialID != nil {
-				credID = *res.Attributes.CredentialID
-			}
-			credName := ""
-			if res.Attributes.CredentialName != nil {
-				credName = *res.Attributes.CredentialName
-			}
-
-			cols := []output.Column{
-				{Header: "ID"},
-				{Header: "ENV_VAR"},
-				{Header: "TYPE"},
-				{Header: "CREDENTIAL_ID"},
-				{Header: "CREDENTIAL_NAME"},
-				{Header: "CREATED_AT"},
-			}
-			rows := [][]string{{
-				res.ID,
-				envVarOut,
-				res.Attributes.EntryType,
-				credID,
-				credName,
-				res.Attributes.CreatedAt,
-			}}
-			return r.Render(cols, rows, res)
+			return r.Render(entryColumns, [][]string{entryRow(res.ID, res.Attributes)}, res)
 		},
 	}
 
-	cmd.Flags().StringVar(&envVar, "env-var", "", "Environment variable name")
+	cmd.Flags().StringVar(&envVar, "env-var", "", "Environment variable name (an entry targets --env-var or --file-path)")
+	cmd.Flags().StringVar(&filePath, "file-path", "", "File path target (an entry targets --env-var or --file-path)")
+	cmd.Flags().StringVar(&encoding, "encoding", "", "Value encoding for a file target: \"raw\" or \"base64\"")
+	flagmeta.EnumFromSpec(cmd, "encoding", "#/components/schemas/EnvironmentEntryAttributes/properties/encoding")
 	cmd.Flags().StringVar(&entryType, "type", "", "Entry type: \"custom\" or \"credential\"")
 	flagmeta.EnumFromSpec(cmd, "type", "#/components/schemas/EnvironmentEntryAttributes/properties/entry_type")
 	cmd.Flags().StringVar(&value, "value", "", "Custom value (for --type custom; reads from stdin if omitted)")
 	cmd.Flags().IntVar(&credentialSetID, "credential-set-id", 0, "Credential set ID (for --type credential)")
 
-	_ = cmd.MarkFlagRequired("env-var")
 	_ = cmd.MarkFlagRequired("type")
 
 	return cmd
@@ -453,6 +449,8 @@ func entriesAddCmd() *cobra.Command {
 func entriesChangeCmd() *cobra.Command {
 	var (
 		envVar          string
+		filePath        string
+		encoding        string
 		entryType       string
 		value           string
 		credentialSetID int
@@ -465,7 +463,17 @@ func entriesChangeCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 
+			if err := validateEncoding(cmd, encoding); err != nil {
+				return err
+			}
+
 			patch := map[string]any{}
+			if cmd.Flags().Changed("file-path") {
+				patch["file_path"] = filePath
+			}
+			if cmd.Flags().Changed("encoding") {
+				patch["encoding"] = encoding
+			}
 			if cmd.Flags().Changed("env-var") {
 				patch["env_var"] = envVar
 			}
@@ -481,7 +489,7 @@ func entriesChangeCmd() *cobra.Command {
 
 			if len(patch) == 0 {
 				return clierror.New(clierror.CodeUsage, "no fields to update",
-					"provide at least one flag such as --env-var or --credential-set-id")
+					"provide at least one flag such as --env-var, --file-path or --credential-set-id")
 			}
 
 			path := "/api/environments/" + url.PathEscape(args[0]) + "/entries/" + url.PathEscape(args[1])
@@ -501,40 +509,14 @@ func entriesChangeCmd() *cobra.Command {
 				return err
 			}
 
-			envVarOut := ""
-			if res.Attributes.EnvVar != nil {
-				envVarOut = *res.Attributes.EnvVar
-			}
-			credID := ""
-			if res.Attributes.CredentialID != nil {
-				credID = *res.Attributes.CredentialID
-			}
-			credName := ""
-			if res.Attributes.CredentialName != nil {
-				credName = *res.Attributes.CredentialName
-			}
-
-			cols := []output.Column{
-				{Header: "ID"},
-				{Header: "ENV_VAR"},
-				{Header: "TYPE"},
-				{Header: "CREDENTIAL_ID"},
-				{Header: "CREDENTIAL_NAME"},
-				{Header: "CREATED_AT"},
-			}
-			rows := [][]string{{
-				res.ID,
-				envVarOut,
-				res.Attributes.EntryType,
-				credID,
-				credName,
-				res.Attributes.CreatedAt,
-			}}
-			return r.Render(cols, rows, res)
+			return r.Render(entryColumns, [][]string{entryRow(res.ID, res.Attributes)}, res)
 		},
 	}
 
-	cmd.Flags().StringVar(&envVar, "env-var", "", "Environment variable name")
+	cmd.Flags().StringVar(&envVar, "env-var", "", "Environment variable name (an entry targets --env-var or --file-path)")
+	cmd.Flags().StringVar(&filePath, "file-path", "", "File path target (an entry targets --env-var or --file-path)")
+	cmd.Flags().StringVar(&encoding, "encoding", "", "Value encoding for a file target: \"raw\" or \"base64\"")
+	flagmeta.EnumFromSpec(cmd, "encoding", "#/components/schemas/EnvironmentEntryAttributes/properties/encoding")
 	cmd.Flags().StringVar(&entryType, "type", "", "Entry type: \"custom\" or \"credential\"")
 	flagmeta.EnumFromSpec(cmd, "type", "#/components/schemas/EnvironmentEntryAttributes/properties/entry_type")
 	cmd.Flags().StringVar(&value, "value", "", "Custom value")
@@ -563,4 +545,14 @@ func entriesRemoveCmd() *cobra.Command {
 			return apiclient.DeleteJSONAPI(ctx, activeCtx, path)
 		},
 	}
+}
+
+// validateEncoding rejects an --encoding outside the spec enum. The server
+// still enforces the env_var/file_path rule so its 422 body is surfaced.
+func validateEncoding(cmd *cobra.Command, encoding string) error {
+	if !cmd.Flags().Changed("encoding") || encoding == "raw" || encoding == "base64" {
+		return nil
+	}
+	return clierror.New(clierror.CodeUsage,
+		"--encoding must be \"raw\" or \"base64\"", "")
 }

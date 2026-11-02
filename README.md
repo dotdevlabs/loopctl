@@ -379,7 +379,7 @@ loopctl environments entries list <environment-id>
 loopctl environments entries list <environment-id> --json
 ```
 
-Output columns: `ID`, `ENV_VAR`, `TYPE`, `CREDENTIAL_ID`, `CREDENTIAL_NAME`, `CREATED_AT`. Custom values are intentionally omitted from table output to avoid leaking secrets.
+Output columns: `ID`, `ENV_VAR`, `FILE_PATH`, `ENCODING`, `TYPE`, `CREDENTIAL_ID`, `CREDENTIAL_NAME`, `CREATED_AT`. Custom values are intentionally omitted from table output to avoid leaking secrets.
 
 **API:** `GET /api/environments/:environment_id/entries`
 
@@ -405,6 +405,13 @@ loopctl environments entries add <environment-id> \
   --type credential \
   --credential-set-id <credential-set-id>
 
+# File entry — written to a file path instead of an env var
+loopctl environments entries add <environment-id> \
+  --file-path /etc/app/key.pem \
+  --encoding base64 \
+  --type custom \
+  --value "$KEY_B64"
+
 # Preview without making API calls
 loopctl environments entries add <environment-id> --env-var FOO --type custom --value bar --dry-run
 ```
@@ -413,12 +420,14 @@ loopctl environments entries add <environment-id> --env-var FOO --type custom --
 
 | Flag | Required | Description |
 |------|----------|-------------|
-| `--env-var` | yes | Environment variable name |
+| `--env-var` | one of | Environment variable name. An entry targets exactly one of `--env-var` or `--file-path`; the server rejects both (422) and its error is shown |
+| `--file-path` | one of | File path target (use instead of `--env-var`) |
+| `--encoding` | no | Encoding for a file target: `raw` or `base64` |
 | `--type` | yes | Entry type: `custom` or `credential` |
 | `--value` | no | Custom value (for `--type custom`; reads from stdin when omitted) |
 | `--credential-set-id` | no | Credential set ID (for `--type credential`) |
 
-Output columns on success: `ID`, `ENV_VAR`, `TYPE`, `CREDENTIAL_ID`, `CREDENTIAL_NAME`, `CREATED_AT`.
+Output columns on success: `ID`, `ENV_VAR`, `FILE_PATH`, `ENCODING`, `TYPE`, `CREDENTIAL_ID`, `CREDENTIAL_NAME`, `CREATED_AT`.
 
 **API:** `POST /api/environments/:environment_id/entries`
 
@@ -429,6 +438,7 @@ Update an existing entry. Only the flags you provide are changed.
 ```bash
 loopctl environments entries change <environment-id> <entry-id> --value "new-value"
 loopctl environments entries change <environment-id> <entry-id> --env-var NEW_NAME
+loopctl environments entries change <environment-id> <entry-id> --file-path /new/path --encoding raw
 loopctl environments entries change <environment-id> <entry-id> --type credential --credential-set-id <id>
 loopctl environments entries change <environment-id> <entry-id> --value "new-value" --dry-run
 ```
@@ -438,11 +448,13 @@ loopctl environments entries change <environment-id> <entry-id> --value "new-val
 | Flag | Description |
 |------|-------------|
 | `--env-var` | New environment variable name |
+| `--file-path` | New file path target |
+| `--encoding` | New encoding: `raw` or `base64` |
 | `--type` | New entry type: `custom` or `credential` |
 | `--value` | New custom value |
 | `--credential-set-id` | New credential set ID |
 
-At least one flag must be provided. Output columns on success: `ID`, `ENV_VAR`, `TYPE`, `CREDENTIAL_ID`, `CREDENTIAL_NAME`, `CREATED_AT`.
+At least one flag must be provided. Output columns on success: `ID`, `ENV_VAR`, `FILE_PATH`, `ENCODING`, `TYPE`, `CREDENTIAL_ID`, `CREDENTIAL_NAME`, `CREATED_AT`.
 
 **API:** `PATCH /api/environments/:environment_id/entries/:id`
 

@@ -2,7 +2,7 @@
 openapi: 3.0.3
 info:
   title: LoopControl API
-  version: 1.3.0
+  version: 1.4.0
   description: API for managing containerized agent environments on a Kubernetes cluster.
 servers:
 - url: "/"
@@ -3147,6 +3147,15 @@ components:
         env_var:
           type: string
           nullable: true
+        file_path:
+          type: string
+          nullable: true
+        encoding:
+          type: string
+          nullable: true
+          enum:
+          - raw
+          - base64
         entry_type:
           type: string
           enum:
@@ -3170,6 +3179,8 @@ components:
       additionalProperties: false
       required:
       - env_var
+      - file_path
+      - encoding
       - entry_type
       - custom_value
       - credential_id
@@ -22303,6 +22314,13 @@ paths:
                   properties:
                     env_var:
                       type: string
+                    file_path:
+                      type: string
+                    encoding:
+                      type: string
+                      enum:
+                      - raw
+                      - base64
                     entry_type:
                       type: string
                     custom_value:
@@ -22450,7 +22468,7 @@ paths:
         - field: ''
           operation: expect
           arguments:
-          - 'entry: [ :env_var, :entry_type, :custom_value, :credential_set_id ]'
+          - 'entry: [ :env_var, :file_path, :encoding, :entry_type, :custom_value, :credential_set_id ]'
   "/api/environments/{environment_id}/entries/{id}":
     patch:
       operationId: patch-api-environment-entry
@@ -22477,6 +22495,13 @@ paths:
                   properties:
                     env_var:
                       type: string
+                    file_path:
+                      type: string
+                    encoding:
+                      type: string
+                      enum:
+                      - raw
+                      - base64
                     entry_type:
                       type: string
                     custom_value:
@@ -22631,7 +22656,7 @@ paths:
         - field: ''
           operation: expect
           arguments:
-          - 'entry: [ :env_var, :entry_type, :custom_value, :credential_set_id ]'
+          - 'entry: [ :env_var, :file_path, :encoding, :entry_type, :custom_value, :credential_set_id ]'
     put:
       operationId: put-api-environment-entry
       summary: Updates an environment entry.
@@ -22657,6 +22682,13 @@ paths:
                   properties:
                     env_var:
                       type: string
+                    file_path:
+                      type: string
+                    encoding:
+                      type: string
+                      enum:
+                      - raw
+                      - base64
                     entry_type:
                       type: string
                     custom_value:
@@ -22811,7 +22843,7 @@ paths:
         - field: ''
           operation: expect
           arguments:
-          - 'entry: [ :env_var, :entry_type, :custom_value, :credential_set_id ]'
+          - 'entry: [ :env_var, :file_path, :encoding, :entry_type, :custom_value, :credential_set_id ]'
     delete:
       operationId: delete-api-environment-entry
       summary: Removes an entry from an environment.
