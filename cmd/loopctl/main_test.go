@@ -192,6 +192,8 @@ func TestAIJSONFlagEnums(t *testing.T) {
 		{"pipelines stages update", "on-failure", []string{"rework", "block"}},
 		{"environments entries add", "type", []string{"credential", "custom"}},
 		{"environments entries change", "type", []string{"credential", "custom"}},
+		{"environments entries add", "encoding", []string{"raw", "base64"}},
+		{"environments entries change", "encoding", []string{"raw", "base64"}},
 		{"topup", "product", []string{"trial", "topup", "subscription_prepay"}},
 	}
 	for _, c := range cases {
@@ -299,6 +301,8 @@ func TestAIJSONFlagsMatchSpec(t *testing.T) {
 		{"pipelines stages update", "on-failure", c + "PipelineStageInput/properties/on_failure"},
 		{"environments entries add", "type", c + "EnvironmentEntryAttributes/properties/entry_type"},
 		{"environments entries change", "type", c + "EnvironmentEntryAttributes/properties/entry_type"},
+		{"environments entries add", "encoding", c + "EnvironmentEntryAttributes/properties/encoding"},
+		{"environments entries change", "encoding", c + "EnvironmentEntryAttributes/properties/encoding"},
 		{"topup", "product", c + "FundingEnvelopeProduct/properties/kind"},
 		{"account credit", "bucket", c + "BalanceCreditAttributes/properties/bucket"},
 	}
