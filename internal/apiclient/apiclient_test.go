@@ -443,9 +443,9 @@ func TestPostJSONAPISingleErrorFlatJSON(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error on 400")
 	}
-	// flat error body with no JSON:API errors array: falls back to http.StatusText
-	if !strings.Contains(err.Error(), "Bad Request") {
-		t.Errorf("expected 'Bad Request' fallback in error for flat body; got: %v", err)
+	// Flat error bodies retain their API detail.
+	if !strings.Contains(err.Error(), "unsupported format") {
+		t.Errorf("expected flat API detail; got: %v", err)
 	}
 }
 

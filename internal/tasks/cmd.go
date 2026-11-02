@@ -265,6 +265,7 @@ func createCmd() *cobra.Command {
 					ctx,
 					activeCtx,
 					cmd.OutOrStdout(),
+					cmd.ErrOrStderr(),
 					ctxutil.GlobalFlagsFrom(ctx).JSON,
 					res.ID,
 					intervalStr,
@@ -485,22 +486,30 @@ func watchTask(
 	ctx context.Context,
 	activeCtx *config.Context,
 	out io.Writer,
+	errOut io.Writer,
 	jsonMode bool,
 	taskID string,
 	intervalStr string,
 	timeoutStr string,
 ) error {
 	iv, err := time.ParseDuration(intervalStr)
-	if err != nil {
-		return clierror.New(clierror.CodeUsage, "invalid --interval: "+err.Error(), "")
+	if err != nil || iv <= 0 {
+		return clierror.New(clierror.CodeUsage, "invalid --interval: must be a positive duration", "")
 	}
 
 	var timeoutDur time.Duration
 	if timeoutStr != "" {
 		timeoutDur, err = time.ParseDuration(timeoutStr)
-		if err != nil {
-			return clierror.New(clierror.CodeUsage, "invalid --timeout: "+err.Error(), "")
+		if err != nil || timeoutDur <= 0 {
+			return clierror.New(clierror.CodeUsage, "invalid --timeout: must be a positive duration", "")
 		}
+	}
+
+	parentCtx := ctx
+	if timeoutStr != "" {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, timeoutDur)
+		defer cancel()
 	}
 
 	taskPath := "/api/tasks/" + url.PathEscape(taskID)
@@ -522,7 +531,7 @@ func watchTask(
 		}
 		t := res.Attributes
 
-		actsColl, err := apiclient.GetJSONAPICollection[ActivityAttrs](ctx, activeCtx, activitiesPath)
+		actsColl, err := apiclient.GetJSONAPICollectionAllPages[ActivityAttrs](ctx, activeCtx, activitiesPath)
 		if err != nil {
 			return false, err
 		}
@@ -599,35 +608,44 @@ func watchTask(
 		return false, nil
 	}
 
-	done, err := poll()
-	if done || err != nil {
-		return err
+	failureDelay := time.Duration(0)
+	timeoutError := func() error {
+		if parentCtx.Err() != nil {
+			return parentCtx.Err()
+		}
+		if jsonMode {
+			_ = output.JSONTo(out, map[string]string{"error": "timeout"})
+		}
+		return clierror.New(clierror.CodeNotReady, "watch timed out", "")
 	}
-
-	ticker := time.NewTicker(iv)
-	defer ticker.Stop()
-
-	var timeoutCh <-chan time.Time
-	if timeoutStr != "" {
-		timer := time.NewTimer(timeoutDur)
-		defer timer.Stop()
-		timeoutCh = timer.C
-	}
-
 	for {
+		if ctx.Err() != nil {
+			return timeoutError()
+		}
+		done, pollErr := poll()
+		if ctx.Err() != nil {
+			return timeoutError()
+		}
+		if done {
+			return pollErr
+		}
+		delay := iv
+		if pollErr != nil {
+			if !retryableWatchError(pollErr) {
+				return pollErr
+			}
+			failureDelay = nextWatchDelay(failureDelay, iv)
+			delay = failureDelay
+			_, _ = fmt.Fprintf(errOut, "watch retry in %s: %v\n", delay, pollErr)
+		} else {
+			failureDelay = 0
+		}
+		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
-		case <-timeoutCh:
-			if jsonMode {
-				_ = output.JSONTo(out, map[string]string{"error": "timeout"})
-			}
-			return clierror.New(clierror.CodeNotReady, "watch timed out", "")
-		case <-ticker.C:
-			done, err := poll()
-			if done || err != nil {
-				return err
-			}
+			timer.Stop()
+			return timeoutError()
+		case <-timer.C:
 		}
 	}
 }
@@ -645,6 +663,7 @@ func watchCmd() *cobra.Command {
 				cmd.Context(),
 				ctxutil.ActiveContextFrom(cmd.Context()),
 				cmd.OutOrStdout(),
+				cmd.ErrOrStderr(),
 				ctxutil.GlobalFlagsFrom(cmd.Context()).JSON,
 				args[0],
 				intervalStr,
