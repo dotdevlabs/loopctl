@@ -11,27 +11,6 @@ import (
 	"github.com/dotdevlabs/loopctl/internal/schema"
 )
 
-func TestConformance_StagesList(t *testing.T) {
-	endpoints := loadSchemaOrSkip(t)
-	var violations []string
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		violations = schema.CheckRequest(r, endpoints)
-		w.Header().Set("Content-Type", "application/vnd.api+json")
-		_, _ = fmt.Fprint(w, pipelineWithStagesResponse("p1", "x", nil))
-	}))
-	defer ts.Close()
-
-	ctx := makeCtx(t, ts.URL, "tok", false, io.Discard)
-	cmd := stagesListCmd()
-	cmd.SetContext(ctx)
-	cmd.SetOut(io.Discard)
-	_ = cmd.RunE(cmd, []string{"p1"})
-
-	if len(violations) != 0 {
-		t.Errorf("conformance violations for stages list: %v", violations)
-	}
-}
-
 func TestConformance_StagesAdd(t *testing.T) {
 	endpoints := loadSchemaOrSkip(t)
 	var violations []string

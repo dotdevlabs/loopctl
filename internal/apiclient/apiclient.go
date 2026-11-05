@@ -52,10 +52,11 @@ type rawResourceLinks struct {
 
 // rawResource is used to decode a JSON:API resource with deferred attribute parsing.
 type rawResource struct {
-	ID         string           `json:"id"`
-	Type       string           `json:"type"`
-	Attributes json.RawMessage  `json:"attributes"`
-	Links      rawResourceLinks `json:"links,omitempty"`
+	Relationships map[string]json.RawMessage `json:"relationships,omitempty"`
+	ID            string                     `json:"id"`
+	Type          string                     `json:"type"`
+	Attributes    json.RawMessage            `json:"attributes"`
+	Links         rawResourceLinks           `json:"links,omitempty"`
 }
 
 // rawCollectionLinks holds the top-level links on a JSON:API collection response.
@@ -67,10 +68,25 @@ type rawCollectionLinks struct {
 	Last  string `json:"last,omitempty"`
 }
 
+// ResourceIdentifier identifies a resource in JSON:API relationship linkage.
+type ResourceIdentifier struct {
+	ID   string `json:"id"`
+	Type string `json:"type"`
+}
+
+// IncludedResource retains attributes for deferred, lossless decoding.
+type IncludedResource struct {
+	ID         string          `json:"id"`
+	Type       string          `json:"type"`
+	Attributes json.RawMessage `json:"attributes"`
+}
+
 // SingleResult wraps a JSON:API resource with its links.self URL.
 type SingleResult[T any] struct {
 	httpclient.Resource[T]
-	SelfLink string
+	SelfLink      string
+	Relationships map[string]json.RawMessage
+	Included      []IncludedResource
 }
 
 // GetJSONAPISingle GETs path and decodes the JSON:API single-resource response.
@@ -115,8 +131,9 @@ func GetJSONAPISingleFull[T any](ctx context.Context, activeCtx *config.Context,
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		type rawDoc struct {
-			Data   rawResource       `json:"data"`
-			Errors []jsonAPIErrEntry `json:"errors"`
+			Included []IncludedResource `json:"included"`
+			Data     rawResource        `json:"data"`
+			Errors   []jsonAPIErrEntry  `json:"errors"`
 		}
 		var doc rawDoc
 		if len(respBody) > 0 {
@@ -133,7 +150,7 @@ func GetJSONAPISingleFull[T any](ctx context.Context, activeCtx *config.Context,
 				return SingleResult[T]{}, fmt.Errorf("decoding attributes: %w", err)
 			}
 		}
-		return SingleResult[T]{Resource: res, SelfLink: doc.Data.Links.Self}, nil
+		return SingleResult[T]{Resource: res, SelfLink: doc.Data.Links.Self, Relationships: doc.Data.Relationships, Included: doc.Included}, nil
 	}
 
 	return SingleResult[T]{}, &HTTPError{StatusCode: resp.StatusCode, Err: errorRespJSONAPI(respBody, resp.StatusCode)}

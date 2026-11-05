@@ -1,0 +1,524 @@
+{
+  "data": {
+    "id": "9",
+    "type": "pipelines",
+    "attributes": {
+      "name": "fixture",
+      "stage_count": 12
+    },
+    "relationships": {
+      "stages": {
+        "data": [
+          {
+            "id": "stage-id-11",
+            "type": "pipeline_stages"
+          },
+          {
+            "id": "stage-id-10",
+            "type": "pipeline_stages"
+          },
+          {
+            "id": "stage-id-9",
+            "type": "pipeline_stages"
+          },
+          {
+            "id": "stage-id-8",
+            "type": "pipeline_stages"
+          },
+          {
+            "id": "stage-id-7",
+            "type": "pipeline_stages"
+          },
+          {
+            "id": "stage-id-6",
+            "type": "pipeline_stages"
+          },
+          {
+            "id": "stage-id-5",
+            "type": "pipeline_stages"
+          },
+          {
+            "id": "stage-id-4",
+            "type": "pipeline_stages"
+          },
+          {
+            "id": "stage-id-3",
+            "type": "pipeline_stages"
+          },
+          {
+            "id": "stage-id-2",
+            "type": "pipeline_stages"
+          },
+          {
+            "id": "stage-id-1",
+            "type": "pipeline_stages"
+          },
+          {
+            "id": "stage-id-0",
+            "type": "pipeline_stages"
+          },
+          {
+            "id": "stage-id-11",
+            "type": "pipeline_stages"
+          }
+        ]
+      }
+    }
+  },
+  "included": [
+    {
+      "id": "stage-id-10",
+      "type": "pipeline_stages",
+      "attributes": {
+        "stage_type": "custom",
+        "custom_stage_name": "stage-10",
+        "gate": "automated",
+        "on_failure": "rework",
+        "max_rework_count": 0,
+        "rework_to_position": null,
+        "position": 10,
+        "agent_id": "agent-10",
+        "environment_id": null,
+        "advance_requirements": [],
+        "advance_notice": null,
+        "runs_in_container_override": false,
+        "prompt_sections": {
+          "workflow_instructions": "Fixture instructions",
+          "rules": null
+        },
+        "prompt_configuration": {
+          "sections": {
+            "rules": "Keep all data",
+            "important_notes": ""
+          },
+          "order": [
+            "rules",
+            "important_notes"
+          ]
+        },
+        "stage_triggers": [],
+        "name": "stage-10",
+        "role": "working",
+        "instructions": "Fixture instructions"
+      }
+    },
+    {
+      "id": "stage-id-8",
+      "type": "pipeline_stages",
+      "attributes": {
+        "stage_type": "custom",
+        "custom_stage_name": "stage-8",
+        "gate": "automated",
+        "on_failure": "rework",
+        "max_rework_count": 0,
+        "rework_to_position": null,
+        "position": 8,
+        "agent_id": "agent-8",
+        "environment_id": null,
+        "advance_requirements": [],
+        "advance_notice": null,
+        "runs_in_container_override": false,
+        "prompt_sections": {
+          "workflow_instructions": "Fixture instructions",
+          "rules": null
+        },
+        "prompt_configuration": {
+          "sections": {
+            "rules": "Keep all data",
+            "important_notes": ""
+          },
+          "order": [
+            "rules",
+            "important_notes"
+          ]
+        },
+        "stage_triggers": [],
+        "name": "stage-8",
+        "role": "working",
+        "instructions": "Fixture instructions"
+      }
+    },
+    {
+      "id": "stage-id-6",
+      "type": "pipeline_stages",
+      "attributes": {
+        "stage_type": "custom",
+        "custom_stage_name": "stage-6",
+        "gate": "automated",
+        "on_failure": "rework",
+        "max_rework_count": 0,
+        "rework_to_position": null,
+        "position": 6,
+        "agent_id": "agent-6",
+        "environment_id": null,
+        "advance_requirements": [],
+        "advance_notice": null,
+        "runs_in_container_override": false,
+        "prompt_sections": {
+          "workflow_instructions": "Fixture instructions",
+          "rules": null
+        },
+        "prompt_configuration": {
+          "sections": {
+            "rules": "Keep all data",
+            "important_notes": ""
+          },
+          "order": [
+            "rules",
+            "important_notes"
+          ]
+        },
+        "stage_triggers": [],
+        "name": "stage-6",
+        "role": "working",
+        "instructions": "Fixture instructions"
+      }
+    },
+    {
+      "id": "stage-id-4",
+      "type": "pipeline_stages",
+      "attributes": {
+        "stage_type": "custom",
+        "custom_stage_name": "stage-4",
+        "gate": "automated",
+        "on_failure": "rework",
+        "max_rework_count": 0,
+        "rework_to_position": null,
+        "position": 4,
+        "agent_id": "agent-4",
+        "environment_id": null,
+        "advance_requirements": [],
+        "advance_notice": null,
+        "runs_in_container_override": false,
+        "prompt_sections": {
+          "workflow_instructions": "Fixture instructions",
+          "rules": null
+        },
+        "prompt_configuration": {
+          "sections": {
+            "rules": "Keep all data",
+            "important_notes": ""
+          },
+          "order": [
+            "rules",
+            "important_notes"
+          ]
+        },
+        "stage_triggers": [],
+        "name": "stage-4",
+        "role": "working",
+        "instructions": "Fixture instructions"
+      }
+    },
+    {
+      "id": "stage-id-2",
+      "type": "pipeline_stages",
+      "attributes": {
+        "stage_type": "custom",
+        "custom_stage_name": "stage-2",
+        "gate": "automated",
+        "on_failure": "rework",
+        "max_rework_count": 0,
+        "rework_to_position": null,
+        "position": 2,
+        "agent_id": "agent-2",
+        "environment_id": null,
+        "advance_requirements": [],
+        "advance_notice": null,
+        "runs_in_container_override": false,
+        "prompt_sections": {
+          "workflow_instructions": "Fixture instructions",
+          "rules": null
+        },
+        "prompt_configuration": {
+          "sections": {
+            "rules": "Keep all data",
+            "important_notes": ""
+          },
+          "order": [
+            "rules",
+            "important_notes"
+          ]
+        },
+        "stage_triggers": [],
+        "name": "stage-2",
+        "role": "working",
+        "instructions": "Fixture instructions"
+      }
+    },
+    {
+      "id": "stage-id-0",
+      "type": "pipeline_stages",
+      "attributes": {
+        "stage_type": "custom",
+        "custom_stage_name": null,
+        "gate": "automated",
+        "on_failure": "rework",
+        "max_rework_count": 0,
+        "rework_to_position": null,
+        "position": 0,
+        "agent_id": null,
+        "environment_id": null,
+        "advance_requirements": [],
+        "advance_notice": null,
+        "runs_in_container_override": false,
+        "prompt_sections": {
+          "workflow_instructions": "Fixture instructions",
+          "rules": null
+        },
+        "prompt_configuration": {
+          "sections": {
+            "rules": "Keep all data",
+            "important_notes": ""
+          },
+          "order": [
+            "rules",
+            "important_notes"
+          ]
+        },
+        "stage_triggers": [],
+        "name": null,
+        "role": "working",
+        "instructions": "Fixture instructions"
+      }
+    },
+    {
+      "id": "stage-id-1",
+      "type": "pipeline_stages",
+      "attributes": {
+        "stage_type": "custom",
+        "custom_stage_name": "stage-1",
+        "gate": "automated",
+        "on_failure": "rework",
+        "max_rework_count": 0,
+        "rework_to_position": null,
+        "position": 1,
+        "agent_id": "agent-1",
+        "environment_id": null,
+        "advance_requirements": [],
+        "advance_notice": null,
+        "runs_in_container_override": false,
+        "prompt_sections": {
+          "workflow_instructions": "Fixture instructions",
+          "rules": null
+        },
+        "prompt_configuration": {
+          "sections": {
+            "rules": "Keep all data",
+            "important_notes": ""
+          },
+          "order": [
+            "rules",
+            "important_notes"
+          ]
+        },
+        "stage_triggers": [
+          {
+            "timing": "before_entry",
+            "handler": "FixtureHandler",
+            "config": {
+              "nested": {
+                "integer": 9007199254740993,
+                "enabled": false,
+                "items": [
+                  null,
+                  "value"
+                ]
+              }
+            }
+          }
+        ],
+        "name": "stage-1",
+        "role": "working",
+        "instructions": "Fixture instructions"
+      }
+    },
+    {
+      "id": "stage-id-3",
+      "type": "pipeline_stages",
+      "attributes": {
+        "stage_type": "custom",
+        "custom_stage_name": "stage-3",
+        "gate": "automated",
+        "on_failure": "rework",
+        "max_rework_count": 0,
+        "rework_to_position": null,
+        "position": 3,
+        "agent_id": "agent-3",
+        "environment_id": null,
+        "advance_requirements": [],
+        "advance_notice": null,
+        "runs_in_container_override": false,
+        "prompt_sections": {
+          "workflow_instructions": "Fixture instructions",
+          "rules": null
+        },
+        "prompt_configuration": {
+          "sections": {
+            "rules": "Keep all data",
+            "important_notes": ""
+          },
+          "order": [
+            "rules",
+            "important_notes"
+          ]
+        },
+        "stage_triggers": [],
+        "name": "stage-3",
+        "role": "working",
+        "instructions": "Fixture instructions"
+      }
+    },
+    {
+      "id": "stage-id-5",
+      "type": "pipeline_stages",
+      "attributes": {
+        "stage_type": "custom",
+        "custom_stage_name": "stage-5",
+        "gate": "automated",
+        "on_failure": "rework",
+        "max_rework_count": 0,
+        "rework_to_position": null,
+        "position": 5,
+        "agent_id": "agent-5",
+        "environment_id": null,
+        "advance_requirements": [],
+        "advance_notice": null,
+        "runs_in_container_override": false,
+        "prompt_sections": {
+          "workflow_instructions": "Fixture instructions",
+          "rules": null
+        },
+        "prompt_configuration": {
+          "sections": {
+            "rules": "Keep all data",
+            "important_notes": ""
+          },
+          "order": [
+            "rules",
+            "important_notes"
+          ]
+        },
+        "stage_triggers": [],
+        "name": "stage-5",
+        "role": "working",
+        "instructions": "Fixture instructions"
+      }
+    },
+    {
+      "id": "stage-id-7",
+      "type": "pipeline_stages",
+      "attributes": {
+        "stage_type": "custom",
+        "custom_stage_name": "stage-7",
+        "gate": "automated",
+        "on_failure": "rework",
+        "max_rework_count": 0,
+        "rework_to_position": null,
+        "position": 7,
+        "agent_id": "agent-7",
+        "environment_id": null,
+        "advance_requirements": [],
+        "advance_notice": null,
+        "runs_in_container_override": false,
+        "prompt_sections": {
+          "workflow_instructions": "Fixture instructions",
+          "rules": null
+        },
+        "prompt_configuration": {
+          "sections": {
+            "rules": "Keep all data",
+            "important_notes": ""
+          },
+          "order": [
+            "rules",
+            "important_notes"
+          ]
+        },
+        "stage_triggers": [],
+        "name": "stage-7",
+        "role": "working",
+        "instructions": "Fixture instructions"
+      }
+    },
+    {
+      "id": "stage-id-9",
+      "type": "pipeline_stages",
+      "attributes": {
+        "stage_type": "custom",
+        "custom_stage_name": "stage-9",
+        "gate": "automated",
+        "on_failure": "rework",
+        "max_rework_count": 0,
+        "rework_to_position": null,
+        "position": 9,
+        "agent_id": "agent-9",
+        "environment_id": null,
+        "advance_requirements": [],
+        "advance_notice": null,
+        "runs_in_container_override": false,
+        "prompt_sections": {
+          "workflow_instructions": "Fixture instructions",
+          "rules": null
+        },
+        "prompt_configuration": {
+          "sections": {
+            "rules": "Keep all data",
+            "important_notes": ""
+          },
+          "order": [
+            "rules",
+            "important_notes"
+          ]
+        },
+        "stage_triggers": [],
+        "name": "stage-9",
+        "role": "working",
+        "instructions": "Fixture instructions"
+      }
+    },
+    {
+      "id": "stage-id-11",
+      "type": "pipeline_stages",
+      "attributes": {
+        "stage_type": "custom",
+        "custom_stage_name": "stage-11",
+        "gate": "automated",
+        "on_failure": "rework",
+        "max_rework_count": 0,
+        "rework_to_position": null,
+        "position": 11,
+        "agent_id": "agent-11",
+        "environment_id": null,
+        "advance_requirements": [],
+        "advance_notice": null,
+        "runs_in_container_override": false,
+        "prompt_sections": {
+          "workflow_instructions": "Fixture instructions",
+          "rules": null
+        },
+        "prompt_configuration": {
+          "sections": {
+            "rules": "Keep all data",
+            "important_notes": ""
+          },
+          "order": [
+            "rules",
+            "important_notes"
+          ]
+        },
+        "stage_triggers": [],
+        "name": "stage-11",
+        "role": "working",
+        "instructions": "Fixture instructions"
+      }
+    },
+    {
+      "id": "unrelated",
+      "type": "pipeline_stages",
+      "attributes": {
+        "position": "bad"
+      }
+    }
+  ]
+}
