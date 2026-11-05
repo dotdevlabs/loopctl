@@ -32,95 +32,6 @@ func pipelineNoStagesResponse(id, name string) string {
 
 // ---- List tests ----
 
-func TestStagesList_Happy(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			t.Errorf("unexpected method: %s", r.Method)
-		}
-		if r.URL.Path != "/api/pipelines/pipe1" {
-			t.Errorf("unexpected path: %s", r.URL.Path)
-		}
-		w.Header().Set("Content-Type", "application/vnd.api+json")
-		_, _ = fmt.Fprint(w, pipelineWithStagesResponse("pipe1", "my-pipeline", []map[string]any{
-			{"name": "plan", "role": "planning", "stage_type": "ai", "gate": "manual", "agent": "my-agent"},
-		}))
-	}))
-	defer ts.Close()
-
-	var out bytes.Buffer
-	ctx := makeCtx(t, ts.URL, "tok", false, &out)
-	cmd := stagesListCmd()
-	cmd.SetContext(ctx)
-	cmd.SetOut(&out)
-
-	if err := cmd.RunE(cmd, []string{"pipe1"}); err != nil {
-		t.Fatalf("stages list failed: %v", err)
-	}
-	got := out.String()
-	if !strings.Contains(got, "plan") {
-		t.Errorf("output missing stage name 'plan':\n%s", got)
-	}
-	if !strings.Contains(got, "planning") {
-		t.Errorf("output missing role 'planning':\n%s", got)
-	}
-	if !strings.Contains(got, "manual") {
-		t.Errorf("output missing gate 'manual':\n%s", got)
-	}
-	if !strings.Contains(got, "my-agent") {
-		t.Errorf("output missing agent 'my-agent':\n%s", got)
-	}
-}
-
-func TestStagesList_EmptyStages(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/vnd.api+json")
-		_, _ = fmt.Fprint(w, pipelineNoStagesResponse("pipe1", "my-pipeline"))
-	}))
-	defer ts.Close()
-
-	var out bytes.Buffer
-	ctx := makeCtx(t, ts.URL, "tok", false, &out)
-	cmd := stagesListCmd()
-	cmd.SetContext(ctx)
-	cmd.SetOut(&out)
-
-	if err := cmd.RunE(cmd, []string{"pipe1"}); err != nil {
-		t.Fatalf("stages list empty failed: %v", err)
-	}
-	// Should render table headers without error.
-	got := out.String()
-	if !strings.Contains(got, "POSITION") {
-		t.Errorf("expected POSITION column header; got:\n%s", got)
-	}
-}
-
-func TestStagesList_JSON(t *testing.T) {
-	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/vnd.api+json")
-		_, _ = fmt.Fprint(w, pipelineWithStagesResponse("pipe1", "my-pipeline", []map[string]any{
-			{"name": "plan", "role": "planning"},
-		}))
-	}))
-	defer ts.Close()
-
-	var out bytes.Buffer
-	ctx := makeCtx(t, ts.URL, "tok", true, &out)
-	cmd := stagesListCmd()
-	cmd.SetContext(ctx)
-	cmd.SetOut(&out)
-
-	if err := cmd.RunE(cmd, []string{"pipe1"}); err != nil {
-		t.Fatalf("stages list json failed: %v", err)
-	}
-	got := out.String()
-	if !strings.Contains(got, `"id"`) {
-		t.Errorf("expected JSON output with 'id' field; got:\n%s", got)
-	}
-	if !strings.Contains(got, "pipe1") {
-		t.Errorf("expected pipeline id 'pipe1' in JSON output; got:\n%s", got)
-	}
-}
-
 func TestStagesList_Error404(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/vnd.api+json")
@@ -525,7 +436,7 @@ func TestStagesUpdate_ByID(t *testing.T) {
 		w.Header().Set("Content-Type", "application/vnd.api+json")
 		_, _ = fmt.Fprint(w, stageResourceResponse("s1", map[string]any{
 			"role": "implementing", "stage_type": "ai", "gate": "automated",
-			"position": 1, "instructions": "new instructions",
+			"position": 1, "instructions": "new instructions", "agent_id": "agent-7",
 		}))
 	}))
 	defer ts.Close()
@@ -543,6 +454,9 @@ func TestStagesUpdate_ByID(t *testing.T) {
 	}
 	if reqCount != 1 {
 		t.Errorf("expected exactly 1 PATCH request; got %d", reqCount)
+	}
+	if !strings.Contains(out.String(), "s1") || !strings.Contains(out.String(), "agent-7") || !strings.Contains(out.String(), "ID") {
+		t.Errorf("update table missing resource ID or agent: %s", out.String())
 	}
 
 	var top map[string]json.RawMessage

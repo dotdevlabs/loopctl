@@ -1,19 +1,22 @@
 package pipelines
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
+	"sort"
 
 	"github.com/spf13/cobra"
 
 	"github.com/dotdevlabs/ctlkit/pkg/ctxutil"
+	"github.com/dotdevlabs/ctlkit/pkg/httpclient"
 	"github.com/dotdevlabs/ctlkit/pkg/output"
 
 	"github.com/dotdevlabs/loopctl/internal/apiclient"
 	"github.com/dotdevlabs/loopctl/internal/flagmeta"
 )
 
-// PipelineStageAttrs captures the attributes returned by the single-stage PATCH response.
+// PipelineStageAttrs captures published workflow stage attributes.
 // Name is *string because built-in stages return name: null.
 type PipelineStageAttrs struct {
 	StageType               string          `json:"stage_type"`
@@ -56,18 +59,20 @@ type StageInput struct {
 	AdvanceRequirements     json.RawMessage `json:"advance_requirements,omitempty"`
 }
 
-// stageDisplayAttrs is used for table rendering of a stage.
-type stageDisplayAttrs struct {
-	Position  int    `json:"position"`
-	Name      string `json:"name"`
-	Role      string `json:"role"`
-	StageType string `json:"stage_type"`
-	Gate      string `json:"gate"`
-	Agent     string `json:"agent"`
+func stageRow(id string, a PipelineStageAttrs) []string {
+	name, agent := "", ""
+	if a.Name != nil {
+		name = *a.Name
+	}
+	if a.AgentID != nil {
+		agent = *a.AgentID
+	}
+	return []string{id, fmt.Sprint(a.Position), name, a.Role, a.StageType, a.Gate, agent}
 }
 
 func stageCols() []output.Column {
 	return []output.Column{
+		{Header: "ID"},
 		{Header: "POSITION"},
 		{Header: "NAME"},
 		{Header: "ROLE"},
@@ -101,23 +106,20 @@ func stagesListCmd() *cobra.Command {
 			activeCtx := ctxutil.ActiveContextFrom(ctx)
 			r := ctxutil.RendererFrom(ctx)
 
-			res, err := apiclient.GetJSONAPISingle[PipelineAttrs](ctx, activeCtx, "/api/pipelines/"+id)
+			res, err := apiclient.GetJSONAPISingleFull[PipelineAttrs](ctx, activeCtx, "/api/pipelines/"+id)
 			if err != nil {
 				return err
 			}
 
-			cols := stageCols()
-			rows := make([][]string, 0, len(res.Attributes.Stages))
-			for i, raw := range res.Attributes.Stages {
-				var attrs stageDisplayAttrs
-				_ = json.Unmarshal(raw, &attrs)
-				pos := fmt.Sprintf("%d", i)
-				if attrs.Position != 0 {
-					pos = fmt.Sprintf("%d", attrs.Position)
-				}
-				rows = append(rows, []string{pos, attrs.Name, attrs.Role, attrs.StageType, attrs.Gate, attrs.Agent})
+			stages, err := relatedStages(res)
+			if err != nil {
+				return err
 			}
-			return r.Render(cols, rows, res)
+			rows := make([][]string, 0, len(stages))
+			for _, stage := range stages {
+				rows = append(rows, stageRow(stage.ID, stage.Attributes))
+			}
+			return r.Render(stageCols(), rows, stages)
 		},
 	}
 }
@@ -394,19 +396,7 @@ func stagesUpdateCmd() *cobra.Command {
 				return err
 			}
 
-			a := res.Attributes
-			name := ""
-			if a.Name != nil {
-				name = *a.Name
-			}
-			rows := [][]string{{
-				fmt.Sprintf("%d", a.Position),
-				name,
-				a.Role,
-				a.StageType,
-				a.Gate,
-				"",
-			}}
+			rows := [][]string{stageRow(res.ID, res.Attributes)}
 			return r.Render(stageCols(), rows, res)
 		},
 	}
@@ -503,4 +493,51 @@ func validateJSON(raw, flag string) (json.RawMessage, error) {
 		return nil, fmt.Errorf("%s: invalid JSON: %w", flag, err)
 	}
 	return json.RawMessage(raw), nil
+}
+
+// relatedStages follows only the pipeline's explicit stage linkage.
+func relatedStages(res apiclient.SingleResult[PipelineAttrs]) ([]httpclient.Resource[PipelineStageAttrs], error) {
+	var relationship struct {
+		Data json.RawMessage `json:"data"`
+	}
+	if err := json.Unmarshal(res.Relationships["stages"], &relationship); err != nil {
+		return nil, fmt.Errorf("decoding stages relationship: %w", err)
+	}
+	data := bytes.TrimSpace(relationship.Data)
+	if len(data) == 0 || data[0] != '[' {
+		return nil, fmt.Errorf("stages relationship data must be an array")
+	}
+	var ids []apiclient.ResourceIdentifier
+	if err := json.Unmarshal(data, &ids); err != nil {
+		return nil, fmt.Errorf("decoding stages linkage: %w", err)
+	}
+	included := make(map[apiclient.ResourceIdentifier]json.RawMessage)
+	for _, resource := range res.Included {
+		included[apiclient.ResourceIdentifier{ID: resource.ID, Type: resource.Type}] = resource.Attributes
+	}
+	stages := make([]httpclient.Resource[PipelineStageAttrs], 0, len(ids))
+	seen := make(map[apiclient.ResourceIdentifier]bool)
+	for _, id := range ids {
+		if id.ID == "" || id.Type != "pipeline_stages" {
+			return nil, fmt.Errorf("invalid stages linkage: type %q id %q", id.Type, id.ID)
+		}
+		if seen[id] {
+			continue
+		}
+		seen[id] = true
+		raw, ok := included[id]
+		if !ok {
+			return nil, fmt.Errorf("stage %s missing from included resources", id.ID)
+		}
+		var attrs PipelineStageAttrs
+		if len(bytes.TrimSpace(raw)) == 0 || bytes.TrimSpace(raw)[0] != '{' {
+			return nil, fmt.Errorf("stage %s attributes must be an object", id.ID)
+		}
+		if err := json.Unmarshal(raw, &attrs); err != nil {
+			return nil, fmt.Errorf("decoding stage %s attributes: %w", id.ID, err)
+		}
+		stages = append(stages, httpclient.Resource[PipelineStageAttrs]{ID: id.ID, Type: id.Type, Attributes: attrs})
+	}
+	sort.SliceStable(stages, func(i, j int) bool { return stages[i].Attributes.Position < stages[j].Attributes.Position })
+	return stages, nil
 }

@@ -909,3 +909,30 @@ func TestGetJSONAPISingleFullNoLinksself(t *testing.T) {
 		t.Errorf("expected ID=5; got: %q", res.ID)
 	}
 }
+
+func TestSingleFullRetainsIncludedAndRelationships(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = fmt.Fprint(w, `{"data":{"id":"9","type":"pipelines","attributes":{"value":"hello"},"links":{"self":"/api/pipelines/9"},"relationships":{"stages":{"data":[{"id":"001","type":"pipeline_stages"}]}}},"included":[{"id":"001","type":"pipeline_stages","attributes":{"prompt_configuration":{"sections":{"rules":null},"order":[]},"number":9007199254740993}}]}`)
+	}))
+	defer ts.Close()
+	res, err := apiclient.GetJSONAPISingleFull[testData](context.Background(), activeCtx(t, ts.URL), "/api/pipelines/9")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.ID != "9" || res.Attributes.Value != "hello" || res.SelfLink != "/api/pipelines/9" {
+		t.Fatalf("lost primary resource: %+v", res)
+	}
+	if !strings.Contains(string(res.Relationships["stages"]), `"001"`) {
+		t.Fatal("lost relationship")
+	}
+	if len(res.Included) != 1 || res.Included[0].ID != "001" || res.Included[0].Type != "pipeline_stages" {
+		t.Fatalf("lost included: %+v", res.Included)
+	}
+	if string(res.Included[0].Attributes) != `{"prompt_configuration":{"sections":{"rules":null},"order":[]},"number":9007199254740993}` {
+		t.Fatal("changed raw attributes")
+	}
+	simple, err := apiclient.GetJSONAPISingle[testData](context.Background(), activeCtx(t, ts.URL), "/api/pipelines/9")
+	if err != nil || simple != res.Resource {
+		t.Fatalf("simple decoder changed: %+v %v", simple, err)
+	}
+}
