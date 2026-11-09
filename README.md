@@ -981,7 +981,7 @@ loopctl tasks unblock <id> --dry-run
 
 #### tasks watch
 
-Follow a task to a terminal state, streaming stage and activity changes as they occur. Exits with code 0 when the task reaches `completed` or `reviewed`; exits non-zero on `rejected`, on `blocked` (the blocked reason is printed and included in the error), or on timeout. Activity that already exists when the watch starts is not reported. A new `container.error` activity is printed with its detail but does not end the watch, because LoopControl retries the container.
+Follow server task state, streaming stage and activity changes. Exits successfully when `terminal` is true and `status` is `completed`; exits non-zero for terminal rejection, unexpected terminal status, blocked status (including its reason), or timeout. Stage names never determine completion. Human approval waits are reported once per waiting episode, with the stage and PR URL when available; watching continues through approval and later stages. With `--json`, progress goes to stderr and stdout contains one final JSON document. This also applies to `tasks create --watch`. Activity that already exists when the watch starts is not reported. A new `container.error` activity is printed with its detail but does not end the watch, because LoopControl retries the container.
 
 ```bash
 loopctl tasks watch <id>
@@ -1003,7 +1003,7 @@ Each scheduled retry prints its error and delay to stderr, including with `--jso
 
 **Exit codes:**
 
-- `0` — task reached `completed` or `reviewed`
+- `0` — server reports `terminal: true` and `status: completed`
 - non-zero — task `rejected`, task `blocked` (with its reason), timeout exceeded, cancellation, or a non-retryable error
 
 `container.error` activities never change the exit code on their own.

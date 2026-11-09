@@ -28,6 +28,9 @@ type ComputeCost struct {
 
 // TaskAttrs holds the attributes nested under JSON:API data.attributes.
 type TaskAttrs struct {
+	Terminal                    bool         `json:"terminal"`
+	AwaitingHumanGate           bool         `json:"awaiting_human_gate"`
+	AwaitingHumanGateStage      *string      `json:"awaiting_human_gate_stage"`
 	ProjectID                   string       `json:"project_id"`
 	Kind                        string       `json:"kind"`
 	Title                       string       `json:"title"`
@@ -218,6 +221,7 @@ func createCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "create",
 		Short: "Create a new task",
+		Long:  "Create a new task. With --watch, follow server task state through human approval and later stages until terminal, blocked, or timeout. With --json --watch, progress goes to stderr and the final JSON document goes to stdout.",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 
@@ -257,8 +261,10 @@ func createCmd() *cobra.Command {
 				{Header: "STATUS"},
 			}
 			rows := [][]string{{res.ID, t.Kind, t.Title, t.Stage, t.Status}}
-			if err := r.Render(cols, rows, res); err != nil {
-				return err
+			if !watch || !ctxutil.GlobalFlagsFrom(ctx).JSON {
+				if err := r.Render(cols, rows, res); err != nil {
+					return err
+				}
 			}
 
 			if watch {
@@ -527,6 +533,8 @@ func watchTask(
 	var lastPRNumber int
 	var lastActID string
 	firstPoll := true
+	var waiting bool
+	var waitingStage string
 
 	poll := func() (bool, error) {
 		res, err := apiclient.GetJSONAPISingleFull[TaskAttrs](ctx, activeCtx, taskPath)
@@ -587,8 +595,24 @@ func watchTask(
 			_, _ = fmt.Fprintf(out, "container error: %s\n", newestDetails)
 		}
 
-		// Terminal state check.
-		if t.Stage == "blocked" || t.Status == "blocked" {
+		gateStage := t.Stage
+		if t.AwaitingHumanGateStage != nil {
+			gateStage = *t.AwaitingHumanGateStage
+		}
+		if t.AwaitingHumanGate && (!waiting || gateStage != waitingStage) {
+			progress := out
+			if jsonMode {
+				progress = errOut
+			}
+			_, _ = fmt.Fprintf(progress, "task waiting for approval at stage %s", gateStage)
+			if t.PRURL != "" {
+				_, _ = fmt.Fprintf(progress, " (%s)", t.PRURL)
+			}
+			_, _ = fmt.Fprintln(progress)
+		}
+		waiting, waitingStage = t.AwaitingHumanGate, gateStage
+
+		if t.Status == "blocked" {
 			msg := "task blocked"
 			if t.BlockedReason != "" {
 				msg += ": " + t.BlockedReason
@@ -600,17 +624,18 @@ func watchTask(
 			}
 			return true, clierror.New(clierror.CodeServerError, msg, "")
 		}
-		switch t.Stage {
-		case "completed", "reviewed":
+		if t.Terminal {
 			if jsonMode {
 				_ = output.JSONTo(out, res)
 			}
-			return true, nil
-		case "rejected":
-			if jsonMode {
-				_ = output.JSONTo(out, res)
+			switch t.Status {
+			case "completed":
+				return true, nil
+			case "rejected":
+				return true, clierror.New(clierror.CodeServerError, "task rejected", "")
+			default:
+				return true, clierror.New(clierror.CodeServerError, "unexpected terminal task status: "+t.Status, "")
 			}
-			return true, clierror.New(clierror.CodeServerError, "task rejected", "")
 		}
 
 		return false, nil
@@ -665,6 +690,7 @@ func watchCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "watch <id>",
 		Short: "Follow a task to a terminal state",
+		Long:  "Follow server task state until terminal, blocked, or timeout. Human approval waits are reported once and watching continues through later stages. With --json, progress goes to stderr and the final JSON document goes to stdout.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return watchTask(
