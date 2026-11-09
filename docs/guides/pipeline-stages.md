@@ -1,4 +1,41 @@
-# Inspect pipeline stages
+# Pipeline stages
+
+## Create and update stages
+
+Use `custom_stage_name` and `prompt_sections.template` when authoring stages:
+
+```bash
+loopctl pipelines create --name "Delivery" \
+  --stages '[{"custom_stage_name":"plan","prompt_sections":{"template":"Plan the work."}}]'
+loopctl pipelines update <pipeline-id> \
+  --stages '[{"custom_stage_name":"plan","prompt_sections":{"template":"Plan the work."}}]'
+```
+
+`--stages` accepts a JSON array of objects and preserves supplied fields. On
+update, it replaces the pipeline's stages. Omitted stage types and defaults are
+left to the server; set `stage_type` explicitly when needed using a server stage
+type name.
+
+To append a stage without replacing existing stages, use `stages add`. A legacy
+`--name` is not required:
+
+```bash
+loopctl pipelines stages add <pipeline-id> \
+  --custom-stage-name review \
+  --prompt-sections '{"template":"Review the changes."}'
+loopctl pipelines stages update <pipeline-id> <stage-id> \
+  --prompt-sections '{"template":"Review the changes and verification evidence."}'
+```
+
+Use `--stage-type` to specify a server stage type name. Stage updates send only
+the fields whose flags you supply. The server validates stage requirements.
+
+The legacy fields `name`, `role`, and `instructions` are deprecated in favor of
+`custom_stage_name`, `stage_type`, and `prompt_sections.template`. The retained
+`--role` flag warns: `Deprecated: use stage_type: 'custom'.` Use
+`--custom-stage-name` and `--prompt-sections` for new stage definitions.
+
+## Inspect stages
 
 List a pipeline's workflow stages:
 
