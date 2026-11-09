@@ -152,7 +152,7 @@ func TestConformance_TasksWatch(t *testing.T) {
 		switch r.URL.Path {
 		case "/api/tasks/t1":
 			taskViolations = schema.CheckRequest(r, endpoints)
-			_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{"stage":"completed","pr_number":0}}}`)
+			_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{"stage":"completed","terminal":true,"status":"completed","pr_number":0}}}`)
 		case "/api/tasks/t1/activities":
 			activitiesViolations = schema.CheckRequest(r, endpoints)
 			_, _ = fmt.Fprint(w, `{"data":[]}`)
@@ -428,11 +428,11 @@ func TestConformance_TasksWatchUsesLinksself(t *testing.T) {
 					`{"data":{"type":"tasks","id":"t1","links":{"self":"/api/tasks/t1-canonical"},"attributes":{"stage":"planning","pr_number":0}}}`)
 			} else {
 				_, _ = fmt.Fprint(w,
-					`{"data":{"type":"tasks","id":"t1","attributes":{"stage":"completed","pr_number":0}}}`)
+					`{"data":{"type":"tasks","id":"t1","attributes":{"stage":"completed","terminal":true,"status":"completed","pr_number":0}}}`)
 			}
 		case "/api/tasks/t1-canonical":
 			_, _ = fmt.Fprint(w,
-				`{"data":{"type":"tasks","id":"t1","links":{"self":"/api/tasks/t1-canonical"},"attributes":{"stage":"completed","pr_number":0}}}`)
+				`{"data":{"type":"tasks","id":"t1","links":{"self":"/api/tasks/t1-canonical"},"attributes":{"stage":"completed","terminal":true,"status":"completed","pr_number":0}}}`)
 		case "/api/tasks/t1/activities", "/api/tasks/t1-canonical/activities":
 			_, _ = fmt.Fprint(w, `{"data":[]}`)
 		}

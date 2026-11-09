@@ -334,7 +334,7 @@ func TestTasksWatch_Completion(t *testing.T) {
 			if idx >= len(stages) {
 				idx = len(stages) - 1
 			}
-			_, _ = fmt.Fprintf(w, `{"data":{"type":"tasks","id":"t1","attributes":{"stage":%q,"pr_number":0}}}`, stages[idx])
+			_, _ = fmt.Fprintf(w, `{"data":{"type":"tasks","id":"t1","attributes":{"stage":%q,"status":%q,"terminal":%t,"pr_number":0}}}`, stages[idx], stages[idx], stages[idx] == "completed")
 		case "/api/tasks/t1/activities":
 			_, _ = fmt.Fprint(w, `{"data":[]}`)
 		}
@@ -366,7 +366,7 @@ func TestTasksWatch_AlreadyTerminal(t *testing.T) {
 		w.Header().Set("Content-Type", "application/vnd.api+json")
 		switch r.URL.Path {
 		case "/api/tasks/t1":
-			_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{"stage":"completed","pr_number":0}}}`)
+			_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{"stage":"completed","terminal":true,"status":"completed","pr_number":0}}}`)
 		case "/api/tasks/t1/activities":
 			_, _ = fmt.Fprint(w, `{"data":[]}`)
 		}
@@ -401,7 +401,7 @@ func TestTasksWatch_Rejected(t *testing.T) {
 			if idx >= len(stages) {
 				idx = len(stages) - 1
 			}
-			_, _ = fmt.Fprintf(w, `{"data":{"type":"tasks","id":"t1","attributes":{"stage":%q,"pr_number":0}}}`, stages[idx])
+			_, _ = fmt.Fprintf(w, `{"data":{"type":"tasks","id":"t1","attributes":{"stage":%q,"status":%q,"terminal":%t,"pr_number":0}}}`, stages[idx], stages[idx], stages[idx] == "completed" || stages[idx] == "rejected")
 		case "/api/tasks/t1/activities":
 			_, _ = fmt.Fprint(w, `{"data":[]}`)
 		}
@@ -474,7 +474,7 @@ func TestTasksWatch_ExistingContainerErrorBeforeStart(t *testing.T) {
 	ts := watchStub(t, "t1", []watchStep{
 		{`{"stage":"implementing"}`, containerErrAct},
 		{`{"stage":"implementing"}`, containerErrAct},
-		{`{"stage":"completed"}`, containerErrAct},
+		{`{"stage":"completed","terminal":true,"status":"completed"}`, containerErrAct},
 	}, &gets)
 	defer ts.Close()
 
@@ -496,7 +496,7 @@ func TestTasksWatch_NewContainerErrorThenStageChange(t *testing.T) {
 		{`{"stage":"planned"}`, `[]`},
 		{`{"stage":"planned"}`, containerErrAct},
 		{`{"stage":"implementing"}`, containerErrAct},
-		{`{"stage":"completed"}`, containerErrAct},
+		{`{"stage":"completed","terminal":true,"status":"completed"}`, containerErrAct},
 	}, &gets)
 	defer ts.Close()
 
@@ -516,7 +516,7 @@ func TestTasksWatch_ContainerErrorJSONMode(t *testing.T) {
 	var gets int32
 	ts := watchStub(t, "t1", []watchStep{
 		{`{"stage":"planned"}`, `[]`},
-		{`{"stage":"completed"}`, containerErrAct},
+		{`{"stage":"completed","terminal":true,"status":"completed"}`, containerErrAct},
 	}, &gets)
 	defer ts.Close()
 
@@ -538,10 +538,10 @@ func TestTasksWatch_Blocked(t *testing.T) {
 		name, attrs, want string
 		json              bool
 	}{
-		{"stage", `{"stage":"blocked","blocked_reason":"needs a human"}`, "needs a human", false},
+		{"stage", `{"stage":"blocked","status":"blocked","blocked_reason":"needs a human"}`, "needs a human", false},
 		{"status", `{"stage":"implementing","status":"blocked","blocked_reason":"needs a human"}`, "needs a human", false},
-		{"empty reason", `{"stage":"blocked"}`, "", false},
-		{"json", `{"stage":"blocked","blocked_reason":"needs a human"}`, "needs a human", true},
+		{"empty reason", `{"stage":"blocked","status":"blocked"}`, "", false},
+		{"json", `{"stage":"blocked","status":"blocked","blocked_reason":"needs a human"}`, "needs a human", true},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -567,7 +567,7 @@ func TestTasksWatch_Blocked(t *testing.T) {
 
 func TestTasksWatch_Reviewed(t *testing.T) {
 	var gets int32
-	ts := watchStub(t, "t1", []watchStep{{`{"stage":"implementing"}`, `[]`}, {`{"stage":"reviewed"}`, `[]`}}, &gets)
+	ts := watchStub(t, "t1", []watchStep{{`{"stage":"implementing"}`, `[]`}, {`{"stage":"reviewed"}`, `[]`}, {`{"stage":"merging"}`, `[]`}, {`{"stage":"done","terminal":true,"status":"completed"}`, `[]`}}, &gets)
 	defer ts.Close()
 	got, err := runWatch(t, ts.URL, false, "")
 	if err != nil {
@@ -613,7 +613,7 @@ func TestTasksWatch_JSONMode(t *testing.T) {
 		w.Header().Set("Content-Type", "application/vnd.api+json")
 		switch r.URL.Path {
 		case "/api/tasks/t1":
-			_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{"stage":"completed","pr_number":0}}}`)
+			_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{"stage":"completed","terminal":true,"status":"completed","pr_number":0}}}`)
 		case "/api/tasks/t1/activities":
 			_, _ = fmt.Fprint(w, `{"data":[]}`)
 		}
@@ -997,7 +997,7 @@ func makeCreateWatchServer(t *testing.T, taskStages []string) (*httptest.Server,
 			if idx >= len(taskStages) {
 				idx = len(taskStages) - 1
 			}
-			_, _ = fmt.Fprintf(w, `{"data":{"type":"tasks","id":"tnew","attributes":{"stage":%q,"pr_number":0}}}`, taskStages[idx])
+			_, _ = fmt.Fprintf(w, `{"data":{"type":"tasks","id":"tnew","attributes":{"stage":%q,"status":%q,"terminal":%t,"pr_number":0}}}`, taskStages[idx], taskStages[idx], taskStages[idx] == "completed" || taskStages[idx] == "rejected")
 		case r.Method == http.MethodGet && r.URL.Path == "/api/tasks/tnew/activities":
 			_, _ = fmt.Fprint(w, `{"data":[]}`)
 		}
@@ -1107,7 +1107,7 @@ func TestTasksCreateWatch_ExistingContainerErrorThenBlocked(t *testing.T) {
 			if atomic.AddInt32(&taskGets, 1) > 2 {
 				stage = "blocked"
 			}
-			_, _ = fmt.Fprintf(w, `{"data":{"type":"tasks","id":"tnew","attributes":{"stage":%q,"blocked_reason":"stuck on review","pr_number":0}}}`, stage)
+			_, _ = fmt.Fprintf(w, `{"data":{"type":"tasks","id":"tnew","attributes":{"stage":%q,"status":%q,"blocked_reason":"stuck on review","pr_number":0}}}`, stage, stage)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/tasks/tnew/activities":
 			_, _ = fmt.Fprint(w, `{"data":[{"type":"task_activities","id":"a1","attributes":{"action":"container.error","details":"OOM killed","created_at":"2026-01-01T00:00:00Z"}}]}`)
 		}
@@ -1146,7 +1146,7 @@ func TestTasksCreateWatch_JSONMode(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/api/tasks":
 			_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"tnew","attributes":{"project_id":"proj1","kind":"feature","title":"Watch Task","stage":"planning","status":"open"}}}`)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/tasks/tnew":
-			_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"tnew","attributes":{"stage":"completed","pr_number":0}}}`)
+			_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"tnew","attributes":{"stage":"completed","terminal":true,"status":"completed","pr_number":0}}}`)
 		case r.Method == http.MethodGet && r.URL.Path == "/api/tasks/tnew/activities":
 			_, _ = fmt.Fprint(w, `{"data":[]}`)
 		}

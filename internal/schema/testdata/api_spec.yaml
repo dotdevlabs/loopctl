@@ -1754,6 +1754,13 @@ components:
     TaskListAttributes:
       type: object
       properties:
+        awaiting_human_gate:
+          type: boolean
+          description: Whether the pipeline machine reports an unapproved human gate at the current stage.
+        awaiting_human_gate_stage:
+          type: string
+          nullable: true
+          description: Equals stage when awaiting_human_gate is true; null otherwise.
         title:
           type: string
         kind:
@@ -1866,6 +1873,8 @@ components:
       - lifecycle_role
       - terminal
       - depends_on
+      - awaiting_human_gate
+      - awaiting_human_gate_stage
       - dependencies_met
       - blocking_dependency_ids
       - created_at
@@ -1877,6 +1886,13 @@ components:
     TaskShowAttributes:
       type: object
       properties:
+        awaiting_human_gate:
+          type: boolean
+          description: Whether the pipeline machine reports an unapproved human gate at the current stage.
+        awaiting_human_gate_stage:
+          type: string
+          nullable: true
+          description: Equals stage when awaiting_human_gate is true; null otherwise.
         title:
           type: string
         kind:
@@ -1974,6 +1990,8 @@ components:
       - lifecycle_role
       - terminal
       - current_state
+      - awaiting_human_gate
+      - awaiting_human_gate_stage
       - status
       - project_id
       - prompt_hash
@@ -2000,6 +2018,13 @@ components:
     TaskCreateResponseAttributes:
       type: object
       properties:
+        awaiting_human_gate:
+          type: boolean
+          description: Whether the pipeline machine reports an unapproved human gate at the current stage.
+        awaiting_human_gate_stage:
+          type: string
+          nullable: true
+          description: Equals stage when awaiting_human_gate is true; null otherwise.
         title:
           type: string
         kind:
@@ -2034,11 +2059,20 @@ components:
       - lifecycle_role
       - terminal
       - project_id
+      - awaiting_human_gate
+      - awaiting_human_gate_stage
       - depends_on
       - dependencies_met
     TaskUpdateResponseAttributes:
       type: object
       properties:
+        awaiting_human_gate:
+          type: boolean
+          description: Whether the pipeline machine reports an unapproved human gate at the current stage.
+        awaiting_human_gate_stage:
+          type: string
+          nullable: true
+          description: Equals stage when awaiting_human_gate is true; null otherwise.
         title:
           type: string
         description:
@@ -2047,6 +2081,8 @@ components:
           type: string
       additionalProperties: false
       required:
+      - awaiting_human_gate
+      - awaiting_human_gate_stage
       - title
       - description
       - stage
@@ -11193,6 +11229,19 @@ paths:
             assertions:
             - pointer: "/meta/page_count"
               equals: 4
+          human_gate_pending:
+            status: 200
+            setup:
+            - authenticated
+            headers:
+              Authorization: Bearer api_approval_token
+            query:
+              query: API checkpoint pending
+            assertions:
+            - pointer: "/data/0/attributes/awaiting_human_gate"
+              equals: true
+            - pointer: "/data/0/attributes/awaiting_human_gate_stage"
+              equals: approval_checkpoint
           success:
             status: 200
             setup:
@@ -11805,6 +11854,22 @@ paths:
           description: Missing or invalid bearer token; the response body is empty.
       x-loopcontrol-contract:
         scenarios:
+          human_gate_pending:
+            status: 200
+            setup:
+            - authenticated
+            headers:
+              Authorization: Bearer api_approval_token
+            path:
+              id:
+                fixture:
+                  resource: task
+                  identity: api_checkpoint_task
+            assertions:
+            - pointer: "/data/attributes/awaiting_human_gate"
+              equals: true
+            - pointer: "/data/attributes/awaiting_human_gate_stage"
+              equals: approval_checkpoint
           success:
             status: 200
             setup:

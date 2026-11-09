@@ -80,7 +80,7 @@ func TestWatchRetriesServer(t *testing.T) {
 							if calls.Load() >= 3 {
 								stage = "completed"
 							}
-							_, _ = fmt.Fprintf(w, `{"data":{"id":"t1","attributes":{"stage":%q}}}`, stage)
+							_, _ = fmt.Fprintf(w, `{"data":{"id":"t1","attributes":{"stage":%q,"status":%q,"terminal":%t}}}`, stage, stage, stage == "completed")
 						}))
 						defer ts.Close()
 						var out, diagnostics bytes.Buffer
@@ -172,7 +172,7 @@ func TestCreateWatchRetriesWithoutRecreating(t *testing.T) {
 			w.WriteHeader(429)
 			return
 		}
-		_, _ = io.WriteString(w, `{"data":{"id":"t1","attributes":{"stage":"completed"}}}`)
+		_, _ = io.WriteString(w, `{"data":{"id":"t1","attributes":{"stage":"completed","terminal":true,"status":"completed"}}}`)
 	}))
 	defer ts.Close()
 	var out, diagnostics bytes.Buffer
@@ -218,7 +218,7 @@ func TestWatchActivityPaginationRetryPreservesSeenState(t *testing.T) {
 		if polls.Add(1) >= 4 {
 			stage = "completed"
 		}
-		_, _ = fmt.Fprintf(w, `{"data":{"id":"t1","attributes":{"stage":%q}}}`, stage)
+		_, _ = fmt.Fprintf(w, `{"data":{"id":"t1","attributes":{"stage":%q,"status":%q,"terminal":%t}}}`, stage, stage, stage == "completed")
 	}))
 	defer ts.Close()
 	var out, diagnostics bytes.Buffer
