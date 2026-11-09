@@ -23,13 +23,6 @@ type PipelineAttrs struct {
 	Stages      []json.RawMessage `json:"stages,omitempty"`
 }
 
-// Stage represents one step in a pipeline.
-type Stage struct {
-	Name         string `json:"name"`
-	Role         string `json:"role"`
-	Instructions string `json:"instructions"`
-}
-
 // NewCmd returns the "pipelines" parent command.
 func NewCmd() *cobra.Command {
 	cmd := &cobra.Command{
@@ -106,10 +99,13 @@ func createCmd() *cobra.Command {
 			if description != "" {
 				attrs["description"] = description
 			}
-			if stagesJSON != "" {
-				var stages []Stage
+			if cmd.Flags().Changed("stages") {
+				var stages []map[string]json.RawMessage
 				if err := json.Unmarshal([]byte(stagesJSON), &stages); err != nil {
 					return fmt.Errorf("--stages: invalid JSON array: %w", err)
+				}
+				if err := validateStageObjects(stages); err != nil {
+					return err
 				}
 				attrs["stages"] = stages
 			}
@@ -129,7 +125,7 @@ func createCmd() *cobra.Command {
 	cmd.Flags().StringVar(&name, "name", "", "Name for the new pipeline")
 	cmd.Flags().StringVar(&kind, "kind", "", "Task kind name the pipeline belongs to")
 	cmd.Flags().StringVar(&description, "description", "", "Optional description for the pipeline")
-	cmd.Flags().StringVar(&stagesJSON, "stages", "", `JSON array of stages, e.g. '[{"name":"plan","role":"planning","instructions":"..."}]'`)
+	cmd.Flags().StringVar(&stagesJSON, "stages", "", `JSON array of stages, e.g. '[{"custom_stage_name":"plan","prompt_sections":{"template":"Plan the work."}}]'`)
 	flagmeta.SchemaFromSpec(cmd, "stages", "#/components/schemas/PipelineStageInput", true)
 	_ = cmd.MarkFlagRequired("name")
 	return cmd
@@ -172,9 +168,12 @@ func updateCmd() *cobra.Command {
 				changed = true
 			}
 			if cmd.Flags().Changed("stages") {
-				var stages []Stage
+				var stages []map[string]json.RawMessage
 				if err := json.Unmarshal([]byte(stagesJSON), &stages); err != nil {
 					return fmt.Errorf("--stages: invalid JSON array: %w", err)
+				}
+				if err := validateStageObjects(stages); err != nil {
+					return err
 				}
 				attrs["stages"] = stages
 				changed = true
@@ -202,7 +201,19 @@ func updateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&name, "name", "", "New name for the pipeline")
 	cmd.Flags().StringVar(&kind, "kind", "", "Task kind name the pipeline belongs to")
 	cmd.Flags().StringVar(&description, "description", "", "Human-readable description")
-	cmd.Flags().StringVar(&stagesJSON, "stages", "", `JSON array of stages, e.g. '[{"name":"plan","role":"planning","instructions":"..."}]'`)
+	cmd.Flags().StringVar(&stagesJSON, "stages", "", `JSON array of stages, e.g. '[{"custom_stage_name":"plan","prompt_sections":{"template":"Plan the work."}}]'`)
 	flagmeta.SchemaFromSpec(cmd, "stages", "#/components/schemas/PipelineStageInput", true)
 	return cmd
+}
+
+func validateStageObjects(stages []map[string]json.RawMessage) error {
+	if stages == nil {
+		return fmt.Errorf("--stages: expected JSON array of objects")
+	}
+	for _, stage := range stages {
+		if stage == nil {
+			return fmt.Errorf("--stages: expected JSON stage object")
+		}
+	}
+	return nil
 }

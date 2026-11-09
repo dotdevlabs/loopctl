@@ -2088,6 +2088,7 @@ components:
         size_bytes:
           type: integer
           nullable: true
+          description: Original uncompressed content size in bytes, determined by the server.
         file_available:
           type: boolean
           description: Attachment metadata exists and deleted_at is absent. Not a
@@ -2226,15 +2227,14 @@ components:
         filename:
           type: string
         started_at:
-          type: string
-          format: date-time
+          description: ISO 8601 timestamp or Unix epoch seconds (integer or integer string).
+          oneOf:
+          - type: string
+          - type: integer
           nullable: true
         ended_at:
           type: string
           format: date-time
-          nullable: true
-        size_bytes:
-          type: integer
           nullable: true
         path:
           type: string
@@ -2262,15 +2262,14 @@ components:
         filename:
           type: string
         started_at:
-          type: string
-          format: date-time
+          description: ISO 8601 timestamp or Unix epoch seconds (integer or integer string).
+          oneOf:
+          - type: string
+          - type: integer
           nullable: true
         ended_at:
           type: string
           format: date-time
-          nullable: true
-        size_bytes:
-          type: integer
           nullable: true
         path:
           type: string
@@ -13047,15 +13046,14 @@ paths:
                 filename:
                   type: string
                 started_at:
-                  type: string
-                  format: date-time
+                  description: ISO 8601 timestamp or Unix epoch seconds (integer or integer string).
+                  oneOf:
+                  - type: string
+                  - type: integer
                   nullable: true
                 ended_at:
                   type: string
                   format: date-time
-                  nullable: true
-                size_bytes:
-                  type: integer
                   nullable: true
                 path:
                   type: string
@@ -13088,15 +13086,14 @@ paths:
                 filename:
                   type: string
                 started_at:
-                  type: string
-                  format: date-time
+                  description: ISO 8601 timestamp or Unix epoch seconds (integer or integer string).
+                  oneOf:
+                  - type: string
+                  - type: integer
                   nullable: true
                 ended_at:
                   type: string
                   format: date-time
-                  nullable: true
-                size_bytes:
-                  type: integer
                   nullable: true
                 path:
                   type: string
@@ -13597,7 +13594,11 @@ paths:
                   resource: recording
                   identity: asciinema_recording
             recording_media_type: application/octet-stream
-            response_body: "{}\n"
+            response_body: |
+              {"version":2,"width":80,"height":24,"timestamp":1700000000}
+              [0.01,"o","\u001b[32mSynthetic 雪\u001b[0m\r\n"]
+              [0.5,"o","second event\r\n"]
+              [1.2,"o","final event\r\n"]
           content_text_plain:
             status: 200
             setup:
@@ -13613,7 +13614,11 @@ paths:
                   resource: recording
                   identity: asciinema_recording
             recording_media_type: text/plain
-            response_body: "{}\n"
+            response_body: |
+              {"version":2,"width":80,"height":24,"timestamp":1700000000}
+              [0.01,"o","\u001b[32mSynthetic 雪\u001b[0m\r\n"]
+              [0.5,"o","second event\r\n"]
+              [1.2,"o","final event\r\n"]
           transcript_content:
             status: 200
             setup:
@@ -22903,6 +22908,384 @@ paths:
                   resource: credential_assignment
                   identity: claude_entry
         input_constraints: []
+  "/api/global_prompt":
+    get:
+      operationId: get-api-global-prompt
+      summary: Read live global prompt configuration
+      description: Requires an authenticated platform admin (Bearer token, X-Api-Token,
+        or existing browser session). Reads the database-backed SystemSetting singleton
+        only. Only sections and order are exposed. Omitted sections and order retain
+        stored values. Supplied sections merge atomically; supplied order replaces stored
+        order. Empty attributes or sections are no-ops. Section values are strings or
+        null; null and empty text mean omission during rendering and remain stored.
+        Legacy template is accepted as a section, but not in order. Blank order strings
+        normalize away; unknown names and duplicates are rejected by model validation.
+        Optional data.id must exactly match the singleton id returned by GET. Invalid
+        updates preserve all settings. No PUT operation is exposed.
+      responses:
+        '200':
+          description: Persisted global prompt configuration
+          content:
+            application/vnd.api+json:
+              example:
+                data:
+                  type: global_prompts
+                  id: '1'
+                  attributes:
+                    sections:
+                      rules: Follow repository conventions.
+                    order: [rules]
+                  links:
+                    self: https://loopcontrol.ai/api/global_prompt
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                - data
+                properties:
+                  data:
+                    type: object
+                    additionalProperties: false
+                    required:
+                    - type
+                    - id
+                    - attributes
+                    - links
+                    properties:
+                      type:
+                        type: string
+                        enum:
+                        - global_prompts
+                      id:
+                        type: string
+                      attributes:
+                        type: object
+                        additionalProperties: false
+                        required:
+                        - sections
+                        - order
+                        properties:
+                          sections:
+                            type: object
+                            additionalProperties:
+                              type: string
+                              nullable: true
+                            x-loopcontrol-open-reason: free_form
+                            description: Registry section names mapped to string or
+                              null; unknown names are rejected with 422.
+                          order:
+                            type: array
+                            items:
+                              type: string
+                      links:
+                        type: object
+                        additionalProperties: false
+                        required:
+                        - self
+                        properties:
+                          self:
+                            type: string
+        '401':
+          description: Missing, invalid, expired or revoked authentication; empty response
+            body
+        '403':
+          description: Authenticated user is not a platform admin; configuration is
+            not loaded
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+      x-loopcontrol-contract:
+        scenarios:
+          success:
+            status: 200
+            setup:
+            - authenticated
+            - platform_admin
+            media_type: application/vnd.api+json
+          unauthenticated:
+            status: 401
+            setup:
+            - unauthenticated
+          forbidden:
+            status: 403
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+        input_constraints: []
+    patch:
+      operationId: patch-api-global-prompt
+      summary: Partially update live global prompt configuration
+      description: Requires an authenticated platform admin (Bearer token, X-Api-Token,
+        or existing browser session). Reads the database-backed SystemSetting singleton
+        only. Only sections and order are exposed. Omitted sections and order retain
+        stored values. Supplied sections merge atomically; supplied order replaces stored
+        order. Empty attributes or sections are no-ops. Section values are strings or
+        null; null and empty text mean omission during rendering and remain stored.
+        Legacy template is accepted as a section, but not in order. Blank order strings
+        normalize away; unknown names and duplicates are rejected by model validation.
+        Optional data.id must exactly match the singleton id returned by GET. Invalid
+        updates preserve all settings. No PUT operation is exposed.
+      responses:
+        '200':
+          description: Persisted global prompt configuration
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                - data
+                properties:
+                  data:
+                    type: object
+                    additionalProperties: false
+                    required:
+                    - type
+                    - id
+                    - attributes
+                    - links
+                    properties:
+                      type:
+                        type: string
+                        enum:
+                        - global_prompts
+                      id:
+                        type: string
+                      attributes:
+                        type: object
+                        additionalProperties: false
+                        required:
+                        - sections
+                        - order
+                        properties:
+                          sections:
+                            type: object
+                            additionalProperties:
+                              type: string
+                              nullable: true
+                            x-loopcontrol-open-reason: free_form
+                            description: Registry section names mapped to string or
+                              null; unknown names are rejected with 422.
+                          order:
+                            type: array
+                            items:
+                              type: string
+                      links:
+                        type: object
+                        additionalProperties: false
+                        required:
+                        - self
+                        properties:
+                          self:
+                            type: string
+        '400':
+          description: Malformed document, wrong type or id, unsupported attributes,
+            or invalid value shapes; no writes
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+        '401':
+          description: Missing, invalid, expired or revoked authentication; empty response
+            body
+        '403':
+          description: Authenticated user is not a platform admin; configuration is
+            not loaded
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+        '422':
+          description: Model rejects unknown section names, invalid order names or duplicate
+            entries; no writes
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+      x-loopcontrol-contract:
+        scenarios:
+          success:
+            status: 200
+            setup:
+            - authenticated
+            - platform_admin
+            media_type: application/vnd.api+json
+            body:
+              data:
+                type: global_prompts
+                attributes:
+                  sections:
+                    rules: Updated rules
+                  order:
+                  - rules
+          malformed:
+            status: 400
+            setup:
+            - authenticated
+            - platform_admin
+            media_type: application/vnd.api+json
+            body:
+              data:
+                type: global_prompts
+                attributes:
+                  sections: []
+                  order:
+                  - rules
+          unauthenticated:
+            status: 401
+            setup:
+            - unauthenticated
+            body:
+              data:
+                type: global_prompts
+                attributes:
+                  sections:
+                    rules: Updated rules
+                  order:
+                  - rules
+          forbidden:
+            status: 403
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            body:
+              data:
+                type: global_prompts
+                attributes:
+                  sections:
+                    rules: Updated rules
+                  order:
+                  - rules
+          invalid_sections:
+            status: 422
+            setup:
+            - authenticated
+            - platform_admin
+            media_type: application/vnd.api+json
+            body:
+              data:
+                type: global_prompts
+                attributes:
+                  sections:
+                    unknown: invalid
+                  order:
+                  - rules
+          missing_data:
+            status: 400
+            setup:
+            - authenticated
+            - platform_admin
+            media_type: application/vnd.api+json
+            request_media_type: application/json
+            body:
+              data:
+                type: global_prompts
+                attributes:
+                  sections:
+                    rules: Updated rules
+                  order:
+                  - rules
+            omit_body_field:
+            - data
+          missing_data_type:
+            status: 400
+            setup:
+            - authenticated
+            - platform_admin
+            media_type: application/vnd.api+json
+            request_media_type: application/json
+            body:
+              data:
+                type: global_prompts
+                attributes:
+                  sections:
+                    rules: Updated rules
+                  order:
+                  - rules
+            omit_body_field:
+            - data
+            - type
+          missing_data_attributes:
+            status: 400
+            setup:
+            - authenticated
+            - platform_admin
+            media_type: application/vnd.api+json
+            request_media_type: application/json
+            body:
+              data:
+                type: global_prompts
+                attributes:
+                  sections:
+                    rules: Updated rules
+                  order:
+                  - rules
+            omit_body_field:
+            - data
+            - attributes
+          wrong_id:
+            status: 400
+            setup:
+            - authenticated
+            - platform_admin
+            media_type: application/vnd.api+json
+            body:
+              data:
+                type: global_prompts
+                attributes:
+                  sections:
+                    rules: Updated rules
+                  order:
+                  - rules
+                id: wrong
+        input_constraints: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            example:
+              data:
+                type: global_prompts
+                attributes:
+                  sections:
+                    rules: Updated global rules.
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - data
+              properties:
+                data:
+                  type: object
+                  additionalProperties: false
+                  required:
+                  - type
+                  - attributes
+                  properties:
+                    type:
+                      type: string
+                      enum:
+                      - global_prompts
+                    id:
+                      type: string
+                    attributes:
+                      type: object
+                      additionalProperties: false
+                      required: []
+                      properties:
+                        sections:
+                          type: object
+                          additionalProperties:
+                            type: string
+                            nullable: true
+                          x-loopcontrol-open-reason: free_form
+                          description: Registry section names mapped to string or null;
+                            unknown names are rejected with 422.
+                        order:
+                          type: array
+                          items:
+                            type: string
 x-loopcontrol-implicit-head:
   description: Rails implicitly handles HEAD through each mounted GET operation. Status
     and headers match GET; the body is empty. HEAD is not a separate mounted operation.

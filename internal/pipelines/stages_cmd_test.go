@@ -129,7 +129,7 @@ func TestStagesAdd_AllFlags(t *testing.T) {
 
 	flags := map[string]string{
 		"name":                 "full-stage",
-		"role":                 "implementing",
+		"role":                 "working",
 		"stage-type":           "custom",
 		"custom-stage-name":    "my-custom",
 		"instructions":         "do the thing",
@@ -527,7 +527,7 @@ func TestStagesUpdate_NullName(t *testing.T) {
 	cmd := stagesUpdateCmd()
 	cmd.SetContext(ctx)
 	cmd.SetOut(&out)
-	if err := cmd.Flags().Set("role", "reviewing"); err != nil {
+	if err := cmd.Flags().Set("role", "working"); err != nil {
 		t.Fatal(err)
 	}
 	if err := cmd.RunE(cmd, []string{"p1", "s1"}); err != nil {
@@ -548,7 +548,7 @@ func TestStagesUpdate_Error404(t *testing.T) {
 	cmd := stagesUpdateCmd()
 	cmd.SetContext(ctx)
 	cmd.SetOut(&out)
-	if err := cmd.Flags().Set("role", "reviewing"); err != nil {
+	if err := cmd.Flags().Set("role", "working"); err != nil {
 		t.Fatal(err)
 	}
 	err := cmd.RunE(cmd, []string{"p1", "s1"})
@@ -598,7 +598,7 @@ func TestStagesUpdate_DryRun(t *testing.T) {
 	cmd := stagesUpdateCmd()
 	cmd.SetContext(ctx)
 	cmd.SetOut(&out)
-	if err := cmd.Flags().Set("role", "reviewing"); err != nil {
+	if err := cmd.Flags().Set("role", "working"); err != nil {
 		t.Fatal(err)
 	}
 

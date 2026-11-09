@@ -11,12 +11,129 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/dotdevlabs/ctlkit/pkg/config"
 	"github.com/dotdevlabs/ctlkit/pkg/ctxutil"
 	"github.com/dotdevlabs/ctlkit/pkg/output"
 
 	"github.com/dotdevlabs/loopctl/internal/apiclient"
 )
+
+func TestCurrentStageInputs(t *testing.T) {
+	stageJSON := `{"custom_stage_name":"analysis","stage_type":"custom","prompt_sections":{"template":"Analyze it."}}`
+	for _, operation := range []string{"create", "update", "add", "stage-update"} {
+		t.Run(operation, func(t *testing.T) {
+			var captured []byte
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/vnd.api+json")
+				if r.Method == http.MethodGet {
+					_, _ = fmt.Fprint(w, `{"data":{"type":"pipelines","id":"p1","attributes":{"name":"Pipeline","kind":"feature","stages":[{"stage_type":"existing"}]}}}`)
+					return
+				}
+				captured, _ = io.ReadAll(r.Body)
+				if operation == "stage-update" {
+					_, _ = fmt.Fprint(w, `{"data":{"type":"pipeline_stages","id":"s1","attributes":{"stage_type":"custom","custom_stage_name":"analysis","prompt_sections":{"template":"Analyze it."}}}}`)
+				} else {
+					_, _ = fmt.Fprint(w, `{"data":{"type":"pipelines","id":"p1","attributes":{"name":"Pipeline","kind":"feature"}}}`)
+				}
+			}))
+			defer ts.Close()
+			var cmd *cobra.Command
+			var args []string
+			switch operation {
+			case "create":
+				cmd = createCmd()
+				_ = cmd.Flags().Set("name", "Pipeline")
+			case "update":
+				cmd, args = updateCmd(), []string{"p1"}
+			case "add":
+				cmd, args = stagesAddCmd(), []string{"p1"}
+			default:
+				cmd, args = stagesUpdateCmd(), []string{"p1", "s1"}
+			}
+			if operation == "create" || operation == "update" {
+				_ = cmd.Flags().Set("stages", "["+stageJSON+"]")
+				if !strings.Contains(cmd.Flags().Lookup("stages").Usage, "custom_stage_name") {
+					t.Fatal("help lacks current example")
+				}
+			} else {
+				_ = cmd.Flags().Set("custom-stage-name", "analysis")
+				_ = cmd.Flags().Set("stage-type", "custom")
+				_ = cmd.Flags().Set("prompt-sections", `{"template":"Analyze it."}`)
+				if cmd.Flags().Lookup("role").Deprecated != "Deprecated: use stage_type: 'custom'." {
+					t.Fatal("role lacks contract deprecation")
+				}
+				if cmd.Flags().Lookup("stage-type").Usage != "Server stage type name" {
+					t.Fatal("stage type help must be generic")
+				}
+			}
+			var out bytes.Buffer
+			if operation == "add" {
+				if err := cmd.ValidateRequiredFlags(); err != nil {
+					t.Fatalf("current fields must not require legacy name: %v", err)
+				}
+			}
+			cmd.SetOut(&out)
+			cmd.SetContext(makeCtx(t, ts.URL, "tok", true, &out))
+			if err := cmd.RunE(cmd, args); err != nil {
+				t.Fatal(err)
+			}
+			var body map[string]json.RawMessage
+			if err := json.Unmarshal(captured, &body); err != nil {
+				t.Fatal(err)
+			}
+			var stage map[string]any
+			if operation == "stage-update" {
+				if err := json.Unmarshal(body["pipeline_stage"], &stage); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				var pipeline struct {
+					Stages []map[string]any `json:"stages"`
+				}
+				if err := json.Unmarshal(body["pipeline"], &pipeline); err != nil {
+					t.Fatal(err)
+				}
+				if operation == "add" && (len(pipeline.Stages) != 2 || pipeline.Stages[0]["stage_type"] != "existing") {
+					t.Fatalf("existing stage lost: %s", captured)
+				}
+				stage = pipeline.Stages[len(pipeline.Stages)-1]
+			}
+			if len(stage) != 3 || stage["custom_stage_name"] != "analysis" || stage["stage_type"] != "custom" || stage["prompt_sections"].(map[string]any)["template"] != "Analyze it." {
+				t.Fatalf("unexpected stage: %s", captured)
+			}
+		})
+	}
+}
+
+func TestStagesRejectNonObjectArrays(t *testing.T) {
+	for _, makeCmd := range []func() *cobra.Command{createCmd, updateCmd} {
+		for _, input := range []string{`null`, `[null]`, `{}`, `["stage"]`, `invalid`} {
+			cmd := makeCmd()
+			_ = cmd.Flags().Set("stages", input)
+			cmd.SetContext(makeCtx(t, "http://unused.invalid", "tok", true, io.Discard))
+			if err := cmd.RunE(cmd, []string{"p1"}); err == nil || !strings.Contains(err.Error(), "--stages") {
+				t.Fatalf("expected stages error for %s: %v", input, err)
+			}
+		}
+	}
+}
+
+func TestStageHelpUsesCurrentFields(t *testing.T) {
+	for _, cmd := range []*cobra.Command{createCmd(), updateCmd(), stagesAddCmd(), stagesUpdateCmd()} {
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		if err := cmd.Help(); err != nil {
+			t.Fatal(err)
+		}
+		for _, obsolete := range []string{"planning, implementing", `"role":"planning"`, "Stage name (required)", "stage_type for custom stage types"} {
+			if strings.Contains(out.String(), obsolete) {
+				t.Fatalf("obsolete help %q: %s", obsolete, &out)
+			}
+		}
+	}
+}
 
 func makeCtx(t *testing.T, serverURL, token string, jsonMode bool, out io.Writer) context.Context {
 	t.Helper()
@@ -527,7 +644,7 @@ func TestPipelinesCreateWithStages(t *testing.T) {
 	if err := cmd.Flags().Set("name", "my-pipeline"); err != nil {
 		t.Fatal(err)
 	}
-	if err := cmd.Flags().Set("stages", `[{"name":"plan","role":"planning","instructions":"Plan the work."}]`); err != nil {
+	if err := cmd.Flags().Set("stages", `[{"name":"plan","role":"working","instructions":"Plan the work."}]`); err != nil {
 		t.Fatal(err)
 	}
 
@@ -660,7 +777,7 @@ func TestPipelinesUpdateWithStages(t *testing.T) {
 	cmd := updateCmd()
 	cmd.SetContext(ctx)
 	cmd.SetOut(&out)
-	if err := cmd.Flags().Set("stages", `[{"name":"plan","role":"planning","instructions":"Plan."},{"name":"implement","role":"implementing","instructions":"Implement."}]`); err != nil {
+	if err := cmd.Flags().Set("stages", `[{"custom_stage_name":"plan","prompt_sections":{"template":"Plan."}},{"custom_stage_name":"implement","prompt_sections":{"template":"Implement."}}]`); err != nil {
 		t.Fatal(err)
 	}
 
