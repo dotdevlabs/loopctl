@@ -3,6 +3,7 @@ package tasks
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
@@ -417,20 +418,27 @@ func cancelCmd() *cobra.Command {
 			out := cmd.OutOrStdout()
 
 			path := "/api/tasks/" + url.PathEscape(args[0]) + "/cancellation"
-			result, err := apiclient.PostJSON[CancellationResult](ctx, activeCtx, path, nil)
+			raw, err := apiclient.PostJSON[json.RawMessage](ctx, activeCtx, path, nil)
 			if err != nil {
 				return err
 			}
 
-			status := result.Status
-			if status == "" {
-				status = "cancelled"
+			var result map[string]any
+			if len(raw) > 0 {
+				if err := json.Unmarshal(raw, &result); err != nil {
+					return fmt.Errorf("cancellation response contract error: %w", err)
+				}
+			}
+			status, statusOK := result["status"].(string)
+			stage, stageOK := result["stage"].(string)
+			if !statusOK || !stageOK {
+				return fmt.Errorf("cancellation response contract error: status and stage must be strings")
 			}
 
 			if ctxutil.GlobalFlagsFrom(ctx).JSON {
-				return output.JSONTo(out, map[string]string{"id": args[0], "status": status, "stage": result.Stage})
+				return output.JSONTo(out, map[string]string{"id": args[0], "status": status, "stage": stage})
 			}
-			_, _ = fmt.Fprintf(out, "task %s cancelled\n", args[0])
+			_, _ = fmt.Fprintf(out, "task %s: status %s, stage %s\n", args[0], status, stage)
 			return nil
 		},
 	}

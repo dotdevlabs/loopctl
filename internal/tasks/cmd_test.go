@@ -723,15 +723,12 @@ func TestTasksCancelEmptyBody(t *testing.T) {
 	cmd.SetContext(ctx)
 	cmd.SetOut(&out)
 
-	if err := cmd.RunE(cmd, []string{"t1"}); err != nil {
-		t.Fatalf("cancel empty body failed: %v", err)
+	if err := cmd.RunE(cmd, []string{"t1"}); err == nil || !strings.Contains(err.Error(), "contract error") {
+		t.Fatalf("expected contract error, got %v", err)
 	}
 	got := out.String()
-	if !strings.Contains(got, "t1") {
-		t.Errorf("output missing task id:\n%s", got)
-	}
-	if !strings.Contains(got, "cancelled") {
-		t.Errorf("output missing 'cancelled':\n%s", got)
+	if got != "" {
+		t.Errorf("unexpected success output: %s", got)
 	}
 }
 
@@ -774,15 +771,38 @@ func TestTasksCancelJSONEmptyBody(t *testing.T) {
 	cmd.SetContext(ctx)
 	cmd.SetOut(&out)
 
-	if err := cmd.RunE(cmd, []string{"t1"}); err != nil {
-		t.Fatalf("cancel JSON empty body failed: %v", err)
+	if err := cmd.RunE(cmd, []string{"t1"}); err == nil || !strings.Contains(err.Error(), "contract error") {
+		t.Fatalf("expected contract error, got %v", err)
 	}
 	got := out.String()
-	if !strings.Contains(got, `"id"`) {
-		t.Errorf("expected 'id' field in JSON output:\n%s", got)
+	if got != "" {
+		t.Errorf("unexpected success output: %s", got)
 	}
-	if !strings.Contains(got, `"t1"`) {
-		t.Errorf("expected task id in JSON output:\n%s", got)
+}
+
+func TestCancellationContract(t *testing.T) {
+	for _, jsonMode := range []bool{false, true} {
+		for _, body := range []string{`{}`, `{"stage":"done"}`, `{"status":"ended"}`, `null`, `{"status":null,"stage":"done"}`, `{"status":"ended","stage":null}`, `{"status":42,"stage":"done"}`, `{"status":"ended","stage":false}`, `{"status":"server-status","stage":"server-stage"}`} {
+			t.Run(fmt.Sprintf("%t/%s", jsonMode, body), func(t *testing.T) {
+				ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = fmt.Fprint(w, body)
+				}))
+				defer ts.Close()
+				var out bytes.Buffer
+				cmd := cancelCmd()
+				cmd.SetContext(makeCtx(t, ts.URL, "tok", jsonMode, &out))
+				cmd.SetOut(&out)
+				err := cmd.RunE(cmd, []string{"t1"})
+				if strings.Contains(body, "server-status") {
+					if err != nil || !strings.Contains(out.String(), "server-status") || !strings.Contains(out.String(), "server-stage") {
+						t.Fatalf("server values not preserved: %v %s", err, &out)
+					}
+				} else if err == nil || !strings.Contains(err.Error(), "contract error") || out.Len() != 0 {
+					t.Fatalf("expected contract failure without output: %v %s", err, &out)
+				}
+			})
+		}
 	}
 }
 

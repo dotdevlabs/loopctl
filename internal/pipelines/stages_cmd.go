@@ -40,9 +40,9 @@ type PipelineStageAttrs struct {
 }
 
 // StageInput holds all pipeline stage attributes per the published API contract.
-// All fields except Name use omitempty so only explicitly-set attributes are sent.
+// Fields use omitempty to avoid inserting unset attributes or client defaults.
 type StageInput struct {
-	Name                    string          `json:"name"`
+	Name                    string          `json:"name,omitempty"`
 	Role                    string          `json:"role,omitempty"`
 	StageType               string          `json:"stage_type,omitempty"`
 	CustomStageName         string          `json:"custom_stage_name,omitempty"`
@@ -152,8 +152,12 @@ func stagesAddCmd() *cobra.Command {
 			id := args[0]
 
 			if ctxutil.GlobalFlagsFrom(ctx).DryRun {
+				displayName := customStageName
+				if displayName == "" {
+					displayName = name
+				}
 				_, _ = fmt.Fprintf(cmd.OutOrStdout(),
-					"dry-run: would PATCH /api/pipelines/%s to append stage %q\n", id, name)
+					"dry-run: would PATCH /api/pipelines/%s to append stage %q\n", id, displayName)
 				return nil
 			}
 
@@ -247,9 +251,10 @@ func stagesAddCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&name, "name", "", "Stage name (required)")
-	cmd.Flags().StringVar(&role, "role", "", "Stage role (planning, implementing, reviewing, etc.)")
-	cmd.Flags().StringVar(&stageType, "stage-type", "", "stage_type for custom stage types")
+	cmd.Flags().StringVar(&name, "name", "", "Legacy stage name; use --custom-stage-name")
+	cmd.Flags().StringVar(&role, "role", "", "Legacy stage role")
+	_ = cmd.Flags().MarkDeprecated("role", "Deprecated: use stage_type: 'custom'.")
+	cmd.Flags().StringVar(&stageType, "stage-type", "", "Server stage type name")
 	cmd.Flags().StringVar(&customStageName, "custom-stage-name", "", "custom_stage_name (custom type only)")
 	cmd.Flags().StringVar(&instructions, "instructions", "", "Instructions / prompt text (deprecated: use --prompt-sections)")
 	cmd.Flags().StringVar(&gate, "gate", "", "Advance gate (automated or human)")
@@ -267,7 +272,6 @@ func stagesAddCmd() *cobra.Command {
 	flagmeta.SchemaFromSpec(cmd, "stage-triggers", "#/components/schemas/PipelineStageTrigger", true)
 	cmd.Flags().StringVar(&advanceReqJSON, "advance-requirements", "", "JSON array of requirement strings")
 	flagmeta.SchemaFromSpec(cmd, "advance-requirements", "#/components/schemas/PipelineStageInput/properties/advance_requirements", false)
-	_ = cmd.MarkFlagRequired("name")
 	return cmd
 }
 
@@ -401,8 +405,9 @@ func stagesUpdateCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&role, "role", "", "Stage role (planning, implementing, reviewing, etc.)")
-	cmd.Flags().StringVar(&stageType, "stage-type", "", "stage_type for custom stage types")
+	cmd.Flags().StringVar(&role, "role", "", "Legacy stage role")
+	_ = cmd.Flags().MarkDeprecated("role", "Deprecated: use stage_type: 'custom'.")
+	cmd.Flags().StringVar(&stageType, "stage-type", "", "Server stage type name")
 	cmd.Flags().StringVar(&customStageName, "custom-stage-name", "", "custom_stage_name (custom type only)")
 	cmd.Flags().StringVar(&instructions, "instructions", "", "Instructions / prompt text (deprecated: use --prompt-sections)")
 	cmd.Flags().StringVar(&gate, "gate", "", "Advance gate (automated or human)")

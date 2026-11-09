@@ -178,7 +178,7 @@ func todosCreateCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&content, "content", "", "Todo content (required unless --bulk-json)")
-	cmd.Flags().StringVar(&status, "status", "pending", "Todo status (pending, in_progress, completed)")
+	cmd.Flags().StringVar(&status, "status", "", "Todo status")
 	flagmeta.EnumFromSpec(cmd, "status", "#/components/schemas/TodoAttributes/properties/status")
 	cmd.Flags().StringVar(&stageName, "stage-name", "", "Stage name this todo belongs to")
 	cmd.Flags().StringVar(&activeForm, "active-form", "", "Active form description shown while working")
@@ -245,7 +245,7 @@ func todosUpdateCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&status, "status", "", "New status (pending, in_progress, completed)")
+	cmd.Flags().StringVar(&status, "status", "", "New status")
 	flagmeta.EnumFromSpec(cmd, "status", "#/components/schemas/TodoAttributes/properties/status")
 	cmd.Flags().StringVar(&content, "content", "", "New content text")
 	cmd.Flags().StringVar(&activeForm, "active-form", "", "New active form description")

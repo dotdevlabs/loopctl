@@ -11,6 +11,8 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/dotdevlabs/ctlkit/pkg/config"
 	"github.com/dotdevlabs/ctlkit/pkg/ctxutil"
 	"github.com/dotdevlabs/ctlkit/pkg/output"
@@ -121,6 +123,59 @@ func TestTodosCreate_Single(t *testing.T) {
 	}
 	if !strings.Contains(gotBody, "New todo") {
 		t.Errorf("expected content in body; got: %s", gotBody)
+	}
+	if strings.Contains(gotBody, `"status"`) {
+		t.Errorf("omitted status must remain omitted: %s", gotBody)
+	}
+	if flag := cmd.Flags().Lookup("status"); flag.DefValue != "" || flag.Usage != "Todo status" || len(flag.Annotations) == 0 {
+		t.Fatalf("unexpected status metadata: %+v", flag)
+	}
+}
+
+func TestTodoStatusHelp(t *testing.T) {
+	for _, cmd := range []*cobra.Command{todosCreateCmd(), todosUpdateCmd()} {
+		var out bytes.Buffer
+		cmd.SetOut(&out)
+		if err := cmd.Help(); err != nil {
+			t.Fatal(err)
+		}
+		if strings.Contains(out.String(), "pending, in_progress, completed") || strings.Contains(out.String(), `(default "pending")`) {
+			t.Fatalf("help duplicates status contract: %s", &out)
+		}
+		if len(cmd.Flags().Lookup("status").Annotations) == 0 {
+			t.Fatal("status lost spec metadata")
+		}
+	}
+}
+
+func TestTodoExplicitCreateStatus(t *testing.T) {
+	for _, bulk := range []bool{false, true} {
+		t.Run(fmt.Sprint(bulk), func(t *testing.T) {
+			var captured string
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, _ := io.ReadAll(r.Body)
+				captured = string(body)
+				w.Header().Set("Content-Type", "application/vnd.api+json")
+				_, _ = fmt.Fprint(w, `{"data":[{"type":"task_todos","id":"td1","attributes":{"content":"Work","active_form":"Working","position":0,"status":"completed","stage_name":"implementing"}}]}`)
+			}))
+			defer ts.Close()
+			var out bytes.Buffer
+			cmd := todosCreateCmd()
+			cmd.SetOut(&out)
+			cmd.SetContext(makeCtx(t, ts.URL, "tok", true, &out))
+			if bulk {
+				_ = cmd.Flags().Set("bulk-json", `[{"content":"Work","status":"completed"}]`)
+			} else {
+				_ = cmd.Flags().Set("content", "Work")
+				_ = cmd.Flags().Set("status", "completed")
+			}
+			if err := cmd.RunE(cmd, []string{"t1"}); err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(captured, `"status":"completed"`) {
+				t.Fatalf("explicit status lost: %s", captured)
+			}
+		})
 	}
 }
 
