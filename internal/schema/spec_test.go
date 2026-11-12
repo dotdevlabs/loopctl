@@ -16,6 +16,52 @@ func TestSpecEnum(t *testing.T) {
 	}
 }
 
+func TestCurrentContractResourceShapes(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		paths []string
+	}{
+		{"MachineEventPage", []string{"properties/data/items/properties/attributes", "properties/links", "properties/meta"}},
+		{"MachineEvent", []string{"properties/attributes/properties/account_id", "properties/attributes/properties/cursor"}},
+		{"AgentSessionStreamState", []string{"properties/data/properties/id", "properties/data/properties/attributes/properties/available"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			exported, err := SpecSchema("#/components/schemas/"+tt.name, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var root map[string]any
+			if err := json.Unmarshal([]byte(exported), &root); err != nil {
+				t.Fatal(err)
+			}
+			for _, path := range tt.paths {
+				var node any = root
+				for _, key := range strings.Split(path, "/") {
+					m, ok := node.(map[string]any)
+					if !ok {
+						t.Fatalf("%s: missing %s", tt.name, path)
+					}
+					node = m[key]
+				}
+				if node == nil {
+					t.Fatalf("%s: missing %s", tt.name, path)
+				}
+			}
+		})
+	}
+	types, err := SpecEnum("#/components/schemas/PlanningDraftResource/properties/type")
+	if err != nil || !reflect.DeepEqual(types, []string{"planning_drafts"}) {
+		t.Fatalf("draft types: %v, %v", types, err)
+	}
+	id, err := SpecSchema("#/components/schemas/PlanningDraftResource/properties/id", false)
+	if err != nil || !strings.Contains(id, `"minLength":1`) {
+		t.Fatalf("draft id: %s, %v", id, err)
+	}
+	if _, err := SpecSchema("#/components/schemas/TopupCheckoutAttributes", false); err == nil {
+		t.Fatal("removed checkout schema still present")
+	}
+}
+
 func TestSpecEnumOneOfUnion(t *testing.T) {
 	got, err := SpecEnum("#/components/schemas/FundingEnvelopeProduct/properties/kind")
 	if err != nil || !reflect.DeepEqual(got, []string{"trial", "topup", "subscription_prepay"}) {
