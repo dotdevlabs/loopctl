@@ -72,6 +72,8 @@ var Covered = map[OperationKey]OperationCoverage{
 // Excluded maps operations intentionally not covered by loopctl with the reason.
 // These are server-internal, UI-only, container-internal, or otherwise not agent-facing.
 var Excluded = map[OperationKey]string{
+	{Method: "GET", Path: "/api/billing/pending_purchases/:id"}:                        "billing checkout polling is not implemented in loopctl",
+	{Method: "GET", Path: "/api/github/repository_creations/:id"}:                      "GitHub repository creation polling is not implemented in loopctl",
 	{Method: "GET", Path: "/api/global_prompt"}:                                        "platform-admin global prompt configuration; not yet implemented in loopctl",
 	{Method: "PATCH", Path: "/api/global_prompt"}:                                      "platform-admin global prompt configuration; not yet implemented in loopctl",
 	{Method: "GET", Path: "/status"}:                                                   "server health probe; not agent-facing",

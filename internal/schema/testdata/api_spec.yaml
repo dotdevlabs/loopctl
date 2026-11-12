@@ -52,9 +52,25 @@ components:
     MachineEvent:
       type: object
       required:
-      - id
-      - cursor
       - type
+      - id
+      - attributes
+      properties:
+        type:
+          type: string
+          enum:
+          - machine_events
+        id:
+          type: string
+          format: uuid
+        attributes:
+          "$ref": "#/components/schemas/MachineEventAttributes"
+      additionalProperties: false
+    MachineEventAttributes:
+      type: object
+      required:
+      - cursor
+      - event_type
       - schema_version
       - occurred_at
       - account_id
@@ -65,12 +81,9 @@ components:
       - session_id
       - data
       properties:
-        id:
-          type: string
-          format: uuid
         cursor:
           type: integer
-        type:
+        event_type:
           type: string
           enum:
           - task.created
@@ -521,18 +534,253 @@ components:
     MachineEventPage:
       type: object
       required:
-      - events
-      - next_cursor
-      - has_more
+      - data
+      - links
+      - meta
       properties:
-        events:
+        data:
           type: array
           items:
             "$ref": "#/components/schemas/MachineEvent"
-        next_cursor:
-          type: integer
-        has_more:
-          type: boolean
+        links:
+          "$ref": "#/components/schemas/JsonApiLinks"
+        meta:
+          "$ref": "#/components/schemas/JsonApiPaginationMeta"
+      additionalProperties: false
+    PromptSyncState:
+      type: object
+      required:
+      - stage
+      - expected_revision
+      - expected_hash
+      properties:
+        stage:
+          type: string
+        expected_revision:
+          type: string
+          nullable: true
+        expected_hash:
+          type: string
+          nullable: true
+      additionalProperties: false
+    GithubOrganizationResource:
+      type: object
+      required:
+      - type
+      - id
+      - attributes
+      properties:
+        type:
+          type: string
+          enum:
+          - github_organizations
+        id:
+          type: string
+        attributes:
+          type: object
+          required:
+          - login
+          - account_type
+          properties:
+            login:
+              type: string
+            account_type:
+              type: string
+              enum:
+              - Organization
+              - User
+          additionalProperties: false
+      additionalProperties: false
+    GithubRepositoryResource:
+      type: object
+      required:
+      - type
+      - id
+      - attributes
+      properties:
+        type:
+          type: string
+          enum:
+          - github_repositories
+        id:
+          type: string
+        attributes:
+          type: object
+          required:
+          - full_name
+          - name
+          - owner
+          - default_branch
+          - html_url
+          - description
+          - private
+          properties:
+            full_name:
+              type: string
+            name:
+              type: string
+            owner:
+              type: string
+            default_branch:
+              type: string
+            html_url:
+              type: string
+            description:
+              type: string
+              nullable: true
+            private:
+              type: boolean
+          additionalProperties: false
+      additionalProperties: false
+    GithubRepositoryCreationDocument:
+      type: object
+      required:
+      - data
+      properties:
+        data:
+          type: object
+          required:
+          - type
+          - id
+          - attributes
+          - links
+          properties:
+            type:
+              type: string
+              enum:
+              - github_repository_creations
+            id:
+              type: string
+            attributes:
+              type: object
+              required:
+              - name
+              - org
+              - description
+              - private
+              - state
+              - full_name
+              - html_url
+              - clone_url
+              - failure_reason
+              properties:
+                name:
+                  type: string
+                org:
+                  type: string
+                  nullable: true
+                description:
+                  type: string
+                  nullable: true
+                private:
+                  type: boolean
+                state:
+                  type: string
+                  enum:
+                  - pending
+                  - created
+                  - failed
+                  description: pending until a background job creates the repository
+                    at GitHub; created with the repository name and URLs; failed
+                    with the GitHub error in failure_reason.
+                full_name:
+                  type: string
+                  nullable: true
+                html_url:
+                  type: string
+                  nullable: true
+                clone_url:
+                  type: string
+                  nullable: true
+                failure_reason:
+                  type: string
+                  nullable: true
+              additionalProperties: false
+            links:
+              type: object
+              required:
+              - self
+              properties:
+                self:
+                  type: string
+              additionalProperties: false
+          additionalProperties: false
+      additionalProperties: false
+    GithubBranchPage:
+      type: object
+      required:
+      - data
+      - meta
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+            required:
+            - type
+            - id
+            - attributes
+            properties:
+              type:
+                type: string
+                enum:
+                - github_branches
+              id:
+                type: string
+              attributes:
+                type: object
+                required:
+                - name
+                - protected
+                properties:
+                  name:
+                    type: string
+                  protected:
+                    type: boolean
+                additionalProperties: false
+            additionalProperties: false
+        meta:
+          type: object
+          required:
+          - default_branch
+          - page
+          - per_page
+          - has_more
+          properties:
+            default_branch:
+              type: string
+            page:
+              type: integer
+            per_page:
+              type: integer
+            has_more:
+              type: boolean
+          additionalProperties: false
+      additionalProperties: false
+    GithubRepositoryPage:
+      type: object
+      required:
+      - data
+      - meta
+      properties:
+        data:
+          type: array
+          items:
+            "$ref": "#/components/schemas/GithubRepositoryResource"
+        meta:
+          type: object
+          required:
+          - page
+          - per_page
+          - has_more
+          properties:
+            page:
+              type: integer
+            per_page:
+              type: integer
+            has_more:
+              type: boolean
+          additionalProperties: false
       additionalProperties: false
     JsonApiResource:
       type: object
@@ -1883,6 +2131,65 @@ components:
       - billable_compute_minutes
       - billable_compute_minutes_final
       - compute_cost
+    TaskDocument:
+      type: object
+      required:
+      - data
+      properties:
+        data:
+          type: object
+          required:
+          - type
+          - id
+          - attributes
+          - relationships
+          - links
+          properties:
+            type:
+              type: string
+              enum:
+              - tasks
+            id:
+              type: string
+            attributes:
+              "$ref": "#/components/schemas/TaskShowAttributes"
+            relationships:
+              type: object
+              additionalProperties: false
+              required:
+              - project
+              properties:
+                project:
+                  type: object
+                  additionalProperties: false
+                  required:
+                  - data
+                  properties:
+                    data:
+                      type: object
+                      nullable: true
+                      required:
+                      - id
+                      - type
+                      additionalProperties: false
+                      properties:
+                        id:
+                          type: string
+                        type:
+                          type: string
+                          enum:
+                          - projects
+            links:
+              type: object
+              required:
+              - self
+              properties:
+                self:
+                  type: string
+                  nullable: true
+              additionalProperties: false
+          additionalProperties: false
+      additionalProperties: false
     TaskShowAttributes:
       type: object
       properties:
@@ -2348,14 +2655,39 @@ components:
     RecordingContentError:
       type: object
       required:
-      - error
+      - errors
       properties:
-        error:
-          type: string
-          enum:
-          - Recording content not found
-          - Recording file has been deleted
-          - Recording type does not support content
+        errors:
+          type: array
+          minItems: 1
+          maxItems: 1
+          items:
+            type: object
+            required:
+            - status
+            - title
+            - detail
+            properties:
+              status:
+                type: string
+                enum:
+                - '404'
+                - '410'
+                - '422'
+              title:
+                type: string
+                enum:
+                - Not Found
+                - Gone
+                - Unprocessable Entity
+              detail:
+                type: string
+                enum:
+                - Recording content not found
+                - Recording content has changed in storage since it was uploaded
+                - Recording file has been deleted
+                - Recording type does not support content
+            additionalProperties: false
       additionalProperties: false
     CommentAttributes:
       type: object
@@ -2682,8 +3014,10 @@ components:
                   and payment address are configured.
               lightning:
                 "$ref": "#/components/schemas/L402PaymentRequirements"
-                x-loopcontrol-optional-reason: Present for non-trial topups when Lightning
-                  invoice issuance succeeds.
+                x-loopcontrol-optional-reason: Present for non-trial topups when a current
+                  pre-issued Lightning invoice is stored for the account. Invoices are
+                  issued in the background when the envelope is read without one, near
+                  expiry and after payment.
             additionalProperties: false
         additionalProperties: false
         required:
@@ -2716,8 +3050,10 @@ components:
                   and payment address are configured.
               lightning:
                 "$ref": "#/components/schemas/L402PaymentRequirements"
-                x-loopcontrol-optional-reason: Present for non-trial topups when Lightning
-                  invoice issuance succeeds.
+                x-loopcontrol-optional-reason: Present for non-trial topups when a current
+                  pre-issued Lightning invoice is stored for the account. Invoices are
+                  issued in the background when the envelope is read without one, near
+                  expiry and after payment.
             additionalProperties: false
         additionalProperties: false
         required:
@@ -2740,23 +3076,67 @@ components:
       required:
       - enabled_rails
       - fundable_products
-    TopupCheckoutAttributes:
+    PendingPurchaseAttributes:
       type: object
       properties:
         package_id:
           type: string
+        payment_rail:
+          type: string
+          enum:
+          - stripe
+          - lightning
+          - usdc
+        status:
+          type: string
+          enum:
+          - pending
+          - settled
+          - failed
+          description: pending until the background job finishes; settled once the
+            minutes are credited; failed with a failure_reason otherwise.
+        minutes:
+          type: integer
         checkout_url:
           type: string
-        hours:
-          type: integer
-        price_cents:
-          type: integer
+          nullable: true
+          description: Stripe Checkout URL for the stripe rail; null until the background
+            job has created the checkout session, and always null for other rails.
+        failure_reason:
+          type: string
+          nullable: true
+          description: Why the checkout or payment verification failed; null unless
+            status is failed.
       additionalProperties: false
       required:
       - package_id
+      - payment_rail
+      - status
+      - minutes
       - checkout_url
-      - hours
-      - price_cents
+      - failure_reason
+    PendingPurchaseDocument:
+      type: object
+      required:
+      - data
+      properties:
+        data:
+          type: object
+          required:
+          - type
+          - id
+          - attributes
+          properties:
+            type:
+              type: string
+              enum:
+              - pending_purchases
+            id:
+              type: string
+            attributes:
+              "$ref": "#/components/schemas/PendingPurchaseAttributes"
+          additionalProperties: false
+      additionalProperties: false
     StatusAttributes:
       type: object
       properties:
@@ -2802,14 +3182,40 @@ components:
     AgentSessionStreamState:
       type: object
       required:
-      - session_id
-      - available
+      - data
       properties:
-        session_id:
-          type: string
-          format: uuid
-        available:
-          type: boolean
+        data:
+          type: object
+          required:
+          - type
+          - id
+          - attributes
+          - links
+          properties:
+            type:
+              type: string
+              enum:
+              - agent_session_streams
+            id:
+              type: string
+              format: uuid
+            attributes:
+              type: object
+              required:
+              - available
+              properties:
+                available:
+                  type: boolean
+              additionalProperties: false
+            links:
+              type: object
+              required:
+              - self
+              properties:
+                self:
+                  type: string
+              additionalProperties: false
+          additionalProperties: false
       additionalProperties: false
     PlanningDraftResource:
       type: object
@@ -2821,8 +3227,13 @@ components:
       properties:
         type:
           type: string
+          enum:
+          - planning_drafts
         id:
           type: string
+          minLength: 1
+          description: Stable draft id. A draft saved without an id gets one derived
+            from its content.
         attributes:
           type: object
           additionalProperties: true
@@ -2895,11 +3306,12 @@ components:
           - primary
           - secondary
           - codex
-        used_percent: &9
-          type: number
+        used_basis_points: &9
+          description: Reported usage in integer basis points, where 10000 is 100%.
+          type: integer
           nullable: true
           minimum: 0
-          maximum: 100
+          maximum: 10000
         resets_at: &10
           description: Reported reset time; passing this time does not prove availability.
           type: string
@@ -2940,7 +3352,7 @@ components:
       - age_seconds
       - stale
       - bucket_id
-      - used_percent
+      - used_basis_points
       - resets_at
       - reached_limit_type
       - source
@@ -2976,7 +3388,7 @@ components:
         age_seconds: *6
         stale: *7
         bucket_id: *8
-        used_percent: *9
+        used_basis_points: *9
         resets_at: *10
         reached_limit_type: *11
         source: *12
@@ -2991,7 +3403,7 @@ components:
       - age_seconds
       - stale
       - bucket_id
-      - used_percent
+      - used_basis_points
       - resets_at
       - reached_limit_type
       - source
@@ -3047,7 +3459,13 @@ components:
           - runtime
         observed_at: *5
         bucket_id: *8
-        used_percent: *9
+        used_percent:
+          description: Usage percentage exactly as the provider reports it; the server
+            stores it as integer basis points rounded half up.
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 100
         resets_at:
           oneOf:
           - type: integer
@@ -3101,11 +3519,12 @@ components:
           - primary
           - secondary
           - codex
-        used_percent:
-          type: number
+        used_basis_points:
+          description: Reported usage in integer basis points, where 10000 is 100%.
+          type: integer
           nullable: true
           minimum: 0
-          maximum: 100
+          maximum: 10000
         resets_at:
           type: string
           nullable: true
@@ -3145,7 +3564,7 @@ components:
       - status
       - observed_at
       - bucket_id
-      - used_percent
+      - used_basis_points
       - resets_at
       - reached_limit_type
       - source
@@ -3248,6 +3667,10 @@ paths:
     get:
       operationId: get-api-events
       summary: Replay committed account machine events after an exclusive cursor.
+      description: Events are ordered by ascending cursor. The after parameter is
+        an exclusive cursor filter; resume a replay with the cursor attribute of
+        the last event received. Pagination follows the JSON:API collection convention
+        of the API.
       parameters:
       - name: after
         in: query
@@ -3255,18 +3678,23 @@ paths:
           type: integer
           minimum: 0
           default: 0
-      - name: limit
+      - name: page[number]
         in: query
         schema:
           type: integer
+          default: 1
+      - name: page[size]
+        in: query
+        schema:
+          type: integer
+          default: 20
           minimum: 1
           maximum: 100
-          default: 100
       responses:
         '200':
           description: Ordered committed events.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 "$ref": "#/components/schemas/MachineEventPage"
         '400':
@@ -3279,7 +3707,7 @@ paths:
             status: 200
             setup:
             - authenticated
-            media_type: application/json
+            media_type: application/vnd.api+json
             query: {}
           invalid_cursor:
             status: 400
@@ -3294,7 +3722,8 @@ paths:
             - unauthenticated
             query:
               after: 1
-              limit: 1
+              page[number]: 1
+              page[size]: 1
           exclusive_cursor:
             status: 200
             setup:
@@ -3302,18 +3731,19 @@ paths:
             query:
               after:
                 event: 0
-              limit: 1
-            media_type: application/json
+              page:
+                size: '1'
+            media_type: application/vnd.api+json
             assertions:
-            - pointer: "/events/0/id"
+            - pointer: "/data/0/id"
               equals:
                 event: 1
                 field: id
-            - pointer: "/next_cursor"
+            - pointer: "/data/0/attributes/cursor"
               equals:
                 event: 1
-            - pointer: "/has_more"
-              equals: true
+            - pointer: "/meta/total_count"
+              equals: 2
           last_cursor:
             status: 200
             setup:
@@ -3321,46 +3751,116 @@ paths:
             query:
               after:
                 event: 2
-              limit: 100
-            media_type: application/json
+            media_type: application/vnd.api+json
             assertions:
-            - pointer: "/events"
+            - pointer: "/data"
               equals: []
-            - pointer: "/next_cursor"
-              equals:
-                event: 2
-            - pointer: "/has_more"
-              equals: false
+            - pointer: "/meta/total_count"
+              equals: 0
+          pagination_0:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            query: {}
+            assertions:
+            - pointer: "/meta/current_page"
+              equals: 1
+            - pointer: "/meta/per_page"
+              equals: 20
+          pagination_1:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            query:
+              page:
+                number: '0'
+                size: '0'
+            assertions:
+            - pointer: "/meta/current_page"
+              equals: 1
+            - pointer: "/meta/per_page"
+              equals: 1
+            invalid_request: Accepted pagination normalization boundary
+          pagination_2:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            query:
+              page:
+                number: '1'
+                size: '101'
+            assertions:
+            - pointer: "/meta/current_page"
+              equals: 1
+            - pointer: "/meta/per_page"
+              equals: 100
+            invalid_request: Accepted pagination normalization boundary
+          pagination_3:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            query:
+              page:
+                number: '999'
+                size: '20'
+            assertions:
+            - pointer: "/meta/current_page"
+              equals: 999
+            - pointer: "/meta/per_page"
+              equals: 20
+            - pointer: "/data"
+              equals: []
+          pagination_invalid_0:
+            status: 400
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            query:
+              page: '1'
+            assertions:
+            - pointer: "/errors/0/status"
+              equals: '400'
+          pagination_invalid_1:
+            status: 400
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            query:
+              page:
+                number: abc
+            assertions:
+            - pointer: "/errors/0/status"
+              equals: '400'
           authentication_apiKeyAuth:
             status: 200
             setup:
             - authenticated
-            media_type: application/json
+            media_type: application/vnd.api+json
             query: {}
             authentication: apiKeyAuth
           authentication_browserSession:
             status: 200
             setup:
             - authenticated
-            media_type: application/json
+            media_type: application/vnd.api+json
             query: {}
             authentication: browserSession
         input_constraints:
         - field: after
           operation: to_s
           arguments: []
-        - field: limit
-          operation: clamp
-          arguments:
-          - '1'
-          - '100'
-        - field: limit
-          operation: to_i
-          arguments: []
   "/api/tasks/{task_id}/events":
     get:
       operationId: get-api-task-events
       summary: Replay committed events for an owned task after an exclusive cursor.
+      description: Events are ordered by ascending cursor. The after parameter is
+        an exclusive cursor filter; resume a replay with the cursor attribute of
+        the last event received. Pagination follows the JSON:API collection convention
+        of the API.
       parameters:
       - name: task_id
         in: path
@@ -3373,18 +3873,23 @@ paths:
           type: integer
           minimum: 0
           default: 0
-      - name: limit
+      - name: page[number]
         in: query
         schema:
           type: integer
+          default: 1
+      - name: page[size]
+        in: query
+        schema:
+          type: integer
+          default: 20
           minimum: 1
           maximum: 100
-          default: 100
       responses:
         '200':
           description: Ordered task events.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 "$ref": "#/components/schemas/MachineEventPage"
         '400':
@@ -3399,7 +3904,7 @@ paths:
             status: 200
             setup:
             - authenticated
-            media_type: application/json
+            media_type: application/vnd.api+json
             query: {}
           invalid_cursor:
             status: 400
@@ -3414,7 +3919,86 @@ paths:
             - unauthenticated
             query:
               after: 1
-              limit: 1
+              page[number]: 1
+              page[size]: 1
+          pagination_0:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            query: {}
+            assertions:
+            - pointer: "/meta/current_page"
+              equals: 1
+            - pointer: "/meta/per_page"
+              equals: 20
+          pagination_1:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            query:
+              page:
+                number: '0'
+                size: '0'
+            assertions:
+            - pointer: "/meta/current_page"
+              equals: 1
+            - pointer: "/meta/per_page"
+              equals: 1
+            invalid_request: Accepted pagination normalization boundary
+          pagination_2:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            query:
+              page:
+                number: '1'
+                size: '101'
+            assertions:
+            - pointer: "/meta/current_page"
+              equals: 1
+            - pointer: "/meta/per_page"
+              equals: 100
+            invalid_request: Accepted pagination normalization boundary
+          pagination_3:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            query:
+              page:
+                number: '999'
+                size: '20'
+            assertions:
+            - pointer: "/meta/current_page"
+              equals: 999
+            - pointer: "/meta/per_page"
+              equals: 20
+            - pointer: "/data"
+              equals: []
+          pagination_invalid_0:
+            status: 400
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            query:
+              page: '1'
+            assertions:
+            - pointer: "/errors/0/status"
+              equals: '400'
+          pagination_invalid_1:
+            status: 400
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            query:
+              page:
+                number: abc
+            assertions:
+            - pointer: "/errors/0/status"
+              equals: '400'
           missing:
             status: 404
             setup:
@@ -3424,7 +4008,8 @@ paths:
             media_type: application/vnd.api+json
             query:
               after: 1
-              limit: 1
+              page[number]: 1
+              page[size]: 1
           exclusive_cursor:
             status: 200
             setup:
@@ -3432,18 +4017,17 @@ paths:
             query:
               after:
                 event: 0
-              limit: 1
-            media_type: application/json
+              page:
+                size: '1'
+            media_type: application/vnd.api+json
             assertions:
-            - pointer: "/events/0/id"
+            - pointer: "/data/0/id"
               equals:
                 event: 1
                 field: id
-            - pointer: "/next_cursor"
+            - pointer: "/data/0/attributes/cursor"
               equals:
                 event: 1
-            - pointer: "/has_more"
-              equals: true
           last_cursor:
             status: 200
             setup:
@@ -3451,16 +4035,12 @@ paths:
             query:
               after:
                 event: 2
-              limit: 100
-            media_type: application/json
+            media_type: application/vnd.api+json
             assertions:
-            - pointer: "/events"
+            - pointer: "/data"
               equals: []
-            - pointer: "/next_cursor"
-              equals:
-                event: 2
-            - pointer: "/has_more"
-              equals: false
+            - pointer: "/meta/total_count"
+              equals: 0
           foreign_account:
             status: 404
             setup:
@@ -3473,32 +4053,25 @@ paths:
             body: {}
             query:
               after: 1
-              limit: 1
+              page[number]: 1
+              page[size]: 1
           authentication_apiKeyAuth:
             status: 200
             setup:
             - authenticated
-            media_type: application/json
+            media_type: application/vnd.api+json
             query: {}
             authentication: apiKeyAuth
           authentication_browserSession:
             status: 200
             setup:
             - authenticated
-            media_type: application/json
+            media_type: application/vnd.api+json
             query: {}
             authentication: browserSession
         input_constraints:
         - field: after
           operation: to_s
-          arguments: []
-        - field: limit
-          operation: clamp
-          arguments:
-          - '1'
-          - '100'
-        - field: limit
-          operation: to_i
           arguments: []
   "/api/containers/{container_id}/agent_sessions":
     post:
@@ -3702,29 +4275,52 @@ paths:
               - provider_capacity_snapshot
       responses:
         '202':
-          description: Safe account-scoped response
+          description: Safe account-scoped response. The primary data is the recorded
+            snapshot, identified by the observation_id the agent supplied, or null
+            while the agent still collects capacity. The launch decision is in meta.
           content:
             application/vnd.api+json:
               schema:
                 type: object
                 properties:
-                  snapshot:
-                    "$ref": "#/components/schemas/ProviderCapacityObservation"
-                  decision:
+                  data:
                     type: object
+                    nullable: true
                     properties:
-                      launch:
-                        type: boolean
-                      blocked:
-                        type: boolean
+                      type:
+                        type: string
+                        enum:
+                        - provider_capacity_snapshots
+                      id:
+                        type: string
+                      attributes:
+                        "$ref": "#/components/schemas/ProviderCapacityObservation"
                     additionalProperties: false
                     required:
-                    - launch
-                    - blocked
+                    - type
+                    - id
+                    - attributes
+                  meta:
+                    type: object
+                    properties:
+                      decision:
+                        type: object
+                        properties:
+                          launch:
+                            type: boolean
+                          blocked:
+                            type: boolean
+                        additionalProperties: false
+                        required:
+                        - launch
+                        - blocked
+                    additionalProperties: false
+                    required:
+                    - decision
                 additionalProperties: false
                 required:
-                - snapshot
-                - decision
+                - data
+                - meta
         '400':
           "$ref": "#/components/responses/BadRequest"
         '401':
@@ -4140,7 +4736,7 @@ paths:
         '200':
           description: Current stream availability.
           content:
-            application/json:
+            application/vnd.api+json:
               schema:
                 "$ref": "#/components/schemas/AgentSessionStreamState"
         '401':
@@ -4155,7 +4751,7 @@ paths:
             - agent_session
             body:
               available: true
-            media_type: application/json
+            media_type: application/vnd.api+json
           unauthenticated:
             status: 401
             setup:
@@ -4180,14 +4776,14 @@ paths:
             body:
               available: true
               contract_ignored_input: discarded
-            media_type: application/json
+            media_type: application/vnd.api+json
           authentication_apiKeyAuth:
             status: 200
             setup:
             - agent_session
             body:
               available: true
-            media_type: application/json
+            media_type: application/vnd.api+json
             authentication: apiKeyAuth
           authentication_browserSession:
             status: 200
@@ -4195,7 +4791,7 @@ paths:
             - agent_session
             body:
               available: true
-            media_type: application/json
+            media_type: application/vnd.api+json
             authentication: browserSession
         input_constraints: []
     put:
@@ -4767,6 +5363,8 @@ paths:
                     properties:
                       type:
                         type: string
+                        enum:
+                        - registrations
                       id:
                         type: string
                       attributes:
@@ -11522,64 +12120,7 @@ paths:
           content:
             application/vnd.api+json:
               schema:
-                type: object
-                required:
-                - data
-                properties:
-                  data:
-                    type: object
-                    required:
-                    - type
-                    - id
-                    - attributes
-                    - relationships
-                    - links
-                    properties:
-                      type:
-                        type: string
-                        enum:
-                        - tasks
-                      id:
-                        type: string
-                      attributes:
-                        "$ref": "#/components/schemas/TaskShowAttributes"
-                      relationships:
-                        type: object
-                        additionalProperties: false
-                        required:
-                        - project
-                        properties:
-                          project:
-                            type: object
-                            additionalProperties: false
-                            required:
-                            - data
-                            properties:
-                              data:
-                                type: object
-                                nullable: true
-                                required:
-                                - id
-                                - type
-                                additionalProperties: false
-                                properties:
-                                  id:
-                                    type: string
-                                  type:
-                                    type: string
-                                    enum:
-                                    - projects
-                      links:
-                        type: object
-                        required:
-                        - self
-                        properties:
-                          self:
-                            type: string
-                            nullable: true
-                        additionalProperties: false
-                    additionalProperties: false
-                additionalProperties: false
+                "$ref": "#/components/schemas/TaskDocument"
         '422':
           description: Validation failed
           content:
@@ -11786,64 +12327,7 @@ paths:
           content:
             application/vnd.api+json:
               schema:
-                type: object
-                required:
-                - data
-                properties:
-                  data:
-                    type: object
-                    required:
-                    - type
-                    - id
-                    - attributes
-                    - relationships
-                    - links
-                    properties:
-                      type:
-                        type: string
-                        enum:
-                        - tasks
-                      id:
-                        type: string
-                      attributes:
-                        "$ref": "#/components/schemas/TaskShowAttributes"
-                      relationships:
-                        type: object
-                        additionalProperties: false
-                        required:
-                        - project
-                        properties:
-                          project:
-                            type: object
-                            additionalProperties: false
-                            required:
-                            - data
-                            properties:
-                              data:
-                                type: object
-                                nullable: true
-                                required:
-                                - id
-                                - type
-                                additionalProperties: false
-                                properties:
-                                  id:
-                                    type: string
-                                  type:
-                                    type: string
-                                    enum:
-                                    - projects
-                      links:
-                        type: object
-                        required:
-                        - self
-                        properties:
-                          self:
-                            type: string
-                            nullable: true
-                        additionalProperties: false
-                    additionalProperties: false
-                additionalProperties: false
+                "$ref": "#/components/schemas/TaskDocument"
         '404':
           description: Task not found
           content:
@@ -12010,67 +12494,17 @@ paths:
           content:
             application/vnd.api+json:
               schema:
-                type: object
-                required:
-                - data
-                properties:
-                  data:
-                    type: object
-                    required:
-                    - type
-                    - id
-                    - attributes
-                    - relationships
-                    - links
-                    properties:
-                      type:
-                        type: string
-                        enum:
-                        - tasks
-                      id:
-                        type: string
-                      attributes:
-                        "$ref": "#/components/schemas/TaskShowAttributes"
-                      relationships:
-                        type: object
-                        additionalProperties: false
-                        required:
-                        - project
-                        properties:
-                          project:
-                            type: object
-                            additionalProperties: false
-                            required:
-                            - data
-                            properties:
-                              data:
-                                type: object
-                                nullable: true
-                                required:
-                                - id
-                                - type
-                                additionalProperties: false
-                                properties:
-                                  id:
-                                    type: string
-                                  type:
-                                    type: string
-                                    enum:
-                                    - projects
-                      links:
-                        type: object
-                        required:
-                        - self
-                        properties:
-                          self:
-                            type: string
-                            nullable: true
-                        additionalProperties: false
-                    additionalProperties: false
-                additionalProperties: false
+                "$ref": "#/components/schemas/TaskDocument"
         '422':
           description: Validation failed or title/description edited after task entered
             working state
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+        '409':
+          description: The dependency list cannot change because the task has left
+            its pending state. The error names the current state.
           content:
             application/vnd.api+json:
               schema:
@@ -12207,8 +12641,8 @@ paths:
             path:
               id: '999999999'
             query: {}
-          error_422_depends_on_started:
-            status: 422
+          error_409_depends_on_started:
+            status: 409
             setup:
             - authenticated
             media_type: application/vnd.api+json
@@ -12281,67 +12715,17 @@ paths:
           content:
             application/vnd.api+json:
               schema:
-                type: object
-                required:
-                - data
-                properties:
-                  data:
-                    type: object
-                    required:
-                    - type
-                    - id
-                    - attributes
-                    - relationships
-                    - links
-                    properties:
-                      type:
-                        type: string
-                        enum:
-                        - tasks
-                      id:
-                        type: string
-                      attributes:
-                        "$ref": "#/components/schemas/TaskShowAttributes"
-                      relationships:
-                        type: object
-                        additionalProperties: false
-                        required:
-                        - project
-                        properties:
-                          project:
-                            type: object
-                            additionalProperties: false
-                            required:
-                            - data
-                            properties:
-                              data:
-                                type: object
-                                nullable: true
-                                required:
-                                - id
-                                - type
-                                additionalProperties: false
-                                properties:
-                                  id:
-                                    type: string
-                                  type:
-                                    type: string
-                                    enum:
-                                    - projects
-                      links:
-                        type: object
-                        required:
-                        - self
-                        properties:
-                          self:
-                            type: string
-                            nullable: true
-                        additionalProperties: false
-                    additionalProperties: false
-                additionalProperties: false
+                "$ref": "#/components/schemas/TaskDocument"
         '422':
           description: Validation failed or title/description edited after task entered
             working state
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+        '409':
+          description: The dependency list cannot change because the task has left
+            its pending state. The error names the current state.
           content:
             application/vnd.api+json:
               schema:
@@ -12478,6 +12862,19 @@ paths:
             path:
               id: '999999999'
             query: {}
+          error_409_depends_on_started:
+            status: 409
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: task
+                  identity: working_task
+            body:
+              task:
+                depends_on: []
         input_constraints:
         - field: ''
           operation: expect
@@ -12514,104 +12911,110 @@ paths:
           maximum: 5000
       responses:
         '200':
-          description: Log lines and query metadata. Not JSON:API format.
+          description: The task's log lines as a task_logs resource. The query window
+            and any unavailability reason are in meta.
           content:
             application/vnd.api+json:
               schema:
                 type: object
                 properties:
-                  logs:
-                    type: array
-                    items:
-                      type: object
-                      additionalProperties: false
-                      required:
-                      - timestamp
-                      - line
-                      - container
-                      - labels
-                      properties:
-                        timestamp:
-                          type: string
-                          format: date-time
-                        line:
-                          type: string
-                        container:
-                          type: string
-                        labels:
-                          type: object
-                          additionalProperties:
+                  data:
+                    type: object
+                    additionalProperties: false
+                    required:
+                    - type
+                    - id
+                    - attributes
+                    - links
+                    properties:
+                      type:
+                        type: string
+                        enum:
+                        - task_logs
+                      id:
+                        type: string
+                      attributes:
+                        type: object
+                        additionalProperties: false
+                        required:
+                        - logs
+                        properties:
+                          logs:
+                            type: array
+                            items:
+                              type: object
+                              additionalProperties: false
+                              required:
+                              - timestamp
+                              - line
+                              - container
+                              - labels
+                              properties:
+                                timestamp:
+                                  type: string
+                                  format: date-time
+                                line:
+                                  type: string
+                                container:
+                                  type: string
+                                labels:
+                                  type: object
+                                  additionalProperties:
+                                    type: string
+                                  description: Loki stream labels, whose keys are
+                                    supplied by the log provider.
+                      links:
+                        type: object
+                        additionalProperties: false
+                        required:
+                        - self
+                        properties:
+                          self:
                             type: string
-                          description: Loki stream labels, whose keys are supplied
-                            by the log provider.
-                  query:
-                    oneOf:
-                    - type: object
-                      additionalProperties: false
-                      required:
-                      - limit
-                      - start
-                      - end
-                      properties:
-                        limit: &28
-                          type: integer
-                        start:
-                          type: string
-                          format: date-time
-                        end:
-                          type: string
-                          format: date-time
-                    - type: object
-                      additionalProperties: false
-                      required:
-                      - limit
-                      - duration
-                      properties:
-                        limit: *28
-                        duration:
-                          type: integer
+                  meta:
+                    type: object
+                    additionalProperties: false
+                    required:
+                    - query
+                    properties:
+                      query:
+                        oneOf:
+                        - type: object
+                          additionalProperties: false
+                          required:
+                          - limit
+                          - start
+                          - end
+                          properties:
+                            limit: &28
+                              type: integer
+                            start:
+                              type: string
+                              format: date-time
+                            end:
+                              type: string
+                              format: date-time
+                        - type: object
+                          additionalProperties: false
+                          required:
+                          - limit
+                          - duration
+                          properties:
+                            limit: *28
+                            duration:
+                              type: integer
+                      unavailable:
+                        type: string
+                        description: Present when the log stream is unavailable;
+                          explains why. The logs array is then empty.
+                        x-loopcontrol-optional-reason: Emitted only when the log
+                          provider is unavailable or not configured.
                 additionalProperties: false
                 required:
-                - logs
-                - query
-        '503':
-          description: Loki unavailable or not configured
-          content:
-            application/vnd.api+json:
-              schema:
-                type: object
-                additionalProperties: false
-                required:
-                - error
-                - logs
-                properties:
-                  error:
-                    type: string
-                  logs:
-                    type: array
-                    items:
-                      type: string
-                    maxItems: 0
+                - data
+                - meta
         '401':
           description: Missing or invalid bearer token; the response body is empty.
-        '500':
-          description: Unexpected log provider failure.
-          content:
-            application/vnd.api+json:
-              schema:
-                type: object
-                additionalProperties: false
-                required:
-                - error
-                - logs
-                properties:
-                  error:
-                    type: string
-                  logs:
-                    type: array
-                    items:
-                      type: string
-                    maxItems: 0
         '404':
           description: Resource not found in the authenticated account.
           content: &30
@@ -12644,7 +13047,7 @@ paths:
               end: contract-end
               limit: 1
             assertions:
-            - pointer: "/logs/0/line"
+            - pointer: "/data/attributes/logs/0/line"
               equals: Contract log line
           explicit_window:
             status: 200
@@ -12661,12 +13064,13 @@ paths:
               end: '2026-08-22T01:00:00Z'
               limit: 100
             assertions:
-            - pointer: "/logs/0/line"
+            - pointer: "/data/attributes/logs/0/line"
               equals: Contract log line
-          error_503:
-            status: 503
+          provider_unavailable:
+            status: 200
             setup:
-            - documented_error
+            - logs_unavailable
+            media_type: application/vnd.api+json
             path:
               id:
                 fixture:
@@ -12677,6 +13081,9 @@ paths:
               start: contract-start
               end: contract-end
               limit: 1
+            assertions:
+            - pointer: "/data/attributes/logs"
+              equals: []
           unauthenticated:
             status: 401
             setup:
@@ -12686,15 +13093,19 @@ paths:
               start: contract-start
               end: contract-end
               limit: 1
-          provider_500:
-            status: 500
+          provider_malformed:
+            status: 200
             setup:
             - logs_failure
+            media_type: application/vnd.api+json
             query:
               duration: 1
               start: contract-start
               end: contract-end
               limit: 1
+            assertions:
+            - pointer: "/data/attributes/logs"
+              equals: []
           authentication_apiKeyAuth:
             status: 200
             setup:
@@ -12712,7 +13123,7 @@ paths:
               limit: 1
             authentication: apiKeyAuth
             assertions:
-            - pointer: "/logs/0/line"
+            - pointer: "/data/attributes/logs/0/line"
               equals: Contract log line
           authentication_browserSession:
             status: 200
@@ -12731,7 +13142,7 @@ paths:
               limit: 1
             authentication: browserSession
             assertions:
-            - pointer: "/logs/0/line"
+            - pointer: "/data/attributes/logs/0/line"
               equals: Contract log line
           log_query_0:
             status: 200
@@ -12745,9 +13156,9 @@ paths:
                   identity: contract
             query: {}
             assertions:
-            - pointer: "/query/limit"
+            - pointer: "/meta/query/limit"
               equals: 500
-            - pointer: "/logs/0/line"
+            - pointer: "/data/attributes/logs/0/line"
               equals: Contract log line
           log_query_1:
             status: 200
@@ -12763,11 +13174,11 @@ paths:
               duration: 5
               limit: 0
             assertions:
-            - pointer: "/query/duration"
+            - pointer: "/meta/query/duration"
               equals: 300
-            - pointer: "/query/limit"
+            - pointer: "/meta/query/limit"
               equals: 1
-            - pointer: "/logs/0/line"
+            - pointer: "/data/attributes/logs/0/line"
               equals: Contract log line
             invalid_request: Clamping boundary intentionally exceeds recommended range
           log_query_2:
@@ -12785,13 +13196,13 @@ paths:
               end: '2026-01-02T00:00:00Z'
               limit: 5001
             assertions:
-            - pointer: "/query/start"
+            - pointer: "/meta/query/start"
               equals: '2026-01-01T00:00:00Z'
-            - pointer: "/query/end"
+            - pointer: "/meta/query/end"
               equals: '2026-01-02T00:00:00Z'
-            - pointer: "/query/limit"
+            - pointer: "/meta/query/limit"
               equals: 5000
-            - pointer: "/logs/0/line"
+            - pointer: "/data/attributes/logs/0/line"
               equals: Contract log line
             invalid_request: Clamping boundary intentionally exceeds recommended range
           missing_resource:
@@ -13540,7 +13951,10 @@ paths:
                       detail: The requested resource was not found
                 missing:
                   value:
-                    error: Recording content not found
+                    errors:
+                    - status: '404'
+                      title: Not Found
+                      detail: Recording content not found
         '410':
           description: Deleted recording file, whether still attached or already purged.
           content:
@@ -13548,7 +13962,10 @@ paths:
               schema:
                 "$ref": "#/components/schemas/RecordingContentError"
               example:
-                error: Recording file has been deleted
+                errors:
+                - status: '410'
+                  title: Gone
+                  detail: Recording file has been deleted
         '422':
           description: Unsupported legacy recording type.
           content:
@@ -13556,7 +13973,10 @@ paths:
               schema:
                 "$ref": "#/components/schemas/RecordingContentError"
               example:
-                error: Recording type does not support content
+                errors:
+                - status: '422'
+                  title: Unprocessable Entity
+                  detail: Recording type does not support content
       x-loopcontrol-contract:
         scenarios:
           success:
@@ -14047,127 +14467,13 @@ paths:
           content:
             application/vnd.api+json:
               schema:
-                type: object
-                required:
-                - data
-                properties:
-                  data:
-                    type: object
-                    required:
-                    - type
-                    - id
-                    - attributes
-                    - relationships
-                    - links
-                    properties:
-                      type:
-                        type: string
-                        enum:
-                        - tasks
-                      id:
-                        type: string
-                      attributes:
-                        "$ref": "#/components/schemas/TaskShowAttributes"
-                      relationships:
-                        type: object
-                        additionalProperties: false
-                        required:
-                        - project
-                        properties:
-                          project:
-                            type: object
-                            additionalProperties: false
-                            required:
-                            - data
-                            properties:
-                              data:
-                                type: object
-                                nullable: true
-                                required:
-                                - id
-                                - type
-                                additionalProperties: false
-                                properties:
-                                  id:
-                                    type: string
-                                  type:
-                                    type: string
-                                    enum:
-                                    - projects
-                      links:
-                        type: object
-                        required:
-                        - self
-                        properties:
-                          self:
-                            type: string
-                            nullable: true
-                        additionalProperties: false
-                    additionalProperties: false
-                additionalProperties: false
+                "$ref": "#/components/schemas/TaskDocument"
         '201':
           description: Task after the accepted stage result.
           content:
             application/vnd.api+json:
               schema:
-                type: object
-                required:
-                - data
-                properties:
-                  data:
-                    type: object
-                    required:
-                    - type
-                    - id
-                    - attributes
-                    - relationships
-                    - links
-                    properties:
-                      type:
-                        type: string
-                        enum:
-                        - tasks
-                      id:
-                        type: string
-                      attributes:
-                        "$ref": "#/components/schemas/TaskShowAttributes"
-                      relationships:
-                        type: object
-                        additionalProperties: false
-                        required:
-                        - project
-                        properties:
-                          project:
-                            type: object
-                            additionalProperties: false
-                            required:
-                            - data
-                            properties:
-                              data:
-                                type: object
-                                nullable: true
-                                required:
-                                - id
-                                - type
-                                additionalProperties: false
-                                properties:
-                                  id:
-                                    type: string
-                                  type:
-                                    type: string
-                                    enum:
-                                    - projects
-                      links:
-                        type: object
-                        required:
-                        - self
-                        properties:
-                          self:
-                            type: string
-                            nullable: true
-                        additionalProperties: false
-                    additionalProperties: false
-                additionalProperties: false
+                "$ref": "#/components/schemas/TaskDocument"
         '422':
           description: Guard-rejected completion or invalid state transition. Rejected
             submissions make no writes and can be retried by the active session.
@@ -14459,35 +14765,19 @@ paths:
                 enforced independently by source and runtime observation.
       responses:
         '200':
-          description: Acknowledgement. Not JSON:API format.
+          description: The blocked task. Its `stage` attribute names the stage after
+            the block.
           content:
             application/vnd.api+json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                  stage:
-                    type: string
-                additionalProperties: false
-                required:
-                - status
-                - stage
-        '422':
-          description: Task already in a terminal state
+                "$ref": "#/components/schemas/TaskDocument"
+        '409':
+          description: The task cannot be blocked from its current stage, for example
+            because it is already in a terminal state. The error names the stage.
           content:
             application/vnd.api+json:
               schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-                  message:
-                    type: string
-                required:
-                - error
-                - message
-                additionalProperties: false
+                "$ref": "#/components/schemas/JsonApiErrors"
         '401':
           description: Missing or invalid bearer token; the response body is empty.
         '404':
@@ -14506,8 +14796,8 @@ paths:
                   identity: pending_task
             body:
               failed_step: contract-failed_step
-          error_422:
-            status: 422
+          error_409:
+            status: 409
             setup:
             - documented_error
             path:
@@ -14582,7 +14872,8 @@ paths:
   "/api/tasks/{task_id}/pull_request":
     post:
       operationId: post-api-task-pull-request
-      summary: Creates the task's GitHub pull request if it doesn't exist yet (idempotent).
+      summary: Queues the creation of the task's GitHub pull request if it doesn't
+        exist yet (idempotent).
       parameters:
       - name: task_id
         in: path
@@ -14590,48 +14881,28 @@ paths:
         schema:
           type: string
       responses:
-        '200':
-          description: PR info. Not JSON:API format.
+        '202':
+          description: The task, accepted for pull request creation. A background
+            job opens the pull request; poll the task until its `pr_number` and
+            `pr_url` attributes identify the pull request.
           content:
             application/vnd.api+json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                  pr_number:
-                    type: integer
-                  pr_url:
-                    type: string
-                additionalProperties: false
-                required:
-                - status
-                - pr_number
-                - pr_url
+                "$ref": "#/components/schemas/TaskDocument"
         '409':
-          description: PR has already been merged
+          description: PR has already been merged, or the task is not waiting for
+            its pull request (only a picked-up task whose activation waits for its
+            pull request is accepted)
           content:
             application/vnd.api+json:
               schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-                required:
-                - error
-                additionalProperties: false
+                "$ref": "#/components/schemas/JsonApiErrors"
         '422':
-          description: Task is in a terminal state or PR creation failed
+          description: Task is in a terminal state or its project has no GitHub credentials
           content:
             application/vnd.api+json:
               schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-                required:
-                - error
-                additionalProperties: false
+                "$ref": "#/components/schemas/JsonApiErrors"
         '401':
           description: Missing or invalid bearer token; the response body is empty.
         '404':
@@ -14639,7 +14910,7 @@ paths:
       x-loopcontrol-contract:
         scenarios:
           success:
-            status: 200
+            status: 202
             setup:
             - authenticated
             media_type: application/vnd.api+json
@@ -14647,7 +14918,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: working_task_with_pr
+                  identity: working_task_without_executor
           error_409:
             status: 409
             setup:
@@ -14657,6 +14928,16 @@ paths:
                 fixture:
                   resource: task
                   identity: merging_task_with_merged_pr
+          not_awaiting_pull_request:
+            status: 409
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              task_id:
+                fixture:
+                  resource: task
+                  identity: working_task
           error_422:
             status: 422
             setup:
@@ -14681,7 +14962,7 @@ paths:
                   identity: other_tenant_task
             body: {}
           authentication_apiKeyAuth:
-            status: 200
+            status: 202
             setup:
             - authenticated
             media_type: application/vnd.api+json
@@ -14689,10 +14970,10 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: working_task_with_pr
+                  identity: working_task_without_executor
             authentication: apiKeyAuth
           authentication_browserSession:
-            status: 200
+            status: 202
             setup:
             - authenticated
             media_type: application/vnd.api+json
@@ -14700,7 +14981,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: working_task_with_pr
+                  identity: working_task_without_executor
             authentication: browserSession
         input_constraints: []
   "/api/tasks/{task_id}/prompt_sync":
@@ -14731,68 +15012,65 @@ paths:
                 enforced independently by source and runtime observation.
       responses:
         '200':
-          description: Sync acknowledged. Not JSON:API format.
+          description: Sync acknowledged. The prompt_syncs resource supplies the current
+            stage and the expected prompt revision and hash.
           content:
             application/vnd.api+json:
               schema:
                 type: object
                 properties:
-                  status:
-                    type: string
-                  stage:
-                    type: string
-                  expected_revision:
-                    type: string
-                    nullable: true
-                  expected_hash:
-                    type: string
-                    nullable: true
+                  data:
+                    type: object
+                    additionalProperties: false
+                    required:
+                    - type
+                    - id
+                    - attributes
+                    - links
+                    properties:
+                      type:
+                        type: string
+                        enum:
+                        - prompt_syncs
+                      id:
+                        type: string
+                      attributes:
+                        "$ref": "#/components/schemas/PromptSyncState"
+                      links:
+                        type: object
+                        additionalProperties: false
+                        required:
+                        - self
+                        properties:
+                          self:
+                            type: string
                 additionalProperties: false
                 required:
-                - status
-                - stage
-                - expected_revision
-                - expected_hash
+                - data
         '409':
-          description: The reported prompt revision is stale. The response supplies
-            the current expected revision and hash.
+          description: The reported prompt revision is stale. The error document's
+            meta supplies the current stage and the expected revision and hash.
           content:
             application/vnd.api+json:
               schema:
                 type: object
                 properties:
-                  status:
-                    type: string
-                    enum:
-                    - stale
-                  stage:
-                    type: string
-                  expected_revision:
-                    type: string
-                    nullable: true
-                  expected_hash:
-                    type: string
-                    nullable: true
+                  errors:
+                    type: array
+                    items:
+                      "$ref": "#/components/schemas/JsonApiStatusError"
+                  meta:
+                    "$ref": "#/components/schemas/PromptSyncState"
                 additionalProperties: false
                 required:
-                - status
-                - stage
-                - expected_revision
-                - expected_hash
+                - errors
+                - meta
         '422':
-          description: Task has no container
+          description: The task has no container to synchronize.
           content:
             application/vnd.api+json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                    enum:
-                    - no_container
-                required:
-                - status
-                additionalProperties: false
+                "$ref": "#/components/schemas/JsonApiErrors"
         '401':
           description: Missing or invalid bearer token; the response body is empty.
         '404':
@@ -16260,6 +16538,13 @@ paths:
             application/vnd.api+json:
               schema:
                 "$ref": "#/components/schemas/JsonApiErrors"
+        '409':
+          description: The task's current stage does not use a checklist. The error
+            names the stage.
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
         '422':
           description: Validation failed
           content:
@@ -16272,6 +16557,21 @@ paths:
           "$ref": "#/components/responses/NotFound"
       x-loopcontrol-contract:
         scenarios:
+          error_409:
+            status: 409
+            setup:
+            - documented_error
+            media_type: application/vnd.api+json
+            path:
+              task_id:
+                fixture:
+                  resource: task
+                  identity: pending_task
+            body:
+              todo:
+                content: contract-content
+                status: pending
+                position: 10000
           success:
             status: 201
             setup:
@@ -17799,32 +18099,17 @@ paths:
           type: string
       responses:
         '200':
-          description: Cancellation result. Not JSON:API format.
+          description: The cancelled task.
           content:
             application/vnd.api+json:
               schema:
-                type: object
-                properties:
-                  status:
-                    type: string
-                  stage:
-                    type: string
-                additionalProperties: false
-                required:
-                - status
-                - stage
+                "$ref": "#/components/schemas/TaskDocument"
         '422':
           description: Task already in a terminal state, or invalid state transition
           content:
             application/vnd.api+json:
               schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-                required:
-                - error
-                additionalProperties: false
+                "$ref": "#/components/schemas/JsonApiErrors"
         '401':
           description: Missing or invalid bearer token; the response body is empty.
         '404':
@@ -17899,38 +18184,17 @@ paths:
           type: string
       responses:
         '200':
-          description: Restart result. Not JSON:API format.
+          description: The task whose fresh container was requested.
           content:
             application/vnd.api+json:
               schema:
-                type: object
-                properties:
-                  id:
-                    type: integer
-                  stage:
-                    type: string
-                  container_id:
-                    type: integer
-                  status:
-                    type: string
-                additionalProperties: false
-                required:
-                - id
-                - stage
-                - container_id
-                - status
+                "$ref": "#/components/schemas/TaskDocument"
         '422':
           description: Restart failed
           content:
             application/vnd.api+json:
               schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-                required:
-                - error
-                additionalProperties: false
+                "$ref": "#/components/schemas/JsonApiErrors"
         '401':
           description: Missing or invalid bearer token; the response body is empty.
         '404':
@@ -18006,36 +18270,19 @@ paths:
           type: string
       responses:
         '200':
-          description: Unblock result. Not JSON:API format.
+          description: The unblocked task. Its `stage` attribute names the stage the
+            task resumed in.
           content:
             application/vnd.api+json:
               schema:
-                type: object
-                properties:
-                  id:
-                    type: integer
-                  stage:
-                    type: string
-                  status:
-                    type: string
-                additionalProperties: false
-                required:
-                - id
-                - stage
-                - status
-        '422':
-          description: Unblock failed (task not blocked, wrong blocked_reason, or
-            no rework target)
+                "$ref": "#/components/schemas/TaskDocument"
+        '409':
+          description: The task cannot be unblocked from its current stage (it is
+            not blocked, or its saved resume stage is gone). The error names the stage.
           content:
             application/vnd.api+json:
               schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-                required:
-                - error
-                additionalProperties: false
+                "$ref": "#/components/schemas/JsonApiErrors"
         '401':
           description: Missing or invalid bearer token; the response body is empty.
         '404':
@@ -18052,8 +18299,8 @@ paths:
                 fixture:
                   resource: task
                   identity: blocked_task_with_pr
-          error_422:
-            status: 422
+          error_409:
+            status: 409
             setup:
             - documented_error
             path:
@@ -18200,8 +18447,9 @@ paths:
                     type: object
                     additionalProperties: true
                     x-loopcontrol-open-reason: free_form
-                  description: Array of draft objects to upsert. Each must have an
-                    'id' field.
+                  description: Array of draft objects to upsert. A draft with the
+                    id of a stored draft replaces it; a draft without an id gets one
+                    derived from its content.
               additionalProperties: true
               x-loopcontrol-open-reason: ignored_inputs
               x-loopcontrol-input-policy: Unknown top-level input keys are tolerated
@@ -18209,7 +18457,7 @@ paths:
                 enforced independently by source and runtime observation.
       responses:
         '200':
-          description: Draft count metadata. Not JSON:API format.
+          description: Draft count metadata in a meta-only JSON:API document.
           content:
             application/vnd.api+json:
               schema:
@@ -18344,7 +18592,7 @@ paths:
         description: Draft ID to remove
       responses:
         '200':
-          description: Updated draft count. Not JSON:API format.
+          description: Updated draft count in a meta-only JSON:API document.
           content:
             application/vnd.api+json:
               schema:
@@ -18443,55 +18691,33 @@ paths:
       summary: Lists GitHub organizations accessible to the account's configured credentials.
       responses:
         '200':
-          description: List of GitHub organizations. Not JSON:API format.
+          description: The authenticated GitHub user followed by the user's organizations.
           content:
             application/vnd.api+json:
               schema:
                 type: object
                 properties:
-                  organizations:
+                  data:
                     type: array
                     items:
-                      type: object
-                      additionalProperties: false
-                      required:
-                      - login
-                      - type
-                      properties:
-                        login:
-                          type: string
-                        type:
-                          type: string
-                          enum:
-                          - Organization
-                          - User
+                      "$ref": "#/components/schemas/GithubOrganizationResource"
                 additionalProperties: false
                 required:
-                - organizations
-        '503':
-          description: Provider authentication, availability or rate limit error.
+                - data
+        '424':
+          description: GitHub is unavailable or its credentials are not configured.
           content:
             application/vnd.api+json:
-              schema: &29
-                type: object
-                additionalProperties: false
-                required:
-                - error
-                properties:
-                  error:
-                    type: string
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
         '401':
           description: Provider authentication, availability or rate limit error.
           content:
             application/vnd.api+json:
-              schema: *29
+              schema: &29
+                "$ref": "#/components/schemas/JsonApiErrors"
           x-loopcontrol-empty-body: true
         '429':
-          description: Provider authentication, availability or rate limit error.
-          content:
-            application/vnd.api+json:
-              schema: *29
-        '502':
           description: Provider authentication, availability or rate limit error.
           content:
             application/vnd.api+json:
@@ -18503,18 +18729,20 @@ paths:
             setup:
             - authenticated
             media_type: application/vnd.api+json
-          error_503:
-            status: 503
+          error_424:
+            status: 424
             setup:
             - documented_error
+            media_type: application/vnd.api+json
             headers:
               Authorization: Bearer test_token_two
           unauthenticated:
             status: 401
             setup:
             - unauthenticated
-          provider_503:
-            status: 503
+          provider_not_configured:
+            status: 424
+            media_type: application/vnd.api+json
             setup:
             - documented_error
             headers:
@@ -18527,8 +18755,9 @@ paths:
             status: 429
             setup:
             - github_rate_limit
-          provider_502:
-            status: 502
+          provider_unavailable:
+            status: 424
+            media_type: application/vnd.api+json
             setup:
             - github_failure
           authentication_apiKeyAuth:
@@ -18572,75 +18801,25 @@ paths:
           maximum: 100
       responses:
         '200':
-          description: Repository list from GitHub API. Not JSON:API format.
+          description: One page of GitHub repositories. The page, page size and
+            whether more pages exist are in meta.
           content:
             application/vnd.api+json:
               schema:
-                type: object
-                required:
-                - repositories
-                - page
-                - per_page
-                - has_more
-                properties:
-                  repositories:
-                    type: array
-                    items:
-                      type: object
-                      additionalProperties: false
-                      required:
-                      - full_name
-                      - name
-                      - owner
-                      - default_branch
-                      - html_url
-                      - description
-                      - private
-                      properties:
-                        full_name:
-                          type: string
-                          nullable: false
-                        name:
-                          type: string
-                          nullable: false
-                        owner:
-                          type: string
-                          nullable: false
-                        default_branch:
-                          type: string
-                          nullable: false
-                        html_url:
-                          type: string
-                          nullable: false
-                        description:
-                          type: string
-                          nullable: true
-                        private:
-                          type: boolean
-                  page:
-                    type: integer
-                  per_page:
-                    type: integer
-                  has_more:
-                    type: boolean
-                additionalProperties: false
+                "$ref": "#/components/schemas/GithubRepositoryPage"
         '401':
           description: Provider authentication, availability or rate limit error.
           content:
             application/vnd.api+json:
               schema: *29
           x-loopcontrol-empty-body: true
-        '503':
-          description: Provider authentication, availability or rate limit error.
+        '424':
+          description: GitHub is unavailable or its credentials are not configured.
           content:
             application/vnd.api+json:
-              schema: *29
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
         '429':
-          description: Provider authentication, availability or rate limit error.
-          content:
-            application/vnd.api+json:
-              schema: *29
-        '502':
           description: Provider authentication, availability or rate limit error.
           content:
             application/vnd.api+json:
@@ -18666,8 +18845,9 @@ paths:
               type: contract-type
               page: 1
               per_page: 1
-          provider_503:
-            status: 503
+          provider_not_configured:
+            status: 424
+            media_type: application/vnd.api+json
             setup:
             - documented_error
             query:
@@ -18692,8 +18872,9 @@ paths:
               type: contract-type
               page: 1
               per_page: 1
-          provider_502:
-            status: 502
+          provider_unavailable:
+            status: 424
+            media_type: application/vnd.api+json
             setup:
             - github_failure
             query:
@@ -18740,11 +18921,11 @@ paths:
               page: 1
               per_page: 100
             assertions:
-            - pointer: "/page"
+            - pointer: "/meta/page"
               equals: 1
-            - pointer: "/per_page"
+            - pointer: "/meta/per_page"
               equals: 100
-            - pointer: "/has_more"
+            - pointer: "/meta/has_more"
               equals: true
           provider_pagination_1:
             status: 200
@@ -18764,11 +18945,11 @@ paths:
               page: 2
               per_page: 2
             assertions:
-            - pointer: "/page"
+            - pointer: "/meta/page"
               equals: 2
-            - pointer: "/per_page"
+            - pointer: "/meta/per_page"
               equals: 2
-            - pointer: "/has_more"
+            - pointer: "/meta/has_more"
               equals: true
           provider_short_page:
             status: 200
@@ -18789,11 +18970,11 @@ paths:
               per_page: 2
             provider_count: 1
             assertions:
-            - pointer: "/page"
+            - pointer: "/meta/page"
               equals: 2
-            - pointer: "/per_page"
+            - pointer: "/meta/per_page"
               equals: 2
-            - pointer: "/has_more"
+            - pointer: "/meta/has_more"
               equals: false
           provider_empty_page:
             status: 200
@@ -18814,11 +18995,11 @@ paths:
               per_page: 2
             provider_count: 0
             assertions:
-            - pointer: "/page"
+            - pointer: "/meta/page"
               equals: 2
-            - pointer: "/per_page"
+            - pointer: "/meta/per_page"
               equals: 2
-            - pointer: "/has_more"
+            - pointer: "/meta/has_more"
               equals: false
           provider_personal_repositories:
             status: 200
@@ -18839,11 +19020,11 @@ paths:
               page: 2
               per_page: 2
             assertions:
-            - pointer: "/page"
+            - pointer: "/meta/page"
               equals: 2
-            - pointer: "/per_page"
+            - pointer: "/meta/per_page"
               equals: 2
-            - pointer: "/has_more"
+            - pointer: "/meta/has_more"
               equals: true
           provider_pagination_2:
             status: 200
@@ -18865,11 +19046,11 @@ paths:
             invalid_request: Provider pagination accepts numeric strings and coerces
               nonnumeric strings to zero
             assertions:
-            - pointer: "/page"
+            - pointer: "/meta/page"
               equals: 0
-            - pointer: "/per_page"
+            - pointer: "/meta/per_page"
               equals: 1
-            - pointer: "/has_more"
+            - pointer: "/meta/has_more"
               equals: true
           provider_pagination_3:
             status: 200
@@ -18891,11 +19072,11 @@ paths:
             invalid_request: Provider pagination accepts numeric strings and coerces
               nonnumeric strings to zero
             assertions:
-            - pointer: "/page"
+            - pointer: "/meta/page"
               equals: 3
-            - pointer: "/per_page"
+            - pointer: "/meta/per_page"
               equals: 100
-            - pointer: "/has_more"
+            - pointer: "/meta/has_more"
               equals: true
           provider_pagination_4:
             status: 200
@@ -18917,11 +19098,11 @@ paths:
             invalid_request: Provider pagination accepts numeric strings and coerces
               nonnumeric strings to zero
             assertions:
-            - pointer: "/page"
+            - pointer: "/meta/page"
               equals: 0
-            - pointer: "/per_page"
+            - pointer: "/meta/per_page"
               equals: 1
-            - pointer: "/has_more"
+            - pointer: "/meta/has_more"
               equals: true
         input_constraints:
         - field: page
@@ -18962,75 +19143,25 @@ paths:
           maximum: 100
       responses:
         '200':
-          description: Repository list from GitHub API. Not JSON:API format.
+          description: One page of GitHub repositories. The page, page size and
+            whether more pages exist are in meta.
           content:
             application/vnd.api+json:
               schema:
-                type: object
-                required:
-                - repositories
-                - page
-                - per_page
-                - has_more
-                properties:
-                  repositories:
-                    type: array
-                    items:
-                      type: object
-                      additionalProperties: false
-                      required:
-                      - full_name
-                      - name
-                      - owner
-                      - default_branch
-                      - html_url
-                      - description
-                      - private
-                      properties:
-                        full_name:
-                          type: string
-                          nullable: false
-                        name:
-                          type: string
-                          nullable: false
-                        owner:
-                          type: string
-                          nullable: false
-                        default_branch:
-                          type: string
-                          nullable: false
-                        html_url:
-                          type: string
-                          nullable: false
-                        description:
-                          type: string
-                          nullable: true
-                        private:
-                          type: boolean
-                  page:
-                    type: integer
-                  per_page:
-                    type: integer
-                  has_more:
-                    type: boolean
-                additionalProperties: false
+                "$ref": "#/components/schemas/GithubRepositoryPage"
         '401':
           description: Provider authentication, availability or rate limit error.
           content:
             application/vnd.api+json:
               schema: *29
           x-loopcontrol-empty-body: true
-        '503':
-          description: Provider authentication, availability or rate limit error.
+        '424':
+          description: GitHub is unavailable or its credentials are not configured.
           content:
             application/vnd.api+json:
-              schema: *29
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
         '429':
-          description: Provider authentication, availability or rate limit error.
-          content:
-            application/vnd.api+json:
-              schema: *29
-        '502':
           description: Provider authentication, availability or rate limit error.
           content:
             application/vnd.api+json:
@@ -19052,8 +19183,9 @@ paths:
               type: contract-type
               page: 1
               per_page: 1
-          provider_503:
-            status: 503
+          provider_not_configured:
+            status: 424
+            media_type: application/vnd.api+json
             setup:
             - documented_error
             query:
@@ -19081,8 +19213,9 @@ paths:
               type: contract-type
               page: 1
               per_page: 1
-          provider_502:
-            status: 502
+          provider_unavailable:
+            status: 424
+            media_type: application/vnd.api+json
             setup:
             - github_failure
             query:
@@ -19115,11 +19248,11 @@ paths:
               page: 1
               per_page: 100
             assertions:
-            - pointer: "/page"
+            - pointer: "/meta/page"
               equals: 1
-            - pointer: "/per_page"
+            - pointer: "/meta/per_page"
               equals: 100
-            - pointer: "/has_more"
+            - pointer: "/meta/has_more"
               equals: true
           provider_pagination_1:
             status: 200
@@ -19134,11 +19267,11 @@ paths:
               page: 2
               per_page: 2
             assertions:
-            - pointer: "/page"
+            - pointer: "/meta/page"
               equals: 2
-            - pointer: "/per_page"
+            - pointer: "/meta/per_page"
               equals: 2
-            - pointer: "/has_more"
+            - pointer: "/meta/has_more"
               equals: true
           provider_short_page:
             status: 200
@@ -19154,11 +19287,11 @@ paths:
               per_page: 2
             provider_count: 1
             assertions:
-            - pointer: "/page"
+            - pointer: "/meta/page"
               equals: 2
-            - pointer: "/per_page"
+            - pointer: "/meta/per_page"
               equals: 2
-            - pointer: "/has_more"
+            - pointer: "/meta/has_more"
               equals: false
           provider_empty_page:
             status: 200
@@ -19174,11 +19307,11 @@ paths:
               per_page: 2
             provider_count: 0
             assertions:
-            - pointer: "/page"
+            - pointer: "/meta/page"
               equals: 2
-            - pointer: "/per_page"
+            - pointer: "/meta/per_page"
               equals: 2
-            - pointer: "/has_more"
+            - pointer: "/meta/has_more"
               equals: false
           provider_pagination_2:
             status: 200
@@ -19195,11 +19328,11 @@ paths:
             invalid_request: Provider pagination accepts numeric strings and coerces
               nonnumeric strings to zero
             assertions:
-            - pointer: "/page"
+            - pointer: "/meta/page"
               equals: 0
-            - pointer: "/per_page"
+            - pointer: "/meta/per_page"
               equals: 1
-            - pointer: "/has_more"
+            - pointer: "/meta/has_more"
               equals: true
           provider_pagination_3:
             status: 200
@@ -19216,11 +19349,11 @@ paths:
             invalid_request: Provider pagination accepts numeric strings and coerces
               nonnumeric strings to zero
             assertions:
-            - pointer: "/page"
+            - pointer: "/meta/page"
               equals: 3
-            - pointer: "/per_page"
+            - pointer: "/meta/per_page"
               equals: 100
-            - pointer: "/has_more"
+            - pointer: "/meta/has_more"
               equals: true
           provider_pagination_4:
             status: 200
@@ -19237,11 +19370,11 @@ paths:
             invalid_request: Provider pagination accepts numeric strings and coerces
               nonnumeric strings to zero
             assertions:
-            - pointer: "/page"
+            - pointer: "/meta/page"
               equals: 0
-            - pointer: "/per_page"
+            - pointer: "/meta/per_page"
               equals: 1
-            - pointer: "/has_more"
+            - pointer: "/meta/has_more"
               equals: true
         input_constraints:
         - field: page
@@ -19283,88 +19416,32 @@ paths:
                 and discarded. Listed properties define the consumed input vocabulary,
                 enforced independently by source and runtime observation.
       responses:
-        '200':
-          description: Created repository info from GitHub API. Not JSON:API format.
+        '202':
+          description: The pending repository creation. A background job creates
+            the repository at GitHub; poll the self link until the state is created
+            or failed.
           content:
             application/vnd.api+json:
               schema:
-                type: object
-                properties:
-                  repository:
-                    type: object
-                    additionalProperties: false
-                    required:
-                    - full_name
-                    - name
-                    - owner
-                    - default_branch
-                    - html_url
-                    - description
-                    - private
-                    - clone_url
-                    properties:
-                      full_name:
-                        type: string
-                        nullable: false
-                      name:
-                        type: string
-                        nullable: false
-                      owner:
-                        type: string
-                        nullable: false
-                      default_branch:
-                        type: string
-                        nullable: false
-                      html_url:
-                        type: string
-                        nullable: false
-                      description:
-                        type: string
-                        nullable: true
-                      private:
-                        type: boolean
-                      clone_url:
-                        type: string
-                additionalProperties: false
-                required:
-                - repository
+                "$ref": "#/components/schemas/GithubRepositoryCreationDocument"
         '422':
-          description: Repository name missing
+          description: The repository name is missing.
           content:
             application/vnd.api+json:
               schema:
-                type: object
-                properties:
-                  error:
-                    type: string
-                required:
-                - error
-                additionalProperties: false
+                "$ref": "#/components/schemas/JsonApiErrors"
         '401':
-          description: Provider authentication, availability or rate limit error.
+          description: Missing or invalid bearer token; the response body is empty.
+        '424':
+          description: The GitHub credentials of the account are not configured.
           content:
             application/vnd.api+json:
-              schema: *29
-          x-loopcontrol-empty-body: true
-        '503':
-          description: Provider authentication, availability or rate limit error.
-          content:
-            application/vnd.api+json:
-              schema: *29
-        '429':
-          description: Provider authentication, availability or rate limit error.
-          content:
-            application/vnd.api+json:
-              schema: *29
-        '502':
-          description: Provider authentication, availability or rate limit error.
-          content:
-            application/vnd.api+json:
-              schema: *29
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
       x-loopcontrol-contract:
         scenarios:
           success:
-            status: 200
+            status: 202
             setup:
             - authenticated
             media_type: application/vnd.api+json
@@ -19382,32 +19459,15 @@ paths:
             - unauthenticated
             body:
               name: contract-name
-          provider_503:
-            status: 503
+          provider_not_configured:
+            status: 424
+            media_type: application/vnd.api+json
             setup:
             - documented_error
             body:
               name: contract-name
             headers:
               Authorization: Bearer test_token_two
-          provider_401:
-            status: 401
-            setup:
-            - github_unauthorized
-            body:
-              name: contract-name
-          provider_429:
-            status: 429
-            setup:
-            - github_rate_limit
-            body:
-              name: contract-name
-          provider_502:
-            status: 502
-            setup:
-            - github_failure
-            body:
-              name: contract-name
           missing_name_json:
             status: 422
             setup:
@@ -19418,7 +19478,7 @@ paths:
             body:
               name: contract-name
           unknown_input:
-            status: 200
+            status: 202
             setup:
             - authenticated
             media_type: application/vnd.api+json
@@ -19426,7 +19486,7 @@ paths:
               name: contract-name
               contract_ignored_input: discarded
           authentication_apiKeyAuth:
-            status: 200
+            status: 202
             setup:
             - authenticated
             media_type: application/vnd.api+json
@@ -19434,12 +19494,80 @@ paths:
               name: contract-name
             authentication: apiKeyAuth
           authentication_browserSession:
-            status: 200
+            status: 202
             setup:
             - authenticated
             media_type: application/vnd.api+json
             body:
               name: contract-name
+            authentication: browserSession
+        input_constraints: []
+  "/api/github/repository_creations/{id}":
+    get:
+      operationId: get-api-github-repository-creation
+      summary: Returns a repository creation of the account, to poll until GitHub
+        has created the repository or the creation has failed.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The repository creation with its state, and the created repository
+            or the GitHub failure reason.
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/GithubRepositoryCreationDocument"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '401':
+          description: Missing or invalid bearer token; the response body is empty.
+      x-loopcontrol-contract:
+        scenarios:
+          success:
+            status: 200
+            setup:
+            - repository_creation
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: github/repository_creation
+          error_404:
+            status: 404
+            setup:
+            - documented_error
+            media_type: application/vnd.api+json
+            path:
+              id: '999999999'
+          unauthenticated:
+            status: 401
+            setup:
+            - unauthenticated
+            path:
+              id: '999999999'
+          authentication_apiKeyAuth:
+            status: 200
+            setup:
+            - repository_creation
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: github/repository_creation
+            authentication: apiKeyAuth
+          authentication_browserSession:
+            status: 200
+            setup:
+            - repository_creation
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: github/repository_creation
             authentication: browserSession
         input_constraints: []
   "/api/github/repositories/{owner}/{repo}/branches":
@@ -19471,57 +19599,25 @@ paths:
           maximum: 100
       responses:
         '200':
-          description: Branch list from GitHub API. Not JSON:API format.
+          description: One page of the repository's branches. The repository's default
+            branch, the page, page size and whether more pages exist are in meta.
           content:
             application/vnd.api+json:
               schema:
-                type: object
-                required:
-                - branches
-                - default_branch
-                - page
-                - per_page
-                - has_more
-                properties:
-                  branches:
-                    type: array
-                    items:
-                      type: object
-                      additionalProperties: false
-                      required:
-                      - name
-                      - protected
-                      properties:
-                        name:
-                          type: string
-                        protected:
-                          type: boolean
-                  default_branch:
-                    type: string
-                  page:
-                    type: integer
-                  per_page:
-                    type: integer
-                  has_more:
-                    type: boolean
-                additionalProperties: false
+                "$ref": "#/components/schemas/GithubBranchPage"
         '401':
           description: Provider authentication, availability or rate limit error.
           content:
             application/vnd.api+json:
               schema: *29
           x-loopcontrol-empty-body: true
-        '503':
-          description: Provider authentication, availability or rate limit error.
+        '424':
+          description: GitHub is unavailable or its credentials are not configured.
           content:
             application/vnd.api+json:
-              schema: *29
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
         '429':
-          description: Provider authentication, availability or rate limit error.
-          content:
-            application/vnd.api+json:
-              schema: *29
-        '502':
           description: Provider authentication, availability or rate limit error.
           content:
             application/vnd.api+json:
@@ -19550,8 +19646,9 @@ paths:
             query:
               page: 1
               per_page: 1
-          provider_503:
-            status: 503
+          provider_not_configured:
+            status: 424
+            media_type: application/vnd.api+json
             setup:
             - documented_error
             query:
@@ -19573,8 +19670,9 @@ paths:
             query:
               page: 1
               per_page: 1
-          provider_502:
-            status: 502
+          provider_unavailable:
+            status: 424
+            media_type: application/vnd.api+json
             setup:
             - github_failure
             query:
@@ -19632,11 +19730,11 @@ paths:
               page: 1
               per_page: 100
             assertions:
-            - pointer: "/page"
+            - pointer: "/meta/page"
               equals: 1
-            - pointer: "/per_page"
+            - pointer: "/meta/per_page"
               equals: 100
-            - pointer: "/has_more"
+            - pointer: "/meta/has_more"
               equals: true
           provider_pagination_1:
             status: 200
@@ -19660,11 +19758,11 @@ paths:
               page: 2
               per_page: 2
             assertions:
-            - pointer: "/page"
+            - pointer: "/meta/page"
               equals: 2
-            - pointer: "/per_page"
+            - pointer: "/meta/per_page"
               equals: 2
-            - pointer: "/has_more"
+            - pointer: "/meta/has_more"
               equals: true
           provider_short_page:
             status: 200
@@ -19689,11 +19787,11 @@ paths:
               per_page: 2
             provider_count: 1
             assertions:
-            - pointer: "/page"
+            - pointer: "/meta/page"
               equals: 2
-            - pointer: "/per_page"
+            - pointer: "/meta/per_page"
               equals: 2
-            - pointer: "/has_more"
+            - pointer: "/meta/has_more"
               equals: false
           provider_empty_page:
             status: 200
@@ -19718,11 +19816,11 @@ paths:
               per_page: 2
             provider_count: 0
             assertions:
-            - pointer: "/page"
+            - pointer: "/meta/page"
               equals: 2
-            - pointer: "/per_page"
+            - pointer: "/meta/per_page"
               equals: 2
-            - pointer: "/has_more"
+            - pointer: "/meta/has_more"
               equals: false
           provider_pagination_2:
             status: 200
@@ -19748,11 +19846,11 @@ paths:
             invalid_request: Provider pagination accepts numeric strings and coerces
               nonnumeric strings to zero
             assertions:
-            - pointer: "/page"
+            - pointer: "/meta/page"
               equals: 0
-            - pointer: "/per_page"
+            - pointer: "/meta/per_page"
               equals: 1
-            - pointer: "/has_more"
+            - pointer: "/meta/has_more"
               equals: true
           provider_pagination_3:
             status: 200
@@ -19778,11 +19876,11 @@ paths:
             invalid_request: Provider pagination accepts numeric strings and coerces
               nonnumeric strings to zero
             assertions:
-            - pointer: "/page"
+            - pointer: "/meta/page"
               equals: 3
-            - pointer: "/per_page"
+            - pointer: "/meta/per_page"
               equals: 100
-            - pointer: "/has_more"
+            - pointer: "/meta/has_more"
               equals: true
           provider_pagination_4:
             status: 200
@@ -19808,11 +19906,11 @@ paths:
             invalid_request: Provider pagination accepts numeric strings and coerces
               nonnumeric strings to zero
             assertions:
-            - pointer: "/page"
+            - pointer: "/meta/page"
               equals: 0
-            - pointer: "/per_page"
+            - pointer: "/meta/per_page"
               equals: 1
-            - pointer: "/has_more"
+            - pointer: "/meta/has_more"
               equals: true
         input_constraints:
         - field: page
@@ -20694,7 +20792,9 @@ paths:
   "/api/billing/topups":
     post:
       operationId: post-api-billing-topups
-      summary: Creates a Stripe Checkout Session for a top-up package.
+      summary: Records a pending top-up purchase and queues the creation of its Stripe
+        Checkout Session. Poll GET /api/billing/pending_purchases/{id} until checkout_url
+        is present (or status is failed).
       requestBody:
         required: true
         content:
@@ -20714,30 +20814,13 @@ paths:
                 and discarded. Listed properties define the consumed input vocabulary,
                 enforced independently by source and runtime observation.
       responses:
-        '201':
-          description: Checkout session created.
+        '202':
+          description: Pending purchase recorded; the checkout session is created
+            in the background.
           content:
             application/vnd.api+json:
               schema:
-                type: object
-                required:
-                - data
-                properties:
-                  data:
-                    type: object
-                    required:
-                    - type
-                    - id
-                    - attributes
-                    properties:
-                      type:
-                        type: string
-                      id:
-                        type: string
-                      attributes:
-                        "$ref": "#/components/schemas/TopupCheckoutAttributes"
-                    additionalProperties: false
-                additionalProperties: false
+                "$ref": "#/components/schemas/PendingPurchaseDocument"
         '422':
           description: Invalid package_id supplied.
           content:
@@ -20746,23 +20829,10 @@ paths:
                 "$ref": "#/components/schemas/JsonApiErrors"
         '401':
           description: Missing or invalid bearer token; the response body is empty.
-        '503':
-          description: Checkout service unavailable.
-          content:
-            application/vnd.api+json:
-              schema:
-                "$ref": "#/components/schemas/JsonApiErrors"
       x-loopcontrol-contract:
         scenarios:
-          error_503:
-            status: 503
-            setup:
-            - checkout_unavailable
-            media_type: application/vnd.api+json
-            body:
-              package_id: 10h
           success:
-            status: 201
+            status: 202
             setup:
             - authenticated
             media_type: application/vnd.api+json
@@ -20791,7 +20861,7 @@ paths:
             body:
               package_id: 10h
           unknown_input:
-            status: 201
+            status: 202
             setup:
             - authenticated
             media_type: application/vnd.api+json
@@ -20799,7 +20869,7 @@ paths:
               package_id: 10h
               contract_ignored_input: discarded
           authentication_apiKeyAuth:
-            status: 201
+            status: 202
             setup:
             - authenticated
             media_type: application/vnd.api+json
@@ -20807,12 +20877,92 @@ paths:
               package_id: 10h
             authentication: apiKeyAuth
           authentication_browserSession:
-            status: 201
+            status: 202
             setup:
             - authenticated
             media_type: application/vnd.api+json
             body:
               package_id: 10h
+            authentication: browserSession
+        input_constraints: []
+  "/api/billing/pending_purchases/{id}":
+    get:
+      operationId: get-api-billing-pending-purchase
+      summary: Returns one pending purchase of the account (a Stripe top-up checkout,
+        an L402 Lightning payment or an x402 USDC payment) so clients can poll the
+        background job that creates its checkout session or verifies and credits
+        its payment.
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Pending purchase ID
+      responses:
+        '200':
+          description: Pending purchase record
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/PendingPurchaseDocument"
+        '404':
+          description: Pending purchase not found
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+        '401':
+          description: Missing or invalid bearer token; the response body is empty.
+      x-loopcontrol-contract:
+        scenarios:
+          success:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: billing_pending_purchase
+                  identity: topup_pending
+          error_404:
+            status: 404
+            setup:
+            - documented_error
+            media_type: application/vnd.api+json
+            path:
+              id: '999999999'
+          unauthenticated:
+            status: 401
+            setup:
+            - unauthenticated
+            path:
+              id:
+                fixture:
+                  resource: billing_pending_purchase
+                  identity: topup_pending
+          authentication_apiKeyAuth:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: billing_pending_purchase
+                  identity: topup_pending
+            authentication: apiKeyAuth
+          authentication_browserSession:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: billing_pending_purchase
+                  identity: topup_pending
             authentication: browserSession
         input_constraints: []
   "/api/billing/usdc_payments":
@@ -20866,7 +21016,7 @@ paths:
                     - attributes
                     properties:
                       id:
-                        type: integer
+                        type: string
                       type:
                         type: string
                         enum:
@@ -20878,9 +21028,12 @@ paths:
                             type: string
                             enum:
                             - accepted
+                          minutes_credited:
+                            type: integer
                         additionalProperties: false
                         required:
                         - status
+                        - minutes_credited
                     additionalProperties: false
                 additionalProperties: false
         '401':
@@ -21055,9 +21208,11 @@ paths:
   "/api/billing/x402_payments":
     post:
       operationId: post-api-billing-x402-payments
-      summary: Verifies an x402 on-chain USDC payment on Arbitrum via the self-hosted
-        facilitator, credits compute minutes, and enqueues USDC→BTC conversion. Clients
-        must include the signed payment payload in the X-PAYMENT header.
+      summary: Records a pending x402 on-chain USDC payment on Arbitrum. A background
+        job verifies it with the self-hosted facilitator, credits compute minutes
+        exactly once (keyed on the settlement transaction), and enqueues USDC→BTC
+        conversion. Clients must include the signed payment payload in the X-PAYMENT
+        header and poll GET /api/billing/pending_purchases/{id} for the outcome.
       parameters:
       - in: query
         name: package_id
@@ -21077,45 +21232,15 @@ paths:
                 and discarded. Listed properties define the consumed input vocabulary,
                 enforced independently by source and runtime observation.
       responses:
-        '201':
-          description: Payment verified and minutes credited.
+        '202':
+          description: Payment recorded as a pending purchase; verification and
+            crediting run in the background.
           content:
             application/vnd.api+json:
               schema:
-                type: object
-                required:
-                - data
-                properties:
-                  data:
-                    type: object
-                    required:
-                    - id
-                    - type
-                    - attributes
-                    properties:
-                      id:
-                        type: string
-                      type:
-                        type: string
-                        enum:
-                        - settlements
-                      attributes:
-                        type: object
-                        properties:
-                          status:
-                            type: string
-                            enum:
-                            - accepted
-                          minutes_credited:
-                            type: integer
-                        additionalProperties: false
-                        required:
-                        - status
-                        - minutes_credited
-                    additionalProperties: false
-                additionalProperties: false
+                "$ref": "#/components/schemas/PendingPurchaseDocument"
         '402':
-          description: X-PAYMENT header missing or payment invalid.
+          description: X-PAYMENT header missing.
           content:
             application/vnd.api+json:
               schema:
@@ -21128,22 +21253,16 @@ paths:
                 "$ref": "#/components/schemas/JsonApiErrors"
         '401':
           description: Missing or invalid bearer token; the response body is empty.
-        '503':
-          description: Facilitator service unavailable.
-          content:
-            application/vnd.api+json:
-              schema:
-                "$ref": "#/components/schemas/JsonApiErrors"
-        '500':
-          description: Facilitator configuration missing.
+        '424':
+          description: The payment facilitator is not configured.
           content:
             application/vnd.api+json:
               schema:
                 "$ref": "#/components/schemas/JsonApiErrors"
       x-loopcontrol-contract:
         scenarios:
-          error_500:
-            status: 500
+          provider_not_configured:
+            status: 424
             setup:
             - payment_not_configured
             media_type: application/vnd.api+json
@@ -21151,7 +21270,7 @@ paths:
             query:
               package_id: 10h
           success:
-            status: 201
+            status: 202
             setup:
             - authenticated
             media_type: application/vnd.api+json
@@ -21175,13 +21294,6 @@ paths:
               name: ''
             query:
               package_id: invalid
-          error_503:
-            status: 503
-            setup:
-            - documented_error
-            body: {}
-            query:
-              package_id: 10h
           unauthenticated:
             status: 401
             setup:
@@ -21190,7 +21302,7 @@ paths:
             query:
               package_id: 10h
           unknown_input:
-            status: 201
+            status: 202
             setup:
             - authenticated
             media_type: application/vnd.api+json
@@ -21199,7 +21311,7 @@ paths:
             query:
               package_id: 10h
           authentication_apiKeyAuth:
-            status: 201
+            status: 202
             setup:
             - authenticated
             media_type: application/vnd.api+json
@@ -21208,7 +21320,7 @@ paths:
               package_id: 10h
             authentication: apiKeyAuth
           authentication_browserSession:
-            status: 201
+            status: 202
             setup:
             - authenticated
             media_type: application/vnd.api+json
@@ -21220,11 +21332,12 @@ paths:
   "/api/billing/l402_payments":
     post:
       operationId: post-api-billing-l402-payments
-      summary: Verifies an L402 Lightning payment (macaroon + preimage) via the managed
-        self-custodial Lightning backend, and credits compute minutes. Clients include
-        credentials in the Authorization header as "L402 <macaroon_base64>:<preimage_hex>".
-        Invoices expire; refresh the funding_envelope before retrying with a stale
-        invoice.
+      summary: Records a pending L402 Lightning payment (macaroon + preimage). A background
+        job verifies it with the managed self-custodial Lightning backend and credits
+        compute minutes exactly once (keyed on the payment hash). Clients include
+        credentials in the Authorization header as "L402 <macaroon_base64>:<preimage_hex>"
+        and poll GET /api/billing/pending_purchases/{id} for the outcome. Invoices
+        expire; refresh the funding_envelope before retrying with a stale invoice.
       parameters:
       - in: query
         name: package_id
@@ -21244,45 +21357,15 @@ paths:
                 and discarded. Listed properties define the consumed input vocabulary,
                 enforced independently by source and runtime observation.
       responses:
-        '201':
-          description: Payment verified and minutes credited.
+        '202':
+          description: Payment recorded as a pending purchase; verification and
+            crediting run in the background.
           content:
             application/vnd.api+json:
               schema:
-                type: object
-                required:
-                - data
-                properties:
-                  data:
-                    type: object
-                    required:
-                    - id
-                    - type
-                    - attributes
-                    properties:
-                      id:
-                        type: string
-                      type:
-                        type: string
-                        enum:
-                        - settlements
-                      attributes:
-                        type: object
-                        properties:
-                          status:
-                            type: string
-                            enum:
-                            - accepted
-                          minutes_credited:
-                            type: integer
-                        additionalProperties: false
-                        required:
-                        - status
-                        - minutes_credited
-                    additionalProperties: false
-                additionalProperties: false
+                "$ref": "#/components/schemas/PendingPurchaseDocument"
         '402':
-          description: Authorization header missing, malformed, or payment invalid.
+          description: Authorization header missing or malformed.
           content:
             application/vnd.api+json:
               schema:
@@ -21295,22 +21378,16 @@ paths:
                 "$ref": "#/components/schemas/JsonApiErrors"
         '401':
           description: Missing or invalid bearer token; the response body is empty.
-        '503':
-          description: Lightning backend unavailable.
-          content:
-            application/vnd.api+json:
-              schema:
-                "$ref": "#/components/schemas/JsonApiErrors"
-        '500':
-          description: Lightning backend configuration missing.
+        '424':
+          description: The Lightning backend is not configured.
           content:
             application/vnd.api+json:
               schema:
                 "$ref": "#/components/schemas/JsonApiErrors"
       x-loopcontrol-contract:
         scenarios:
-          error_500:
-            status: 500
+          provider_not_configured:
+            status: 424
             setup:
             - payment_not_configured
             media_type: application/vnd.api+json
@@ -21318,7 +21395,7 @@ paths:
             query:
               package_id: 10h
           success:
-            status: 201
+            status: 202
             setup:
             - authenticated
             media_type: application/vnd.api+json
@@ -21342,13 +21419,6 @@ paths:
               name: ''
             query:
               package_id: invalid
-          error_503:
-            status: 503
-            setup:
-            - documented_error
-            body: {}
-            query:
-              package_id: 10h
           unauthenticated:
             status: 401
             setup:
@@ -21357,7 +21427,7 @@ paths:
             query:
               package_id: 10h
           unknown_input:
-            status: 201
+            status: 202
             setup:
             - authenticated
             media_type: application/vnd.api+json
@@ -21366,7 +21436,7 @@ paths:
             query:
               package_id: 10h
           authentication_apiKeyAuth:
-            status: 201
+            status: 202
             setup:
             - authenticated
             media_type: application/vnd.api+json
@@ -21375,7 +21445,7 @@ paths:
               package_id: 10h
             authentication: apiKeyAuth
           authentication_browserSession:
-            status: 201
+            status: 202
             setup:
             - authenticated
             media_type: application/vnd.api+json
@@ -21389,7 +21459,9 @@ paths:
       operationId: get-api-billing-funding-envelope
       summary: Returns HTTP 402 with a machine-readable menu of fundable products
         and enabled payment rails. Callers use this to decide what to buy and how
-        to pay when the account has insufficient compute balance.
+        to pay when the account has insufficient compute balance. Lightning rails
+        carry only invoices already issued and stored for the account; reading the
+        envelope queues issuance for packs without a fresh invoice.
       responses:
         '402':
           description: Payment required — returns fundable products and payment rails

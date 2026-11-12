@@ -821,6 +821,10 @@ func extractJSONAPIError(errs []jsonAPIErrEntry) error {
 }
 
 func extractJSONAPIOrFlatError(body []byte, status int) string {
+	return extractAPIError(body, status)
+}
+
+func extractAPIError(body []byte, status int) string {
 	if len(body) > 0 {
 		var errDoc struct {
 			Errors []jsonAPIErrEntry `json:"errors"`
@@ -839,10 +843,6 @@ func extractJSONAPIOrFlatError(body []byte, status int) string {
 			}
 		}
 	}
-	return extractAPIError(body, status)
-}
-
-func extractAPIError(body []byte, status int) string {
 	if len(body) > 0 {
 		var errBody struct {
 			Errors  []string `json:"errors"`

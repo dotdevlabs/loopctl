@@ -2,17 +2,73 @@ package tasks
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
 
+	"github.com/dotdevlabs/ctlkit/pkg/clierror"
 	"github.com/dotdevlabs/loopctl/internal/apiclient"
 	"github.com/dotdevlabs/loopctl/internal/schema"
 )
+
+func TestConformance_RecordingsContent_ErrorDetails(t *testing.T) {
+	details, err := schema.SpecEnum("#/components/schemas/RecordingContentError/properties/errors/items/properties/detail")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, detail := range details {
+		for _, file := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%d/file=%t", i, file), func(t *testing.T) {
+				status := http.StatusNotFound
+				if i == 2 {
+					status = http.StatusGone
+				}
+				if i == 3 {
+					status = http.StatusUnprocessableEntity
+				}
+				ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.Header().Set("Content-Type", "application/vnd.api+json")
+					w.WriteHeader(status)
+					_ = json.NewEncoder(w).Encode(map[string]any{"errors": []map[string]string{{"status": fmt.Sprint(status), "title": http.StatusText(status), "detail": detail}}})
+				}))
+				defer ts.Close()
+				var out bytes.Buffer
+				cmd := recordingsContentCmd()
+				cmd.SetContext(makeCtx(t, ts.URL, "tok", false, &out))
+				cmd.SetOut(&out)
+				dir := t.TempDir()
+				if file {
+					if err := cmd.Flags().Set("output", filepath.Join(dir, "recording")); err != nil {
+						t.Fatal(err)
+					}
+				}
+				err := cmd.RunE(cmd, []string{"t1", "r1"})
+				wantCode := clierror.CodeNotFound
+				if status == http.StatusUnprocessableEntity {
+					wantCode = clierror.CodeBadRequest
+				}
+				cliErr, ok := err.(*clierror.CLIError)
+				if !ok || cliErr.Message != detail || cliErr.Code != wantCode {
+					t.Fatalf("want detail %q, got %v", detail, err)
+				}
+				if out.Len() != 0 {
+					t.Fatalf("unexpected stdout: %s", out.String())
+				}
+				entries, err := os.ReadDir(dir)
+				if err != nil || len(entries) != 0 {
+					t.Fatalf("failed download left files: %v, %v", entries, err)
+				}
+			})
+		}
+	}
+}
 
 func TestConformance_RecordingsList(t *testing.T) {
 	endpoints := loadSchemaOrSkip(t)

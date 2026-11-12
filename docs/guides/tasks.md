@@ -1,5 +1,28 @@
 # Working with tasks
 
+## API error messages
+
+When an API failure returns JSON:API error objects, loopctl displays each
+object's `detail`, falling back to its `title` when no detail is supplied.
+Multiple messages appear in server order, separated by `; `.
+
+## Download recording content
+
+```bash
+loopctl tasks recordings content <task-id> <recording-id>
+loopctl tasks recordings content <task-id> <recording-id> --output recording.txt
+```
+
+Content is written as raw bytes to stdout, or to the file named by `--output`.
+An existing output file is refused. If the download fails, the command exits
+non-zero and removes its temporary output file.
+
+Recording failures display the server's error detail. A 404 can report either
+`Recording content not found` or
+`Recording content has changed in storage since it was uploaded`. A 410 reports
+`Recording file has been deleted`; a 422 reports
+`Recording type does not support content`.
+
 ## Watch a task
 
 ```bash
