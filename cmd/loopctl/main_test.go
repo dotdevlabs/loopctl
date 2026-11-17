@@ -197,6 +197,35 @@ func TestAIWebhookFlags(t *testing.T) {
 	}
 }
 
+func TestAIApprovalButtonText(t *testing.T) {
+	flags := aiFlags(t)
+	for _, path := range []string{"pipelines stages add", "pipelines stages update"} {
+		flag, ok := flags[path]["approval-button-text"]
+		encoded, err := json.Marshal(flag)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !ok || !strings.Contains(string(encoded), "--approval-button-text=") {
+			t.Errorf("%s lacks the approval button text flag or its clear syntax", path)
+		}
+	}
+	for _, path := range []string{"pipelines create", "pipelines update"} {
+		var stageSchema struct {
+			Items struct {
+				Properties map[string]struct {
+					Type string
+				}
+			}
+		}
+		if err := json.Unmarshal(flags[path]["stages"].Schema, &stageSchema); err != nil {
+			t.Fatal(err)
+		}
+		if stageSchema.Items.Properties["approval_button_text"].Type != "string" {
+			t.Errorf("%s --stages schema lacks the string approval_button_text property", path)
+		}
+	}
+}
+
 func TestAIJSONFlagEnums(t *testing.T) {
 	flags := aiFlags(t)
 	todoStatus := []string{"pending", "in_progress", "completed"}

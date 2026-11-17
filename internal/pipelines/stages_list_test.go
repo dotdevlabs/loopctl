@@ -108,7 +108,7 @@ func TestConformance_StagesList(t *testing.T) {
 				if len(lines) != 14 {
 					t.Fatalf("unexpected rows: %s", out.String())
 				}
-				for _, header := range []string{"ID", "POSITION", "NAME", "ROLE", "STAGE_TYPE", "GATE", "AGENT"} {
+				for _, header := range []string{"ID", "POSITION", "NAME", "ROLE", "STAGE_TYPE", "GATE", "AGENT", "APPROVAL_BUTTON_TEXT"} {
 					if !strings.Contains(lines[0], header) {
 						t.Errorf("missing %s", header)
 					}
@@ -123,12 +123,37 @@ func TestConformance_StagesList(t *testing.T) {
 					if i > 0 {
 						expected = append(expected, fmt.Sprintf("agent-%d", i))
 					}
+					if i == 10 {
+						expected = append(expected, "Approve", "release")
+					}
 					if !reflect.DeepEqual(fields, expected) {
 						t.Errorf("row %d: %v want %v", i, fields, expected)
 					}
 				}
 			}
 		})
+	}
+}
+
+func TestStagesListLegacyApprovalButtonText(t *testing.T) {
+	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = fmt.Fprint(w, `{"data":{"relationships":{"stages":{"data":[{"id":"s","type":"pipeline_stages"}]}}},"included":[{"id":"s","type":"pipeline_stages","attributes":{}}]}`)
+	}))
+	defer ts.Close()
+	var out bytes.Buffer
+	cmd := stagesListCmd()
+	cmd.SetContext(makeCtx(t, ts.URL, "tok", true, &out))
+	if err := cmd.RunE(cmd, []string{"9"}); err != nil {
+		t.Fatal(err)
+	}
+	var got []struct {
+		Attributes map[string]json.RawMessage
+	}
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 1 || string(got[0].Attributes["approval_button_text"]) != "null" {
+		t.Errorf("expected a null approval_button_text for a legacy stage: %s", out.String())
 	}
 }
 

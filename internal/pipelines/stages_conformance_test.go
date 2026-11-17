@@ -101,6 +101,7 @@ func TestConformance_StagesUpdate(t *testing.T) {
 	cmd.SetContext(ctx)
 	cmd.SetOut(io.Discard)
 	_ = cmd.Flags().Set("role", "reviewing")
+	_ = cmd.Flags().Set("approval-button-text", "Approve review")
 	_ = cmd.RunE(cmd, []string{"p1", "s1"})
 
 	if len(violations) != 0 {

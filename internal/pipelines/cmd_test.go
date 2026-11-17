@@ -28,7 +28,7 @@ func TestCurrentStageInputs(t *testing.T) {
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/vnd.api+json")
 				if r.Method == http.MethodGet {
-					_, _ = fmt.Fprint(w, `{"data":{"type":"pipelines","id":"p1","attributes":{"name":"Pipeline","kind":"feature","stages":[{"stage_type":"existing"}]}}}`)
+					_, _ = fmt.Fprint(w, `{"data":{"type":"pipelines","id":"p1","attributes":{"name":"Pipeline","kind":"feature","stages":[{"stage_type":"existing","approval_button_text":"Keep label"}]}}}`)
 					return
 				}
 				captured, _ = io.ReadAll(r.Body)
@@ -95,7 +95,7 @@ func TestCurrentStageInputs(t *testing.T) {
 				if err := json.Unmarshal(body["pipeline"], &pipeline); err != nil {
 					t.Fatal(err)
 				}
-				if operation == "add" && (len(pipeline.Stages) != 2 || pipeline.Stages[0]["stage_type"] != "existing") {
+				if operation == "add" && (len(pipeline.Stages) != 2 || pipeline.Stages[0]["stage_type"] != "existing" || pipeline.Stages[0]["approval_button_text"] != "Keep label") {
 					t.Fatalf("existing stage lost: %s", captured)
 				}
 				stage = pipeline.Stages[len(pipeline.Stages)-1]
@@ -104,6 +104,85 @@ func TestCurrentStageInputs(t *testing.T) {
 				t.Fatalf("unexpected stage: %s", captured)
 			}
 		})
+	}
+}
+
+func TestApprovalButtonTextRequests(t *testing.T) {
+	cases := []struct {
+		name    string
+		command func() *cobra.Command
+		args    []string
+		request string
+		prefix  string
+		suffix  string
+	}{
+		{"create", createCmd, nil, "POST /api/pipelines", `{"pipeline":{"kind":"","name":"Delivery","stages":[{`, `}]}}`},
+		{"update", updateCmd, []string{"p1"}, "PATCH /api/pipelines/p1", `{"pipeline":{"stages":[{`, `}]}}`},
+		{"add", stagesAddCmd, []string{"p1"}, "PATCH /api/pipelines/p1", `{"pipeline":{"stages":[{`, `}]}}`},
+		{"stage-update", stagesUpdateCmd, []string{"p1", "s1"}, "PATCH /api/pipelines/p1/stages/s1", `{"pipeline_stage":{`, `}}`},
+	}
+	for _, tc := range cases {
+		for _, label := range []string{" Approve release ", ""} {
+			for _, dryRun := range []bool{false, true} {
+				t.Run(fmt.Sprintf("%s/%q/dry-run=%t", tc.name, label, dryRun), func(t *testing.T) {
+					property := fmt.Sprintf(`"approval_button_text":%q`, label)
+					want := tc.prefix + property + tc.suffix
+					var captured string
+					ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+						if dryRun {
+							t.Error("preview made an HTTP request")
+						}
+						w.Header().Set("Content-Type", "application/vnd.api+json")
+						if tc.name == "add" && r.Method == http.MethodGet {
+							_, _ = fmt.Fprint(w, `{"data":{"type":"pipelines","id":"p1","attributes":{"stages":[]}}}`)
+							return
+						}
+						if got := r.Method + " " + r.URL.Path; got != tc.request {
+							t.Errorf("request = %q, want %q", got, tc.request)
+						}
+						body, err := io.ReadAll(r.Body)
+						if err != nil {
+							t.Error(err)
+						}
+						captured = string(bytes.TrimSpace(body))
+						if tc.name == "stage-update" {
+							_, _ = fmt.Fprint(w, `{"data":{"type":"pipeline_stages","id":"s1","attributes":{}}}`)
+							return
+						}
+						_, _ = fmt.Fprint(w, `{"data":{"type":"pipelines","id":"p1","attributes":{}}}`)
+					}))
+					defer ts.Close()
+					cmd := tc.command()
+					if tc.name == "create" {
+						_ = cmd.Flags().Set("name", "Delivery")
+					}
+					switch tc.name {
+					case "create", "update":
+						_ = cmd.Flags().Set("stages", "[{"+property+"}]")
+					default:
+						_ = cmd.Flags().Set("approval-button-text", label)
+					}
+					var out bytes.Buffer
+					ctx := makeCtx(t, ts.URL, "tok", false, &out)
+					cmd.SetContext(ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{DryRun: dryRun}))
+					cmd.SetOut(&out)
+					if err := cmd.RunE(cmd, tc.args); err != nil {
+						t.Fatal(err)
+					}
+					if dryRun {
+						request := tc.request
+						if tc.name == "add" {
+							request += " (stage append fragment)"
+						}
+						if got := strings.TrimSpace(out.String()); got != "dry-run: would "+request+" "+want {
+							t.Errorf("unexpected preview: %s", got)
+						}
+					} else if captured != want {
+						t.Errorf("request body = %s, want %s", captured, want)
+					}
+				})
+			}
+		}
 	}
 }
 

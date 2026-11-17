@@ -35,6 +35,12 @@ The legacy fields `name`, `role`, and `instructions` are deprecated in favor of
 `--role` flag warns: `Deprecated: use stage_type: 'custom'.` Use
 `--custom-stage-name` and `--prompt-sections` for new stage definitions.
 
+Set the human approval button label with `--approval-button-text "Approve release"`
+on `stages add` or `stages update`. Pass `--approval-button-text=` to restore the
+stage default. In a `--stages` JSON object, use `"approval_button_text":"Approve release"`
+to set the label or `"approval_button_text":""` to clear it. Use `--dry-run` to see
+the request JSON. For `stages add`, the preview shows the stage append fragment.
+
 ## Inspect stages
 
 List a pipeline's workflow stages:
@@ -46,8 +52,9 @@ loopctl pipelines stages list <pipeline-id>
 Stages appear once each, in ascending numeric `position` order. Stages with the
 same position retain their order from the pipeline's stages relationship.
 
-The table columns are `ID`, `POSITION`, `NAME`, `ROLE`, `STAGE_TYPE`, `GATE`, and
-`AGENT`. `AGENT` contains the stage's `agent_id`. Nullable names and agent IDs
+The table columns are `ID`, `POSITION`, `NAME`, `ROLE`, `STAGE_TYPE`, `GATE`,
+`AGENT`, and `APPROVAL_BUTTON_TEXT`. `AGENT` contains the stage's `agent_id`.
+Nullable names, agent IDs, and approval button labels
 appear as blank cells. Use the stage's `ID` when updating it:
 
 ```bash
@@ -68,7 +75,7 @@ string `id`, `type` set to `pipeline_stages`, and an `attributes` object with th
 published stage attributes:
 
 - `stage_type`, `custom_stage_name`, `name`, `role`, `instructions`, `position`
-- `gate`, `on_failure`, `max_rework_count`, `rework_to_position`
+- `gate`, `approval_button_text`, `on_failure`, `max_rework_count`, `rework_to_position`
 - `agent_id`, `environment_id`, `runs_in_container_override`
 - `advance_requirements`, `advance_notice`
 - `prompt_sections`, `prompt_configuration`, `stage_triggers`

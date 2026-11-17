@@ -108,7 +108,7 @@ func TestConformance_PipelinesCreate_WithStages(t *testing.T) {
 	cmd.SetContext(ctx)
 	cmd.SetOut(io.Discard)
 	_ = cmd.Flags().Set("name", "my-pipeline")
-	_ = cmd.Flags().Set("stages", `[{"name":"plan","role":"planning","instructions":"Plan the work."}]`)
+	_ = cmd.Flags().Set("stages", `[{"name":"plan","role":"planning","instructions":"Plan the work.","approval_button_text":"Approve plan"}]`)
 	_ = cmd.RunE(cmd, nil)
 
 	if len(violations) != 0 {
@@ -157,7 +157,7 @@ func TestConformance_PipelinesUpdate_WithStages(t *testing.T) {
 	cmd := updateCmd()
 	cmd.SetContext(ctx)
 	cmd.SetOut(io.Discard)
-	_ = cmd.Flags().Set("stages", `[{"name":"plan","role":"planning","instructions":"Plan."},{"name":"implement","role":"implementing","instructions":"Implement."}]`)
+	_ = cmd.Flags().Set("stages", `[{"name":"plan","role":"planning","instructions":"Plan.","approval_button_text":""},{"name":"implement","role":"implementing","instructions":"Implement."}]`)
 	_ = cmd.RunE(cmd, []string{"p1"})
 
 	if len(violations) != 0 {
