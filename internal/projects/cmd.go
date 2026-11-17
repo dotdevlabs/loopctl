@@ -3,6 +3,7 @@ package projects
 
 import (
 	"fmt"
+	"io"
 	"net/url"
 	"strings"
 
@@ -17,12 +18,14 @@ import (
 
 // ProjectAttrs holds the attributes nested under JSON:API data.attributes.
 type ProjectAttrs struct {
-	Name        string `json:"name"`
-	DisplayName string `json:"display_name"`
-	PlatformID  string `json:"platform_id"`
-	GitRepoURL  string `json:"git_repo_url"`
-	GitBranch   string `json:"git_branch"`
-	CreatedAt   string `json:"created_at"`
+	WebhookURL              *string `json:"webhook_url"`
+	WebhookSecretConfigured bool    `json:"webhook_secret_configured"`
+	Name                    string  `json:"name"`
+	DisplayName             string  `json:"display_name"`
+	PlatformID              string  `json:"platform_id"`
+	GitRepoURL              string  `json:"git_repo_url"`
+	GitBranch               string  `json:"git_branch"`
+	CreatedAt               string  `json:"created_at"`
 }
 
 // NewCmd returns the "projects" parent command with all verb subcommands.
@@ -88,8 +91,14 @@ func getCmd() *cobra.Command {
 				{Header: "NAME"},
 				{Header: "PLATFORM"},
 				{Header: "REPO"},
+				{Header: "WEBHOOK_URL"},
+				{Header: "WEBHOOK_SECRET_CONFIGURED"},
 			}
-			rows := [][]string{{res.ID, res.Attributes.Name, res.Attributes.PlatformID, res.Attributes.GitRepoURL}}
+			webhookURL := ""
+			if res.Attributes.WebhookURL != nil {
+				webhookURL = *res.Attributes.WebhookURL
+			}
+			rows := [][]string{{res.ID, res.Attributes.Name, res.Attributes.PlatformID, res.Attributes.GitRepoURL, webhookURL, fmt.Sprint(res.Attributes.WebhookSecretConfigured)}}
 			return r.Render(cols, rows, res)
 		},
 	}
@@ -296,6 +305,8 @@ func createCmd() *cobra.Command {
 }
 
 func updateCmd() *cobra.Command {
+	var webhookURL, webhookSecret string
+	var secretStdin, disableWebhook bool
 	var (
 		displayName     string
 		gitBranch       string
@@ -313,8 +324,35 @@ func updateCmd() *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
+			directSecret := cmd.Flags().Changed("webhook-signing-secret")
+			if directSecret && secretStdin {
+				return clierror.New(clierror.CodeUsage, "cannot combine --webhook-signing-secret and --webhook-signing-secret-stdin", "")
+			}
+			if disableWebhook && (cmd.Flags().Changed("webhook-url") || directSecret || secretStdin) {
+				return clierror.New(clierror.CodeUsage, "cannot combine --disable-webhook with webhook configuration flags", "")
+			}
+			if secretStdin {
+				input, err := io.ReadAll(cmd.InOrStdin())
+				if err != nil {
+					return clierror.New(clierror.CodeUsage, "could not read webhook signing secret from standard input", "")
+				}
+				webhookSecret = string(input)
+				if strings.HasSuffix(webhookSecret, "\n") {
+					webhookSecret = strings.TrimSuffix(strings.TrimSuffix(webhookSecret, "\n"), "\r")
+				}
+			}
+			ctx = apiclient.WithSensitiveValue(ctx, webhookSecret)
 
 			patch := map[string]any{}
+			if cmd.Flags().Changed("webhook-url") {
+				patch["webhook_url"] = webhookURL
+			}
+			if directSecret || secretStdin {
+				patch["webhook_signing_secret"] = webhookSecret
+			}
+			if disableWebhook {
+				patch["disable_webhook"] = true
+			}
 			if cmd.Flags().Changed("display-name") {
 				patch["display_name"] = displayName
 			}
@@ -346,7 +384,14 @@ func updateCmd() *cobra.Command {
 			}
 
 			if ctxutil.GlobalFlagsFrom(ctx).DryRun {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would PATCH /api/projects/%s %v\n", args[0], patch)
+				preview := make(map[string]any, len(patch))
+				for field, value := range patch {
+					if field == "webhook_signing_secret" {
+						value = "[REDACTED]"
+					}
+					preview[field] = value
+				}
+				_, _ = fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would PATCH /api/projects/%s %v\n", args[0], preview)
 				return nil
 			}
 
@@ -373,6 +418,10 @@ func updateCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&displayName, "display-name", "", "Human display name for the project")
+	cmd.Flags().StringVar(&webhookURL, "webhook-url", "", "Stage-change webhook destination URL")
+	cmd.Flags().StringVar(&webhookSecret, "webhook-signing-secret", "", "Webhook signing secret (never printed; prefer --webhook-signing-secret-stdin)")
+	cmd.Flags().BoolVar(&secretStdin, "webhook-signing-secret-stdin", false, "Read webhook signing secret from standard input; remove one trailing LF or CRLF, preserving other whitespace")
+	cmd.Flags().BoolVar(&disableWebhook, "disable-webhook", false, "Disable the stage-change webhook")
 	cmd.Flags().StringVar(&gitBranch, "git-branch", "", "Default git branch")
 	cmd.Flags().IntVar(&environmentID, "environment-id", 0, "Environment ID")
 	cmd.Flags().StringVar(&containerImage, "container-image", "", "Container image")

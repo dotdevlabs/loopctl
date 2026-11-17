@@ -1,5 +1,12 @@
 # Working with tasks
 
+## Stage versions
+
+`loopctl tasks get <task-id>` and `loopctl tasks list` display `STAGE_VERSION`.
+With `--json`, task attributes include numeric `stage_version`, including zero.
+This is the same stage-change version carried by webhook messages, allowing
+consumers to compare a task read with a received event.
+
 ## API error messages
 
 When an API failure returns JSON:API error objects, loopctl displays each

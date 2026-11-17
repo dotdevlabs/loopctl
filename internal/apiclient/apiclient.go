@@ -127,6 +127,7 @@ func GetJSONAPISingleFull[T any](ctx context.Context, activeCtx *config.Context,
 		return SingleResult[T]{}, fmt.Errorf("reading response: %w", readErr)
 	}
 
+	respBody = sanitizeProjectResponse(ctx, req.URL.Path, respBody)
 	logVerbose(verboseFrom(ctx), http.MethodGet, fullURL, resp.StatusCode, respBody)
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
@@ -190,6 +191,7 @@ func fetchJSONAPICollectionPage[T any](ctx context.Context, token, fullURL strin
 		return httpclient.Collection[T]{}, fmt.Errorf("reading response: %w", readErr)
 	}
 
+	respBody = sanitizeProjectResponse(ctx, req.URL.Path, respBody)
 	logVerbose(verboseFrom(ctx), http.MethodGet, fullURL, resp.StatusCode, respBody)
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
@@ -659,6 +661,7 @@ func PatchJSONBodyJSONAPIResponse[T any](ctx context.Context, activeCtx *config.
 		return httpclient.Resource[T]{}, fmt.Errorf("reading response: %w", readErr)
 	}
 
+	respBody = sanitizeProjectResponse(ctx, path, respBody)
 	logVerbose(verboseFrom(ctx), http.MethodPatch, url, resp.StatusCode, respBody)
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {

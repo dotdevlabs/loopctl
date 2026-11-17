@@ -72,6 +72,10 @@ var Covered = map[OperationKey]OperationCoverage{
 // Excluded maps operations intentionally not covered by loopctl with the reason.
 // These are server-internal, UI-only, container-internal, or otherwise not agent-facing.
 var Excluded = map[OperationKey]string{
+	{Method: "POST", Path: "/api/agent_sessions/:agent_session_id/comment_deliveries"}:     "container-internal: agent session receives waiting steering comments",
+	{Method: "POST", Path: "/api/agent_sessions/:agent_session_id/codex_refresh"}:          "container-internal: agent session refreshes provider credentials",
+	{Method: "POST", Path: "/api/agent_sessions/:agent_session_id/authentication_failure"}: "container-internal: agent session reports authentication failure",
+
 	{Method: "GET", Path: "/api/billing/pending_purchases/:id"}:                        "billing checkout polling is not implemented in loopctl",
 	{Method: "GET", Path: "/api/github/repository_creations/:id"}:                      "GitHub repository creation polling is not implemented in loopctl",
 	{Method: "GET", Path: "/api/global_prompt"}:                                        "platform-admin global prompt configuration; not yet implemented in loopctl",

@@ -2,7 +2,7 @@
 openapi: 3.0.3
 info:
   title: LoopControl API
-  version: 1.4.0
+  version: 1.5.0
   description: API for managing containerized agent environments on a Kubernetes cluster.
 servers:
 - url: "/"
@@ -26,6 +26,34 @@ x-action-cable-machine-events:
       stream: task:<owned-task-id>:machine_events
   delivery: Live frames are best-effort; reconnect through the replay endpoints using
     the last exclusive cursor and deduplicate by id or cursor.
+x-task-stage-webhook:
+  configuration: >-
+    PATCH or PUT /api/projects/{id} with project.webhook_url and
+    project.webhook_signing_secret enables delivery. Both are required together
+    initially. The URL must be HTTP(S), without credentials or a fragment, and
+    resolve only to public addresses. Blank or omitted secrets retain the current
+    secret; a nonblank secret rotates it. project.disable_webhook=true clears both
+    settings and stops future events. Reads expose webhook_url and
+    webhook_secret_configured only, never the secret. Existing events retain their
+    destination and precomputed signature after configuration changes.
+  trigger: Each committed task stage change, excluding creation and same-stage no-ops.
+  method: POST
+  content_type: application/json
+  signature: >-
+    X-LoopControl-Signature is sha256= followed by the lowercase hexadecimal
+    HMAC-SHA256 of the exact raw HTTP body bytes using the configured secret.
+    Verify with a constant-time comparison before parsing. The signing secret is
+    stored only on the project, never in delivery records.
+  delivery: >-
+    Any 2xx acknowledges delivery. All other statuses and network failures retry
+    up to five total attempts, with back-off of 30 seconds, 2 minutes, 10 minutes
+    and 1 hour; dispatch may add up to a minute. Retries preserve exact body bytes,
+    event_id and signature. Lost responses can cause duplicate requests. Receivers
+    must deduplicate event_id and apply only a newer stage_version for each task.
+    GET /api/tasks/{id} returns the same stage and stage_version for poll recovery.
+    Retain previous verification secrets until pending events finish after rotation.
+  body:
+    $ref: '#/components/schemas/TaskStageWebhook'
 components:
   securitySchemes:
     bearerAuth:
@@ -49,6 +77,44 @@ components:
       description: Signed Rails session cookie; fallback when no active API token
         is found.
   schemas:
+    TaskStageWebhook:
+      type: object
+      additionalProperties: false
+      required: [event_id, event_type, task_id, project_id, previous_stage, new_stage, previous_stage_label, new_stage_label, previous_stage_id, new_stage_id, stage_version, changed_at]
+      properties:
+        event_id:
+          type: string
+          format: uuid
+          description: Unique logical event identity, stable across delivery attempts.
+        event_type:
+          type: string
+          enum: [task.stage_changed]
+        task_id:
+          type: string
+        project_id:
+          type: string
+        previous_stage:
+          type: string
+          description: Previous stage type name.
+        new_stage:
+          type: string
+          description: New stage type name, matching the task read stage.
+        previous_stage_label:
+          type: string
+        new_stage_label:
+          type: string
+        previous_stage_id:
+          type: string
+        new_stage_id:
+          type: string
+        stage_version:
+          type: integer
+          minimum: 0
+          description: Increasing sequence per task; initial task reads have version zero.
+        changed_at:
+          type: string
+          format: date-time
+          description: UTC time of the committed stage transition.
     MachineEvent:
       type: object
       required:
@@ -1877,6 +1943,11 @@ components:
     ProjectAttributes:
       type: object
       properties:
+        webhook_url:
+          type: string
+          nullable: true
+        webhook_secret_configured:
+          type: boolean
         failure_policy:
           type: string
           enum:
@@ -1928,6 +1999,8 @@ components:
       - active_tasks_count
       - tasks_completed_today
       - tasks_completed_last_7_days
+      - webhook_url
+      - webhook_secret_configured
       - created_at
       - updated_at
     ProjectCreateResponseAttributes:
@@ -2002,6 +2075,9 @@ components:
     TaskListAttributes:
       type: object
       properties:
+        stage_version:
+          type: integer
+          description: Monotonically increasing stage transition sequence, shared with task.stage_changed webhook events.
         awaiting_human_gate:
           type: boolean
           description: Whether the pipeline machine reports an unapproved human gate at the current stage.
@@ -2115,6 +2191,7 @@ components:
       - picked_up_at
       - project_id
       - stage
+      - stage_version
       - current_state
       - status
       - phase
@@ -2193,6 +2270,9 @@ components:
     TaskShowAttributes:
       type: object
       properties:
+        stage_version:
+          type: integer
+          description: Monotonically increasing stage transition sequence, shared with task.stage_changed webhook events.
         awaiting_human_gate:
           type: boolean
           description: Whether the pipeline machine reports an unapproved human gate at the current stage.
@@ -2293,6 +2373,7 @@ components:
       - title
       - kind
       - stage
+      - stage_version
       - phase
       - lifecycle_role
       - terminal
@@ -2325,6 +2406,8 @@ components:
     TaskCreateResponseAttributes:
       type: object
       properties:
+        stage_version:
+          type: integer
         awaiting_human_gate:
           type: boolean
           description: Whether the pipeline machine reports an unapproved human gate at the current stage.
@@ -2373,6 +2456,8 @@ components:
     TaskUpdateResponseAttributes:
       type: object
       properties:
+        stage_version:
+          type: integer
         awaiting_human_gate:
           type: boolean
           description: Whether the pipeline machine reports an unapproved human gate at the current stage.
@@ -2692,6 +2777,8 @@ components:
     CommentAttributes:
       type: object
       properties:
+        author_name:
+          type: string
         body:
           type: string
         comment_type:
@@ -2704,6 +2791,7 @@ components:
       - body
       - comment_type
       - created_at
+      - author_name
     TodoAttributes:
       type: object
       properties:
@@ -3344,6 +3432,11 @@ components:
           - malformed
           - provider_error
           - runtime_limit
+          - authentication_failed
+          - forbidden
+          - rate_limited
+          - upstream_error
+          - invalid_request
       additionalProperties: false
       required:
       - provider
@@ -3556,6 +3649,11 @@ components:
           - malformed
           - provider_error
           - runtime_limit
+          - authentication_failed
+          - forbidden
+          - rate_limited
+          - upstream_error
+          - invalid_request
       additionalProperties: false
       required:
       - id
@@ -3663,6 +3761,208 @@ components:
           schema:
             "$ref": "#/components/schemas/JsonApiErrors"
 paths:
+  "/api/agent_sessions/{agent_session_id}/comment_deliveries":
+    post:
+      operationId: post-api-agent-session-comment-deliveries
+      summary: Receive waiting steering comments in the current agent session
+      description: Agent token only. Consumes all waiting comments in chronological order under the current task and session lock. Receipt records establish API handoff, not model comprehension. If the response is lost after commit, retry returns no previously consumed comments; arbitrary network failure does not provide transport-level exactly-once delivery. Initial prompt comments are excluded.
+      parameters:
+      - name: agent_session_id
+        in: path
+        required: true
+        schema: {type: string}
+      responses:
+        '200':
+          description: Newly received comments, or an empty array
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data]
+                additionalProperties: false
+                properties:
+                  data:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, type, attributes]
+                      additionalProperties: false
+                      properties:
+                        id: {type: string}
+                        type: {type: string, enum: [comments]}
+                        attributes:
+                          type: object
+                          additionalProperties: false
+                          required: [body, comment_type, author_name, received_at]
+                          properties:
+                            body: {type: string}
+                            comment_type: {type: string}
+                            author_name: {type: string}
+                            received_at: {type: string, format: date-time}
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      x-loopcontrol-contract:
+        scenarios:
+          success:
+            status: 200
+            setup: [live_comment_session]
+            path: {agent_session_id: {fixture: {resource: agent_session}}}
+          unauthenticated:
+            status: 401
+            setup: [unauthenticated]
+            path: {agent_session_id: missing}
+          missing:
+            status: 404
+            setup: [authenticated]
+            path: {agent_session_id: missing}
+  "/api/agent_sessions/{agent_session_id}/codex_refresh":
+    post:
+      operationId: post-api-agent-session-codex-refresh
+      summary: Authorize a current Codex projection and request coordinated refresh
+      description: Agent token only. Validates account, session, current environment target and revision. Appends consumed revisions independently of immutable assignments. Refresh intent enqueues a durable central refresh operation. Acknowledgements contain no tokens or credential content. Failed revisions block through the canonical authentication failure path.
+      parameters:
+      - name: agent_session_id
+        in: path
+        required: true
+        schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [credential_set_id, revision]
+              properties:
+                credential_set_id: {type: integer}
+                revision: {type: string}
+                refresh: {type: boolean}
+      responses:
+        '202': {description: Authorized acknowledgement without a response body.}
+        '409': {description: Failed credential revision; task blocked without a response body.}
+        '412': {description: Stale projection; wait for a current Secret revision without consuming credentials.}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      x-loopcontrol-contract:
+        input_constraints:
+        - {field: '', operation: require, arguments: [':credential_set_id']}
+        - {field: '', operation: require, arguments: [':revision']}
+        scenarios:
+          success:
+            status: 202
+            setup: [codex_authentication]
+            path: {agent_session_id: {fixture: {resource: agent_session}}}
+            body:
+              credential_set_id: {fixture: {resource: credential_set}}
+              revision: {fixture: {resource: credential_revision}}
+              refresh: false
+          failed:
+            status: 409
+            setup: [codex_authentication, codex_authentication_failed]
+            path: {agent_session_id: {fixture: {resource: agent_session}}}
+            body:
+              credential_set_id: {fixture: {resource: credential_set}}
+              revision: {fixture: {resource: credential_revision}}
+              refresh: false
+          stale:
+            status: 412
+            setup: [codex_authentication]
+            path: {agent_session_id: {fixture: {resource: agent_session}}}
+            body:
+              credential_set_id: {fixture: {resource: credential_set}}
+              revision: stale
+          missing_input:
+            status: 400
+            setup: [codex_authentication]
+            path: {agent_session_id: {fixture: {resource: agent_session}}}
+            body:
+              credential_set_id: {fixture: {resource: credential_set}}
+              revision: {fixture: {resource: credential_revision}}
+            omit_body_field: credential_set_id
+            request_media_type: application/json
+          missing_revision:
+            status: 400
+            setup: [codex_authentication]
+            path: {agent_session_id: {fixture: {resource: agent_session}}}
+            body:
+              credential_set_id: {fixture: {resource: credential_set}}
+              revision: {fixture: {resource: credential_revision}}
+            omit_body_field: revision
+            request_media_type: application/json
+          unauthenticated:
+            status: 401
+            setup: [unauthenticated]
+            path: {agent_session_id: missing}
+            body: {}
+          missing:
+            status: 404
+            setup: [authenticated]
+            path: {agent_session_id: missing}
+            body: {}
+  "/api/agent_sessions/{agent_session_id}/authentication_failure":
+    post:
+      operationId: post-api-agent-session-authentication-failure
+      summary: Record a structured Codex authentication failure before or during launch
+      description: Agent token only. Authorizes the current Codex session and credential target. Records a failed server-derived or consumed revision and blocks once through credential_authentication_failed. Repeated reports acknowledge an already blocked task without repeating its transition. No credential content is accepted or returned.
+      parameters:
+      - name: agent_session_id
+        in: path
+        required: true
+        schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [credential_set_id]
+              properties:
+                credential_set_id: {type: integer}
+                revision: {type: string}
+      responses:
+        '202': {description: Durable failure acknowledged without a response body.}
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+      x-loopcontrol-contract:
+        input_constraints:
+        - {field: '', operation: require, arguments: [':credential_set_id']}
+        scenarios:
+          success:
+            status: 202
+            setup: [codex_authentication]
+            path: {agent_session_id: {fixture: {resource: agent_session}}}
+            body:
+              credential_set_id: {fixture: {resource: credential_set}}
+              revision: {fixture: {resource: credential_revision}}
+          missing_input:
+            status: 400
+            setup: [codex_authentication]
+            path: {agent_session_id: {fixture: {resource: agent_session}}}
+            body:
+              credential_set_id: {fixture: {resource: credential_set}}
+            omit_body_field: credential_set_id
+            request_media_type: application/json
+          unauthenticated:
+            status: 401
+            setup: [unauthenticated]
+            path: {agent_session_id: missing}
+            body: {}
+          missing:
+            status: 404
+            setup: [authenticated]
+            path: {agent_session_id: missing}
+            body: {}
   "/api/events":
     get:
       operationId: get-api-events
@@ -10766,6 +11066,16 @@ paths:
                 project:
                   type: object
                   properties:
+                    webhook_url:
+                      type: string
+                      nullable: true
+                    webhook_signing_secret:
+                      type: string
+                      writeOnly: true
+                      description: Blank retains the current secret; a nonblank value rotates it.
+                    disable_webhook:
+                      type: boolean
+                      description: Clears both settings. Previously committed events retain their snapshots.
                     display_name:
                       type: string
                     git_branch:
@@ -10869,6 +11179,72 @@ paths:
           "$ref": "#/components/responses/BadRequest"
       x-loopcontrol-contract:
         scenarios:
+          webhook_enable:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: project
+                  identity: rails_project
+            body:
+              project:
+                webhook_url: https://receiver.example/hook
+                webhook_signing_secret: contract-signing-secret
+            assertions:
+            - pointer: /data/attributes/webhook_url
+              equals: https://receiver.example/hook
+            - pointer: /data/attributes/webhook_secret_configured
+              equals: true
+          webhook_rotate:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: project
+                  identity: webhook_project
+            body:
+              project:
+                webhook_signing_secret: rotated-contract-secret
+            assertions:
+            - pointer: /data/attributes/webhook_secret_configured
+              equals: true
+          webhook_disable:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: project
+                  identity: webhook_project
+            body:
+              project:
+                disable_webhook: true
+            assertions:
+            - pointer: /data/attributes/webhook_url
+              equals:
+            - pointer: /data/attributes/webhook_secret_configured
+              equals: false
+          webhook_partial:
+            status: 422
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: project
+                  identity: rails_project
+            body:
+              project:
+                webhook_url: https://receiver.example/hook
           success:
             status: 200
             setup:
@@ -11033,7 +11409,7 @@ paths:
         - field: ''
           operation: expect
           arguments:
-          - 'project: [ :display_name, :git_branch, :environment_id, :container_image, :platform_id, :failure_policy, :fallback_agent_id, :default_agent_id, :pipeline_id, mcp_config: {} ]'
+          - 'project: [ :webhook_url, :webhook_signing_secret, :disable_webhook, :display_name, :git_branch, :environment_id, :container_image, :platform_id, :failure_policy, :fallback_agent_id, :default_agent_id, :pipeline_id, mcp_config: {} ]'
     put:
       operationId: put-api-project
       summary: Updates a project.
@@ -11053,6 +11429,14 @@ paths:
                 project:
                   type: object
                   properties:
+                    webhook_url:
+                      type: string
+                      nullable: true
+                    webhook_signing_secret:
+                      type: string
+                      writeOnly: true
+                    disable_webhook:
+                      type: boolean
                     display_name:
                       type: string
                     git_branch:
@@ -11320,7 +11704,7 @@ paths:
         - field: ''
           operation: expect
           arguments:
-          - 'project: [ :display_name, :git_branch, :environment_id, :container_image, :platform_id, :failure_policy, :fallback_agent_id, :default_agent_id, :pipeline_id, mcp_config: {} ]'
+          - 'project: [ :webhook_url, :webhook_signing_secret, :disable_webhook, :display_name, :git_branch, :environment_id, :container_image, :platform_id, :failure_policy, :fallback_agent_id, :default_agent_id, :pipeline_id, mcp_config: {} ]'
   "/api/containers/{id}":
     patch:
       operationId: patch-api-container
@@ -12338,6 +12722,21 @@ paths:
           description: Missing or invalid bearer token; the response body is empty.
       x-loopcontrol-contract:
         scenarios:
+          stage_version:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              id:
+                fixture:
+                  resource: task
+                  identity: webhook_task
+            assertions:
+            - pointer: /data/attributes/stage_version
+              equals: 7
+            - pointer: /data/attributes/stage
+              equals: pending
           human_gate_pending:
             status: 200
             setup:

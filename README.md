@@ -93,6 +93,9 @@ loopctl projects get <id>
 loopctl projects get <id> --json
 ```
 
+The output includes `webhook_url` (null when disabled) and
+`webhook_secret_configured`. The signing secret is never returned.
+
 **API:** `GET /api/projects/:id`
 
 #### projects create
@@ -168,10 +171,28 @@ loopctl projects update <id> --pipeline-id 9 --dry-run
 | `--pipeline-id` | int | Pipeline numeric ID |
 | `--failure-policy` | string | Failure policy for tasks |
 | `--fallback-agent-id` | int | Fallback agent numeric ID |
+| `--webhook-url` | string | Stage-change webhook destination URL |
+| `--webhook-signing-secret` | string | Signing secret; prefer stdin to keep the value out of shell history |
+| `--webhook-signing-secret-stdin` | bool | Read the signing secret from standard input |
+| `--disable-webhook` | bool | Disable the webhook |
 
 At least one flag must be provided. Output columns on success: `ID`, `NAME`, `PLATFORM`, `REPO`. Use `--json` for the full resource.
 
 **API:** `PATCH /api/projects/:id`
+
+Configure the initial URL and secret together, reading the secret from a file:
+
+```bash
+loopctl projects update <id> --webhook-url https://receiver.example/hook \
+  --webhook-signing-secret-stdin < /path/to/signing-secret
+loopctl projects update <id> --disable-webhook
+```
+
+Standard input removes one trailing LF or CRLF and preserves other whitespace.
+Once configured, the URL can change independently; a nonblank secret rotates
+the signing key, while a blank secret preserves it. The two secret flags are
+mutually exclusive. Disabling cannot be combined with webhook configuration.
+`--dry-run` previews the URL, disable flag, and a redacted secret marker.
 
 ---
 

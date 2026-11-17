@@ -28,6 +28,7 @@ type ComputeCost struct {
 
 // TaskAttrs holds the attributes nested under JSON:API data.attributes.
 type TaskAttrs struct {
+	StageVersion                int          `json:"stage_version"`
 	Terminal                    bool         `json:"terminal"`
 	AwaitingHumanGate           bool         `json:"awaiting_human_gate"`
 	AwaitingHumanGateStage      *string      `json:"awaiting_human_gate_stage"`
@@ -106,8 +107,8 @@ func listCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "list",
-		Short: "List tasks for a project",
-		Long:  "List tasks for a project. Output includes billable_compute_minutes (integer, cumulative billable compute minutes), billable_compute_minutes_final (boolean, true when the task is terminal and billing is closed), and compute_cost (object with amount_cents, currency, and final fields).",
+		Short: "List tasks for a project, including stage_version",
+		Long:  "List tasks for a project. Output includes stage_version (integer, the task stage-change version carried by webhook messages), billable_compute_minutes (integer, cumulative billable compute minutes), billable_compute_minutes_final (boolean, true when the task is terminal and billing is closed), and compute_cost (object with amount_cents, currency, and final fields).",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 			activeCtx := ctxutil.ActiveContextFrom(ctx)
@@ -127,6 +128,7 @@ func listCmd() *cobra.Command {
 				{Header: "KIND"},
 				{Header: "TITLE"},
 				{Header: "STAGE"},
+				{Header: "STAGE_VERSION"},
 				{Header: "STATUS"},
 				{Header: "BLOCKED_REASON"},
 				{Header: "BILLABLE_MINS"},
@@ -141,6 +143,7 @@ func listCmd() *cobra.Command {
 					t.Attributes.Kind,
 					t.Attributes.Title,
 					t.Attributes.Stage,
+					fmt.Sprint(t.Attributes.StageVersion),
 					t.Attributes.Status,
 					t.Attributes.BlockedReason,
 					fmt.Sprintf("%d", t.Attributes.BillableComputeMinutes),
@@ -160,8 +163,8 @@ func listCmd() *cobra.Command {
 func getCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "get <id>",
-		Short: "Get a task by ID",
-		Long:  "Get a task by ID. Output includes billable_compute_minutes (integer, cumulative billable compute minutes), billable_compute_minutes_final (boolean, true when the task is terminal and billing is closed), and compute_cost (object with amount_cents, currency, and final fields).",
+		Short: "Get a task by ID, including stage_version",
+		Long:  "Get a task by ID. Output includes stage_version (integer, the task stage-change version carried by webhook messages), billable_compute_minutes (integer, cumulative billable compute minutes), billable_compute_minutes_final (boolean, true when the task is terminal and billing is closed), and compute_cost (object with amount_cents, currency, and final fields).",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
@@ -180,6 +183,7 @@ func getCmd() *cobra.Command {
 				{Header: "KIND"},
 				{Header: "TITLE"},
 				{Header: "STAGE"},
+				{Header: "STAGE_VERSION"},
 				{Header: "STATUS"},
 				{Header: "BLOCKED_REASON"},
 				{Header: "DEPENDENCIES_MET"},
@@ -193,6 +197,7 @@ func getCmd() *cobra.Command {
 				t.Kind,
 				t.Title,
 				t.Stage,
+				fmt.Sprint(t.StageVersion),
 				t.Status,
 				t.BlockedReason,
 				fmt.Sprintf("%v", t.DependenciesMet),
