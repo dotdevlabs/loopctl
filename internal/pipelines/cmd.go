@@ -82,13 +82,6 @@ func createCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
 
-			if ctxutil.GlobalFlagsFrom(ctx).DryRun {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(),
-					"dry-run: would POST /api/pipelines {name=%q kind=%q}\n",
-					name, kind)
-				return nil
-			}
-
 			activeCtx := ctxutil.ActiveContextFrom(ctx)
 			r := ctxutil.RendererFrom(ctx)
 
@@ -110,6 +103,9 @@ func createCmd() *cobra.Command {
 				attrs["stages"] = stages
 			}
 			body := map[string]any{"pipeline": attrs}
+			if ctxutil.GlobalFlagsFrom(ctx).DryRun {
+				return previewRequest(cmd, "POST /api/pipelines", body)
+			}
 
 			res, err := apiclient.PostJSONBodyJSONAPIResponse[PipelineAttrs](ctx, activeCtx, "/api/pipelines", body)
 			if err != nil {
@@ -147,12 +143,6 @@ func updateCmd() *cobra.Command {
 			ctx := cmd.Context()
 			id := args[0]
 
-			if ctxutil.GlobalFlagsFrom(ctx).DryRun {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(),
-					"dry-run: would PATCH /api/pipelines/%s\n", id)
-				return nil
-			}
-
 			changed := false
 			attrs := map[string]any{}
 			if cmd.Flags().Changed("name") {
@@ -187,6 +177,9 @@ func updateCmd() *cobra.Command {
 			r := ctxutil.RendererFrom(ctx)
 
 			body := map[string]any{"pipeline": attrs}
+			if ctxutil.GlobalFlagsFrom(ctx).DryRun {
+				return previewRequest(cmd, "PATCH /api/pipelines/"+id, body)
+			}
 			res, err := apiclient.PatchJSONBodyJSONAPIResponse[PipelineAttrs](ctx, activeCtx, "/api/pipelines/"+id, body)
 			if err != nil {
 				return err
@@ -204,6 +197,15 @@ func updateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&stagesJSON, "stages", "", `JSON array of stages, e.g. '[{"custom_stage_name":"plan","prompt_sections":{"template":"Plan the work."}}]'`)
 	flagmeta.SchemaFromSpec(cmd, "stages", "#/components/schemas/PipelineStageInput", true)
 	return cmd
+}
+
+func previewRequest(cmd *cobra.Command, request string, body map[string]any) error {
+	encoded, err := json.Marshal(body)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would %s %s\n", request, encoded)
+	return err
 }
 
 func validateStageObjects(stages []map[string]json.RawMessage) error {

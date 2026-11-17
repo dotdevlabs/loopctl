@@ -83,6 +83,7 @@ var Excluded = map[OperationKey]string{
 	{Method: "GET", Path: "/status"}:                                                   "server health probe; not agent-facing",
 	{Method: "PATCH", Path: "/api/containers/:id"}:                                     "container-internal: agent container self-reports its own status",
 	{Method: "POST", Path: "/api/pipelines/:pipeline_id/clone"}:                        "not yet implemented in loopctl",
+	{Method: "POST", Path: "/api/pipelines/:pipeline_id/stages"}:                       "loopctl appends stages through the pipeline PATCH operation",
 	{Method: "GET", Path: "/api/tasks/:id/logs"}:                                       "Loki log streaming; not yet implemented in loopctl",
 	{Method: "POST", Path: "/api/tasks/:task_id/recordings"}:                           "recording upload; not yet implemented in loopctl",
 	{Method: "GET", Path: "/api/tasks/:task_id/images/:id"}:                            "binary image serve; web-UI-only",

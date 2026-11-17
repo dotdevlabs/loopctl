@@ -22,6 +22,7 @@ type PipelineStageAttrs struct {
 	StageType               string          `json:"stage_type"`
 	CustomStageName         *string         `json:"custom_stage_name"`
 	Gate                    string          `json:"gate"`
+	ApprovalButtonText      *string         `json:"approval_button_text"`
 	OnFailure               string          `json:"on_failure"`
 	MaxReworkCount          *int            `json:"max_rework_count"`
 	ReworkToPosition        *int            `json:"rework_to_position"`
@@ -48,6 +49,7 @@ type StageInput struct {
 	CustomStageName         string          `json:"custom_stage_name,omitempty"`
 	Instructions            string          `json:"instructions,omitempty"`
 	Gate                    string          `json:"gate,omitempty"`
+	ApprovalButtonText      *string         `json:"approval_button_text,omitempty"`
 	AdvanceNotice           string          `json:"advance_notice,omitempty"`
 	OnFailure               string          `json:"on_failure,omitempty"`
 	MaxReworkCount          *int            `json:"max_rework_count,omitempty"`
@@ -60,14 +62,17 @@ type StageInput struct {
 }
 
 func stageRow(id string, a PipelineStageAttrs) []string {
-	name, agent := "", ""
+	name, agent, approval := "", "", ""
 	if a.Name != nil {
 		name = *a.Name
 	}
 	if a.AgentID != nil {
 		agent = *a.AgentID
 	}
-	return []string{id, fmt.Sprint(a.Position), name, a.Role, a.StageType, a.Gate, agent}
+	if a.ApprovalButtonText != nil {
+		approval = *a.ApprovalButtonText
+	}
+	return []string{id, fmt.Sprint(a.Position), name, a.Role, a.StageType, a.Gate, agent, approval}
 }
 
 func stageCols() []output.Column {
@@ -79,6 +84,7 @@ func stageCols() []output.Column {
 		{Header: "STAGE_TYPE"},
 		{Header: "GATE"},
 		{Header: "AGENT"},
+		{Header: "APPROVAL_BUTTON_TEXT"},
 	}
 }
 
@@ -124,6 +130,8 @@ func stagesListCmd() *cobra.Command {
 	}
 }
 
+const approvalButtonTextHelp = "Text for the human approval button; clear with --approval-button-text="
+
 func stagesAddCmd() *cobra.Command {
 	var (
 		name               string
@@ -132,6 +140,7 @@ func stagesAddCmd() *cobra.Command {
 		customStageName    string
 		instructions       string
 		gate               string
+		approvalButtonText string
 		advanceNotice      string
 		position           int
 		onFailure          string
@@ -151,16 +160,6 @@ func stagesAddCmd() *cobra.Command {
 			ctx := cmd.Context()
 			id := args[0]
 
-			if ctxutil.GlobalFlagsFrom(ctx).DryRun {
-				displayName := customStageName
-				if displayName == "" {
-					displayName = name
-				}
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(),
-					"dry-run: would PATCH /api/pipelines/%s to append stage %q\n", id, displayName)
-				return nil
-			}
-
 			// Build StageInput from flags.
 			stage := StageInput{Name: name}
 			if cmd.Flags().Changed("role") {
@@ -177,6 +176,9 @@ func stagesAddCmd() *cobra.Command {
 			}
 			if cmd.Flags().Changed("gate") {
 				stage.Gate = gate
+			}
+			if cmd.Flags().Changed("approval-button-text") {
+				stage.ApprovalButtonText = &approvalButtonText
 			}
 			if cmd.Flags().Changed("advance-notice") {
 				stage.AdvanceNotice = advanceNotice
@@ -224,23 +226,26 @@ func stagesAddCmd() *cobra.Command {
 				stage.AdvanceRequirements = raw
 			}
 
-			activeCtx := ctxutil.ActiveContextFrom(ctx)
-			r := ctxutil.RendererFrom(ctx)
-
-			// Read current stages.
-			pipeline, err := apiclient.GetJSONAPISingle[PipelineAttrs](ctx, activeCtx, "/api/pipelines/"+id)
-			if err != nil {
-				return err
-			}
-
 			stageRaw, err := json.Marshal(stage)
 			if err != nil {
 				return fmt.Errorf("marshaling stage: %w", err)
 			}
+			path := "/api/pipelines/" + id
+			if ctxutil.GlobalFlagsFrom(ctx).DryRun {
+				fragment := map[string]any{"pipeline": map[string]any{"stages": []json.RawMessage{stageRaw}}}
+				return previewRequest(cmd, "PATCH "+path+" (stage append fragment)", fragment)
+			}
+
+			activeCtx := ctxutil.ActiveContextFrom(ctx)
+			r := ctxutil.RendererFrom(ctx)
+			pipeline, err := apiclient.GetJSONAPISingle[PipelineAttrs](ctx, activeCtx, path)
+			if err != nil {
+				return err
+			}
 			stages := append(pipeline.Attributes.Stages, json.RawMessage(stageRaw))
 
 			body := map[string]any{"pipeline": map[string]any{"stages": stages}}
-			res, err := apiclient.PatchJSONBodyJSONAPIResponse[PipelineAttrs](ctx, activeCtx, "/api/pipelines/"+id, body)
+			res, err := apiclient.PatchJSONBodyJSONAPIResponse[PipelineAttrs](ctx, activeCtx, path, body)
 			if err != nil {
 				return err
 			}
@@ -258,6 +263,7 @@ func stagesAddCmd() *cobra.Command {
 	cmd.Flags().StringVar(&customStageName, "custom-stage-name", "", "custom_stage_name (custom type only)")
 	cmd.Flags().StringVar(&instructions, "instructions", "", "Instructions / prompt text (deprecated: use --prompt-sections)")
 	cmd.Flags().StringVar(&gate, "gate", "", "Advance gate (automated or human)")
+	cmd.Flags().StringVar(&approvalButtonText, "approval-button-text", "", approvalButtonTextHelp)
 	flagmeta.EnumFromSpec(cmd, "gate", "#/components/schemas/PipelineStageInput/properties/gate")
 	cmd.Flags().StringVar(&advanceNotice, "advance-notice", "", "Advance notice value")
 	cmd.Flags().IntVar(&position, "position", 0, "Explicit position override")
@@ -282,6 +288,7 @@ func stagesUpdateCmd() *cobra.Command {
 		customStageName    string
 		instructions       string
 		gate               string
+		approvalButtonText string
 		advanceNotice      string
 		position           int
 		onFailure          string
@@ -305,7 +312,7 @@ func stagesUpdateCmd() *cobra.Command {
 			// Validate at least one flag changed before any HTTP call.
 			flagNames := []string{
 				"role", "stage-type", "custom-stage-name", "instructions",
-				"gate", "advance-notice", "position", "on-failure",
+				"gate", "approval-button-text", "advance-notice", "position", "on-failure",
 				"max-rework-count", "rework-to-position", "runs-in-container",
 				"prompt-sections", "stage-triggers", "advance-requirements",
 			}
@@ -333,12 +340,6 @@ func stagesUpdateCmd() *cobra.Command {
 				}
 			}
 
-			if ctxutil.GlobalFlagsFrom(ctx).DryRun {
-				_, _ = fmt.Fprintf(cmd.OutOrStdout(),
-					"dry-run: would PATCH /api/pipelines/%s/stages/%s\n", pipelineID, stageID)
-				return nil
-			}
-
 			// Build patch body with only changed flags.
 			patch := map[string]any{}
 			if cmd.Flags().Changed("role") {
@@ -355,6 +356,9 @@ func stagesUpdateCmd() *cobra.Command {
 			}
 			if cmd.Flags().Changed("gate") {
 				patch["gate"] = gate
+			}
+			if cmd.Flags().Changed("approval-button-text") {
+				patch["approval_button_text"] = approvalButtonText
 			}
 			if cmd.Flags().Changed("advance-notice") {
 				patch["advance_notice"] = advanceNotice
@@ -394,8 +398,11 @@ func stagesUpdateCmd() *cobra.Command {
 			r := ctxutil.RendererFrom(ctx)
 
 			body := map[string]any{"pipeline_stage": patch}
-			res, err := apiclient.PatchJSONBodyJSONAPIResponse[PipelineStageAttrs](ctx, activeCtx,
-				"/api/pipelines/"+pipelineID+"/stages/"+stageID, body)
+			path := "/api/pipelines/" + pipelineID + "/stages/" + stageID
+			if ctxutil.GlobalFlagsFrom(ctx).DryRun {
+				return previewRequest(cmd, "PATCH "+path, body)
+			}
+			res, err := apiclient.PatchJSONBodyJSONAPIResponse[PipelineStageAttrs](ctx, activeCtx, path, body)
 			if err != nil {
 				return err
 			}
@@ -411,6 +418,7 @@ func stagesUpdateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&customStageName, "custom-stage-name", "", "custom_stage_name (custom type only)")
 	cmd.Flags().StringVar(&instructions, "instructions", "", "Instructions / prompt text (deprecated: use --prompt-sections)")
 	cmd.Flags().StringVar(&gate, "gate", "", "Advance gate (automated or human)")
+	cmd.Flags().StringVar(&approvalButtonText, "approval-button-text", "", approvalButtonTextHelp)
 	flagmeta.EnumFromSpec(cmd, "gate", "#/components/schemas/PipelineStageInput/properties/gate")
 	cmd.Flags().StringVar(&advanceNotice, "advance-notice", "", "Advance notice value")
 	cmd.Flags().IntVar(&position, "position", 0, "Explicit position override")

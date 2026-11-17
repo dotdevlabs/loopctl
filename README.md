@@ -622,7 +622,7 @@ loopctl pipelines stages list <pipeline-id>
 loopctl pipelines stages list <pipeline-id> --json
 ```
 
-Output columns: `POSITION`, `NAME`, `ROLE`, `STAGE_TYPE`, `GATE`, `AGENT`.
+The table shows `ID`, `POSITION`, `NAME`, `ROLE`, `STAGE_TYPE`, `GATE`, `AGENT`, and `APPROVAL_BUTTON_TEXT`.
 
 **API:** `GET /api/pipelines/:id`
 
@@ -674,6 +674,7 @@ loopctl pipelines stages add <pipeline-id> --name review --dry-run
 | `--gate` | no | Advance gate (e.g. `manual`, `ci_pass`) |
 | `--agent` | no | Agent slug override |
 | `--advance-notice` | no | Advance notice value |
+| `--approval-button-text` | no | Human approval button label. Clear with `--approval-button-text=`. |
 | `--position` | no | Explicit position override |
 | `--runs-in-container` | no | Override `runs_in_container` for this stage |
 | `--on-failure` | no | JSON object: `{"max_rework_count":3,"rework_to_position":0}` |
@@ -707,7 +708,14 @@ loopctl pipelines stages update <pipeline-id> <stage-id> --gate manual --dry-run
 
 Accepts the same flags as `stages add` except `--name` (the stage is identified by the `<stage-id>` positional argument). At least one flag must be provided.
 
-Output columns on success: `POSITION`, `NAME`, `ROLE`, `STAGE_TYPE`, `GATE`, `AGENT`. Use `--json` for the full stage resource.
+Use `--approval-button-text "Approve release"` to set the button label and
+`--approval-button-text=` to restore the default. The stages list shows the label
+under `APPROVAL_BUTTON_TEXT` or as `attributes.approval_button_text` in JSON.
+When creating or updating a pipeline with `--stages`, include
+`"approval_button_text":"Approve release"` in the stage object or use an empty
+string to clear it. Add `--dry-run` to preview the encoded value.
+
+The update response uses the same columns as the stages list. Use `--json` for the full stage resource.
 
 **API:** `PATCH /api/pipelines/:pipeline_id/stages/:id`
 
