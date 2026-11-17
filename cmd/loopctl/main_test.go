@@ -177,6 +177,26 @@ func aiFlags(t *testing.T) map[string]map[string]airef.FlagRef {
 	return out
 }
 
+func TestAIWebhookFlags(t *testing.T) {
+	flags := aiFlags(t)["projects update"]
+	text := runAI(t, "ai")
+	for _, name := range []string{"webhook-url", "webhook-signing-secret", "webhook-signing-secret-stdin", "disable-webhook"} {
+		if _, ok := flags[name]; !ok {
+			t.Errorf("JSON reference missing %s", name)
+		}
+		if !strings.Contains(text, "--"+name) {
+			t.Errorf("text reference missing %s", name)
+		}
+	}
+	encoded, err := json.Marshal(flags["webhook-signing-secret-stdin"])
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(encoded), "standard input") || !strings.Contains(text, "standard input") {
+		t.Fatal("reference must explain standard input")
+	}
+}
+
 func TestAIJSONFlagEnums(t *testing.T) {
 	flags := aiFlags(t)
 	todoStatus := []string{"pending", "in_progress", "completed"}
