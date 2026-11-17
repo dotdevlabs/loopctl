@@ -35,11 +35,14 @@ The legacy fields `name`, `role`, and `instructions` are deprecated in favor of
 `--role` flag warns: `Deprecated: use stage_type: 'custom'.` Use
 `--custom-stage-name` and `--prompt-sections` for new stage definitions.
 
-Set the human approval button label with `--approval-button-text "Approve release"`
-on `stages add` or `stages update`. Pass `--approval-button-text=` to restore the
-stage default. In a `--stages` JSON object, use `"approval_button_text":"Approve release"`
-to set the label or `"approval_button_text":""` to clear it. Use `--dry-run` to see
-the request JSON. For `stages add`, the preview shows the stage append fragment.
+Set the task page's human approval button label with `--approval-button-text
+"Approve release"` on `stages add` or `stages update`. Labels can be up to 64
+characters. Pass `--approval-button-text=` to restore the stage default.
+
+When creating or updating a pipeline with `--stages`, set
+`"approval_button_text":"Approve release"` in the stage object. An empty string
+or `null` uses the stage default. Use `--dry-run` to see the request JSON. For
+`stages add`, the preview shows only the stage being appended.
 
 ## Inspect stages
 
@@ -54,8 +57,8 @@ same position retain their order from the pipeline's stages relationship.
 
 The table columns are `ID`, `POSITION`, `NAME`, `ROLE`, `STAGE_TYPE`, `GATE`,
 `AGENT`, and `APPROVAL_BUTTON_TEXT`. `AGENT` contains the stage's `agent_id`.
-Nullable names, agent IDs, and approval button labels
-appear as blank cells. Use the stage's `ID` when updating it:
+Nullable names, agent IDs, and approval button labels appear as blank cells.
+Use the stage's `ID` when updating it:
 
 ```bash
 loopctl pipelines stages update <pipeline-id> <stage-id> --gate human
@@ -79,6 +82,9 @@ published stage attributes:
 - `agent_id`, `environment_id`, `runs_in_container_override`
 - `advance_requirements`, `advance_notice`
 - `prompt_sections`, `prompt_configuration`, `stage_triggers`
+
+`attributes.approval_button_text` is `null` when the API omits the label or
+returns `null`.
 
 Nested prompt values are preserved in full, as are nullable values, zero,
 `false`, and empty collections. Scripts consuming this command should read the
