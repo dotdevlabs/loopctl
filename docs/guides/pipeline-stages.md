@@ -44,6 +44,20 @@ When creating or updating a pipeline with `--stages`, set
 or `null` uses the stage default. Use `--dry-run` to see the request JSON. For
 `stages add`, the preview shows only the stage being appended.
 
+## Configure rework targets
+
+Use `--rework-allowed-positions` on `stages add` or `stages update` to specify
+the earlier workflow positions available as rework targets.
+
+```bash
+loopctl pipelines stages update <pipeline-id> <stage-id> \
+  --on-failure rework --rework-to-position 1 --rework-allowed-positions 0,1
+```
+
+Pass `--rework-allowed-positions=` to allow only the default rework position.
+When supplying the full workflow with `--stages`, use the
+`rework_allowed_positions` array in the stage object.
+
 ## Inspect stages
 
 List a pipeline's workflow stages:
@@ -78,7 +92,7 @@ string `id`, `type` set to `pipeline_stages`, and an `attributes` object with th
 published stage attributes:
 
 - `stage_type`, `custom_stage_name`, `name`, `role`, `instructions`, `position`
-- `gate`, `approval_button_text`, `on_failure`, `max_rework_count`, `rework_to_position`
+- `gate`, `approval_button_text`, `on_failure`, `max_rework_count`, `rework_to_position`, `rework_allowed_positions`
 - `agent_id`, `environment_id`, `runs_in_container_override`
 - `advance_requirements`, `advance_notice`
 - `prompt_sections`, `prompt_configuration`, `stage_triggers`

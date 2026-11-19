@@ -1,4 +1,19 @@
-# Project stage-change webhooks
+# Projects
+
+## Assign an agent size
+
+List available sizes to find the ID, multiplier, and CPU and memory limits.
+Then assign a size to the project or clear its assignment.
+
+```bash
+loopctl agent-sizes list
+loopctl projects update <project-id> --agent-size-id <size-id>
+loopctl projects update <project-id> --agent-size-id=
+```
+
+Run `loopctl projects get <project-id> --json` to check the assignment under
+`relationships.agent_size.data`. A value of `null` means the project has no
+size assigned. The platform ID is under `relationships.platform.data.id`.
 
 ## Configure a webhook
 

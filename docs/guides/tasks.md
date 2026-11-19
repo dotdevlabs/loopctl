@@ -73,6 +73,9 @@ The command reads `status` and `stage` from `data.attributes` in the JSON:API
 response. Both fields must be strings. An invalid response causes the command
 to fail. Use `loopctl tasks get <task-id>` to verify the task's state afterward.
 
+If the API refuses a cancellation, for example because the task is already
+rejected, the command exits with an error and displays the server's message.
+
 ## Create and update todos
 
 ```bash
