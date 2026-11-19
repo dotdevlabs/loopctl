@@ -104,6 +104,7 @@ func resolveAll(root map[string]any, node any, ref string, depth int) ([]map[str
 	}
 	cur := []any{root}
 	for _, seg := range strings.Split(strings.TrimPrefix(ref, refPrefix), "/") {
+		seg = strings.ReplaceAll(strings.ReplaceAll(seg, "~1", "/"), "~0", "~")
 		var next []any
 		for _, c := range cur {
 			found, err := step(root, c, seg, depth)
@@ -154,14 +155,16 @@ func step(root map[string]any, c any, seg string, depth int) ([]any, error) {
 		}
 		return out, nil
 	}
-	alts, _ := m["oneOf"].([]any)
 	var out []any
-	for _, a := range alts {
-		found, err := step(root, a, seg, depth+1)
-		if err != nil {
-			return nil, err
+	for _, keyword := range []string{"oneOf", "anyOf", "allOf"} {
+		alts, _ := m[keyword].([]any)
+		for _, a := range alts {
+			found, err := step(root, a, seg, depth+1)
+			if err != nil {
+				return nil, err
+			}
+			out = append(out, found...)
 		}
-		out = append(out, found...)
 	}
 	return out, nil
 }
@@ -184,6 +187,16 @@ func export(root map[string]any, node map[string]any, depth int) (map[string]any
 			continue
 		}
 		switch k {
+		case "oneOf", "anyOf", "allOf":
+			var branches []any
+			for _, branch := range v.([]any) {
+				e, err := export(root, branch.(map[string]any), depth+1)
+				if err != nil {
+					return nil, err
+				}
+				branches = append(branches, e)
+			}
+			out[k] = branches
 		case "properties":
 			props := map[string]any{}
 			for name, p := range v.(map[string]any) {
@@ -235,8 +248,28 @@ func nodeValue(n *yaml.Node) any {
 	case yaml.MappingNode:
 		m := map[string]any{}
 		for i := 0; i+1 < len(n.Content); i += 2 {
+			if n.Content[i].Tag == "!!merge" {
+				continue
+			}
 			if _, dup := m[n.Content[i].Value]; !dup {
 				m[n.Content[i].Value] = nodeValue(n.Content[i+1])
+			}
+		}
+		for i := 0; i+1 < len(n.Content); i += 2 {
+			if n.Content[i].Tag != "!!merge" {
+				continue
+			}
+			parents := []any{nodeValue(n.Content[i+1])}
+			if list, ok := parents[0].([]any); ok {
+				parents = list
+			}
+			for _, parent := range parents {
+				properties, _ := parent.(map[string]any)
+				for key, value := range properties {
+					if _, exists := m[key]; !exists {
+						m[key] = value
+					}
+				}
 			}
 		}
 		return m

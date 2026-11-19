@@ -138,10 +138,6 @@ func todosCreateCmd() *cobra.Command {
 				reqBody = map[string]any{"todo": todo}
 			}
 
-			// The create endpoint returns {"data": [...]} — an array.
-			// Use PostJSONBodyJSONAPIResponse with a slice type won't work since
-			// the response wraps an array not a single resource.
-			// Use PostJSON to get the raw array response.
 			type createResponse struct {
 				Data []struct {
 					ID         string    `json:"id"`
@@ -149,7 +145,7 @@ func todosCreateCmd() *cobra.Command {
 					Attributes TodoAttrs `json:"attributes"`
 				} `json:"data"`
 			}
-			result, err := apiclient.PostJSON[createResponse](ctx, activeCtx, path, reqBody)
+			result, err := apiclient.PostJSONAPIResponse[createResponse](ctx, activeCtx, path, reqBody)
 			if err != nil {
 				return err
 			}

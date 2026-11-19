@@ -680,12 +680,16 @@ func TestTasksCancel(t *testing.T) {
 	var gotMethod, gotPath string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotMethod = r.Method
-		gotPath = r.URL.Path
+		gotPath = r.URL.EscapedPath()
 		if r.Header.Get("Authorization") != "Bearer test-token" {
 			t.Errorf("missing/wrong auth: %s", r.Header.Get("Authorization"))
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"status":"cancelled","stage":"rejected"}`)
+		body, err := io.ReadAll(r.Body)
+		if err != nil || len(body) != 0 || r.Header.Get("Content-Type") != "" || r.Header.Get("Accept") != "application/vnd.api+json" {
+			t.Errorf("unexpected request body or headers: %q, %v, %v", body, r.Header, err)
+		}
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{"status":"rejected","stage":"rejected"}}}`)
 	}))
 	defer ts.Close()
 
@@ -696,17 +700,17 @@ func TestTasksCancel(t *testing.T) {
 	cmd.SetContext(ctx)
 	cmd.SetOut(&out)
 
-	if err := cmd.RunE(cmd, []string{"t1"}); err != nil {
+	if err := cmd.RunE(cmd, []string{"t/1"}); err != nil {
 		t.Fatalf("cancel failed: %v", err)
 	}
 	if gotMethod != http.MethodPost {
 		t.Errorf("expected POST; got %s", gotMethod)
 	}
-	if gotPath != "/api/tasks/t1/cancellation" {
-		t.Errorf("expected /api/tasks/t1/cancellation; got %s", gotPath)
+	if gotPath != "/api/tasks/t%2F1/cancellation" {
+		t.Errorf("unexpected escaped path %s", gotPath)
 	}
-	if !strings.Contains(out.String(), "t1") {
-		t.Errorf("output missing task id:\n%s", out.String())
+	if got := out.String(); got != "task t/1: status rejected, stage rejected\n" {
+		t.Errorf("unexpected output: %q", got)
 	}
 }
 
@@ -734,8 +738,8 @@ func TestTasksCancelEmptyBody(t *testing.T) {
 
 func TestTasksCancelJSON(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"status":"cancelled","stage":"rejected"}`)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1","attributes":{"status":"rejected","stage":"rejected"}}}`)
 	}))
 	defer ts.Close()
 
@@ -750,11 +754,9 @@ func TestTasksCancelJSON(t *testing.T) {
 		t.Fatalf("cancel JSON failed: %v", err)
 	}
 	got := out.String()
-	if !strings.Contains(got, `"id"`) {
-		t.Errorf("expected 'id' field in JSON output:\n%s", got)
-	}
-	if !strings.Contains(got, `"t1"`) {
-		t.Errorf("expected task id in JSON output:\n%s", got)
+	var result map[string]string
+	if err := json.Unmarshal(out.Bytes(), &result); err != nil || len(result) != 3 || result["id"] != "t1" || result["status"] != "rejected" || result["stage"] != "rejected" {
+		t.Errorf("unexpected JSON output %s: %v", got, err)
 	}
 }
 
@@ -785,8 +787,12 @@ func TestCancellationContract(t *testing.T) {
 		for _, body := range []string{`{}`, `{"stage":"done"}`, `{"status":"ended"}`, `null`, `{"status":null,"stage":"done"}`, `{"status":"ended","stage":null}`, `{"status":42,"stage":"done"}`, `{"status":"ended","stage":false}`, `{"status":"server-status","stage":"server-stage"}`} {
 			t.Run(fmt.Sprintf("%t/%s", jsonMode, body), func(t *testing.T) {
 				ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-					w.Header().Set("Content-Type", "application/json")
-					_, _ = fmt.Fprint(w, body)
+					w.Header().Set("Content-Type", "application/vnd.api+json")
+					if body == "{}" {
+						_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"t1"}}`)
+						return
+					}
+					_, _ = fmt.Fprintf(w, `{"data":{"type":"tasks","id":"t1","attributes":%s}}`, body)
 				}))
 				defer ts.Close()
 				var out bytes.Buffer
@@ -798,7 +804,7 @@ func TestCancellationContract(t *testing.T) {
 					if err != nil || !strings.Contains(out.String(), "server-status") || !strings.Contains(out.String(), "server-stage") {
 						t.Fatalf("server values not preserved: %v %s", err, &out)
 					}
-				} else if err == nil || !strings.Contains(err.Error(), "contract error") || out.Len() != 0 {
+				} else if err == nil || out.Len() != 0 {
 					t.Fatalf("expected contract failure without output: %v %s", err, &out)
 				}
 			})
@@ -810,7 +816,7 @@ func TestTasksCancelAlreadyFinished(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/vnd.api+json")
 		w.WriteHeader(http.StatusUnprocessableEntity)
-		_, _ = fmt.Fprint(w, `{"errors":[{"status":"422","detail":"Task is already in a terminal state"}]}`)
+		_, _ = fmt.Fprint(w, `{"errors":[{"status":"422","detail":"Cannot cancel a task that is already rejected."}]}`)
 	}))
 	defer ts.Close()
 
@@ -825,8 +831,8 @@ func TestTasksCancelAlreadyFinished(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for already-finished task")
 	}
-	if !strings.Contains(err.Error(), "terminal state") {
-		t.Errorf("expected terminal-state message; got: %v", err)
+	if !strings.Contains(err.Error(), "Cannot cancel a task that is already rejected.") || out.Len() != 0 {
+		t.Errorf("expected terminal-state message without success output; got: %v, %s", err, &out)
 	}
 }
 
@@ -1284,8 +1290,8 @@ func TestTasksUnblock(t *testing.T) {
 		if r.Header.Get("Authorization") != "Bearer test-token" {
 			t.Errorf("missing/wrong auth: %s", r.Header.Get("Authorization"))
 		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"id":1,"status":"open","stage":"implementing"}`)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"1","attributes":{"status":"open","stage":"implementing"}}}`)
 	}))
 	defer ts.Close()
 
@@ -1318,8 +1324,8 @@ func TestTasksUnblock(t *testing.T) {
 
 func TestTasksUnblockJSON(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"id":1,"status":"open","stage":"implementing"}`)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"1","attributes":{"status":"open","stage":"implementing"}}}`)
 	}))
 	defer ts.Close()
 
@@ -1344,9 +1350,9 @@ func TestTasksUnblockJSON(t *testing.T) {
 
 func TestTasksUnblockError(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusUnprocessableEntity)
-		_, _ = fmt.Fprint(w, `{"error":"task is not blocked"}`)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		w.WriteHeader(http.StatusConflict)
+		_, _ = fmt.Fprint(w, `{"errors":[{"status":"409","detail":"task is not blocked"}]}`)
 	}))
 	defer ts.Close()
 
@@ -1359,7 +1365,7 @@ func TestTasksUnblockError(t *testing.T) {
 
 	err := cmd.RunE(cmd, []string{"t1"})
 	if err == nil {
-		t.Fatal("expected error for 422 response")
+		t.Fatal("expected error for 409 response")
 	}
 	if !strings.Contains(err.Error(), "task is not blocked") {
 		t.Errorf("expected server error message; got: %v", err)
@@ -1467,7 +1473,7 @@ func TestTasksListFullIndexFields(t *testing.T) {
 			`"current_state":"idle","pr_url":"https://github.com/org/repo/pull/5",`+
 			`"pr_merged_at":"2026-01-10T12:00:00Z","merge_commit_sha":"abc123",`+
 			`"ci_status":"success","ci_status_url":"https://ci.example.com/1",`+
-			`"code_review_status":"approved","blocked_reason":"",`+
+			`"blocked_reason":"",`+
 			`"completed_at":"","picked_up_at":"2026-01-09T08:00:00Z",`+
 			`"prompt_hash":"deadbeef","updated_at":"2026-01-10T12:01:00Z",`+
 			`"created_at":"2026-01-08T00:00:00Z"}}]}`)
@@ -1488,7 +1494,7 @@ func TestTasksListFullIndexFields(t *testing.T) {
 	for _, field := range []string{
 		`"pr_url"`, `"ci_status"`, `"updated_at"`, `"prompt_hash"`,
 		`"current_state"`, `"picked_up_at"`, `"merge_commit_sha"`,
-		`"ci_status_url"`, `"code_review_status"`, `"pr_merged_at"`,
+		`"ci_status_url"`, `"pr_merged_at"`,
 	} {
 		if !strings.Contains(got, field) {
 			t.Errorf("JSON output missing field %s:\n%s", field, got)

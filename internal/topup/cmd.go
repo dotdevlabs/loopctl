@@ -4,9 +4,9 @@ package topup
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
+	"net/http"
 
 	"github.com/spf13/cobra"
 
@@ -17,8 +17,6 @@ import (
 	"github.com/dotdevlabs/loopctl/internal/wallet"
 )
 
-const defaultTopupEndpoint = "/api/topup"
-
 // Payer acts on FundingInfo to initiate or complete payment.
 type Payer interface {
 	Pay(ctx context.Context, product string, info apiclient.FundingInfo, out io.Writer) error
@@ -27,26 +25,29 @@ type Payer interface {
 // HumanLinkPayer prints the Stripe hosted-checkout URL to out.
 type HumanLinkPayer struct{}
 
-func (HumanLinkPayer) Pay(_ context.Context, product string, info apiclient.FundingInfo, out io.Writer) error {
-	for _, p := range info.Products {
-		if p.Key == product {
-			rail, ok := p.Rails["human_link"]
-			if !ok {
-				return fmt.Errorf("product %q does not support human_link rail", product)
-			}
-			_, err := fmt.Fprintln(out, rail.URL)
-			return err
-		}
+func (HumanLinkPayer) Pay(ctx context.Context, product string, info apiclient.FundingInfo, out io.Writer) error {
+	link, err := humanCheckout(ctx, product, info)
+	if err != nil {
+		return err
 	}
-	return fmt.Errorf("product %q not found in funding info", product)
+	_, err = fmt.Fprintln(out, link)
+	return err
+}
+
+func humanCheckout(ctx context.Context, product string, info apiclient.FundingInfo) (string, error) {
+	rail, err := findRail(info, product, "human_link")
+	if err != nil {
+		return "", err
+	}
+	return checkoutURL(ctx, rail)
 }
 
 // NewCmd returns the "topup" command with wallet-aware payer selection.
 func NewCmd() *cobra.Command {
 	wc := wallet.Load()
 	rails := []RailPayer{
-		NewX402Payer(defaultTopupEndpoint, wc.Arbitrum),
-		NewL402Payer(defaultTopupEndpoint, wc.Lightning),
+		NewX402Payer(x402Endpoint, wc.Arbitrum),
+		NewL402Payer(l402Endpoint, wc.Lightning),
 	}
 	return newCmdWithPayer(SelectingPayer{
 		Rails:    rails,
@@ -63,46 +64,41 @@ func newCmdWithPayer(payer Payer) *cobra.Command {
 		Short: "Get a payment link to fund your LoopControl account",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			ctx := cmd.Context()
-			activeCtx := ctxutil.ActiveContextFrom(ctx)
-
-			_, err := apiclient.PostJSON[struct{}](ctx, activeCtx, defaultTopupEndpoint, nil)
-			if err == nil {
-				_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Account is already funded.")
-				return nil
-			}
-
-			var payErr *apiclient.PaymentRequiredError
-			if !errors.As(err, &payErr) {
+			flags := ctxutil.GlobalFlagsFrom(ctx)
+			if flags.DryRun {
+				_, err := fmt.Fprintf(cmd.OutOrStdout(), "dry-run: would request funding for %s\n", product)
 				return err
 			}
 
-			jsonMode := ctxutil.GlobalFlagsFrom(ctx).JSON
-			if jsonMode {
-				return payJSON(cmd.OutOrStdout(), product, payErr.Info)
+			document, err := billingRequest[fundingDocument](ctx, http.MethodGet, fundingEndpoint, nil, nil, http.StatusPaymentRequired)
+			if err != nil {
+				return err
 			}
-			return payer.Pay(ctx, product, payErr.Info, cmd.OutOrStdout())
+			info, err := document.product(product)
+			if err != nil {
+				return err
+			}
+			if flags.JSON {
+				link, err := humanCheckout(ctx, product, info)
+				if err != nil {
+					return err
+				}
+				return payJSON(cmd.OutOrStdout(), product, link)
+			}
+			return payer.Pay(ctx, product, info, cmd.OutOrStdout())
 		},
 	}
 
 	cmd.Flags().StringVar(&product, "product", "topup",
-		"Product to fund: trial, topup, or subscription")
+		"Funding package ID or product kind (trial, topup, or subscription)")
 	flagmeta.EnumFromSpec(cmd, "product", "#/components/schemas/FundingEnvelopeProduct/properties/kind")
 	return cmd
 }
 
-func payJSON(out io.Writer, product string, info apiclient.FundingInfo) error {
-	for _, p := range info.Products {
-		if p.Key == product {
-			rail, ok := p.Rails["human_link"]
-			if !ok {
-				return fmt.Errorf("product %q does not support human_link rail", product)
-			}
-			return json.NewEncoder(out).Encode(struct {
-				Product string `json:"product"`
-				Rail    string `json:"rail"`
-				URL     string `json:"url"`
-			}{Product: product, Rail: "human_link", URL: rail.URL})
-		}
-	}
-	return fmt.Errorf("product %q not found in funding info", product)
+func payJSON(out io.Writer, product, link string) error {
+	return json.NewEncoder(out).Encode(struct {
+		Product string `json:"product"`
+		Rail    string `json:"rail"`
+		URL     string `json:"url"`
+	}{Product: product, Rail: "human_link", URL: link})
 }

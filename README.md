@@ -73,6 +73,8 @@ When an API request fails (any command), the CLI prints the human-readable error
 
 Manage LoopControl projects.
 
+Project JSON output includes `relationships.platform` and `relationships.agent_size`. The agent size relationship contains `data: null` when the project has no size assignment.
+
 #### projects list
 
 List all projects.
@@ -169,6 +171,7 @@ loopctl projects update <id> --pipeline-id 9 --dry-run
 | `--container-image` | string | Container image reference |
 | `--platform-id` | int | Platform numeric ID |
 | `--pipeline-id` | int | Pipeline numeric ID |
+| `--agent-size-id` | string | Agent size ID from `agent-sizes list`. Use `--agent-size-id=` to clear the assignment. |
 | `--failure-policy` | string | Failure policy for tasks |
 | `--fallback-agent-id` | int | Fallback agent numeric ID |
 | `--webhook-url` | string | Stage-change webhook destination URL |
@@ -213,7 +216,7 @@ Output columns: `ID`, `NAME`, `SLUG`.
 
 #### agents get
 
-Get an agent by ID. Shows the full attribute set including install and launch commands. Use `--json` to retrieve the complete resource including the credential schema (service, env var, file path, encoding) — never credential values.
+Get an agent by ID. The JSON output includes install and launch commands and the credential schema's environment variable, file path, and encoding.
 
 ```bash
 loopctl agents get <id>
@@ -297,7 +300,7 @@ loopctl credentials get <id> --json
 
 Output columns: `ID`, `NAME`, `SHARED`.
 
-Use `--json` to retrieve the full resource including capacity status and any blocked task metadata — never a secret value.
+Use `--json` to retrieve the capacity status and the identifiers of affected blocked tasks under `relationships.tasks.data`. List output contains a single `data` collection.
 
 **API:** `GET /api/credential_sets/:id`
 
@@ -492,6 +495,17 @@ loopctl environments entries remove <environment-id> <entry-id> --dry-run
 
 ---
 
+### agent-sizes
+
+`loopctl agent-sizes list` lists all available agent sizes and follows pagination automatically. Use `--json` to retrieve their IDs, multipliers, and CPU and memory limits. A null limit uses the limit derived from the multiplier.
+
+```bash
+loopctl agent-sizes list --json
+loopctl projects update <project-id> --agent-size-id <size-id>
+```
+
+**API:** `GET /api/agent_sizes`
+
 ### platforms
 
 List and inspect available platforms. Use this to discover the platform names and IDs accepted by `projects create`.
@@ -609,7 +623,7 @@ At least one flag must be provided. Output columns on success: `ID`, `NAME`, `KI
 
 #### pipelines stages
 
-Manage the individual stages of a pipeline. These commands expose the full stage attribute set per the published API contract. `stages add` and `stages remove` perform a read-modify-write: they GET the current pipeline, apply changes, and PATCH the full updated stages array atomically. `stages update` addresses a stage directly by its `id` via the single-stage PATCH endpoint.
+Manage the individual stages of a pipeline. `stages add` and `stages remove` read the pipeline's stage relationship and included resources before submitting the revised workflow with a PATCH. `stages update` addresses a stage directly by its `id` via the single-stage PATCH endpoint.
 
 > **Note:** Two concurrent `stages add` (or `stages remove`) calls can overwrite each other — this is inherent to the read-modify-write design (no conditional PATCH). For safe concurrent edits, serialize your calls.
 
@@ -622,7 +636,7 @@ loopctl pipelines stages list <pipeline-id>
 loopctl pipelines stages list <pipeline-id> --json
 ```
 
-The table shows `ID`, `POSITION`, `NAME`, `ROLE`, `STAGE_TYPE`, `GATE`, `AGENT`, and `APPROVAL_BUTTON_TEXT`.
+The table shows `ID`, `POSITION`, `NAME`, `ROLE`, `STAGE_TYPE`, `GATE`, `AGENT`, and `APPROVAL_BUTTON_TEXT`. JSON output includes `attributes.rework_allowed_positions`.
 
 **API:** `GET /api/pipelines/:id`
 
@@ -636,26 +650,21 @@ loopctl pipelines stages add <pipeline-id> --name implement
 
 # With role and instructions
 loopctl pipelines stages add <pipeline-id> \
-  --name implement \
-  --role implementing \
+  --custom-stage-name implement \
   --instructions "Implement the approved plan."
 
 # Full attribute set
 loopctl pipelines stages add <pipeline-id> \
-  --name review \
-  --role reviewing \
+  --custom-stage-name review \
   --instructions "Review the implementation." \
-  --gate manual \
-  --agent my-reviewer \
+  --gate human \
   --advance-notice "30m" \
   --position 3 \
   --runs-in-container \
-  --on-failure '{"max_rework_count":2,"rework_to_position":1}' \
-  --prompt-sections '[{"key":"context","content":"..."}]' \
-  --stage-triggers '["on_push"]' \
-  --advance-requirements '["tests_pass"]' \
-  --branch-conditions '["main"]' \
-  --environment '{"CI":"true"}'
+  --on-failure rework \
+  --max-rework-count 2 \
+  --rework-to-position 1 \
+  --rework-allowed-positions 0,1
 
 # Preview without making API calls
 loopctl pipelines stages add <pipeline-id> --name review --dry-run
@@ -665,26 +674,25 @@ loopctl pipelines stages add <pipeline-id> --name review --dry-run
 
 | Flag | Required | Description |
 |------|----------|-------------|
-| `--name` | yes | Stage name (unique identifier within the pipeline) |
-| `--role` | no | Lifecycle role (e.g. `planning`, `implementing`, `reviewing`) |
+| `--name` | no | Legacy stage name. Prefer `--custom-stage-name`. |
+| `--role` | no | Legacy stage role. Prefer `--stage-type`. |
 | `--stage-type` | no | `stage_type` for custom stage types |
 | `--custom-stage-name` | no | `custom_stage_name` (custom type only) |
-| `--template` | no | Template (custom type only) |
 | `--instructions` | no | Full agent prompt text for this stage |
-| `--gate` | no | Advance gate (e.g. `manual`, `ci_pass`) |
-| `--agent` | no | Agent slug override |
+| `--gate` | no | Advance gate, `automated` or `human` |
 | `--advance-notice` | no | Advance notice value |
 | `--approval-button-text` | no | Human approval button label. Clear with `--approval-button-text=`. |
 | `--position` | no | Explicit position override |
 | `--runs-in-container` | no | Override `runs_in_container` for this stage |
-| `--on-failure` | no | JSON object: `{"max_rework_count":3,"rework_to_position":0}` |
-| `--prompt-sections` | no | JSON array of prompt section objects |
-| `--stage-triggers` | no | JSON array of trigger strings |
+| `--on-failure` | no | Failure mode, `rework` or `block` |
+| `--max-rework-count` | no | Maximum number of rework iterations |
+| `--rework-to-position` | no | Default position for rework |
+| `--rework-allowed-positions` | no | Comma-separated earlier positions available for rework. Pass an empty value to allow only the default position. |
+| `--prompt-sections` | no | JSON object of prompt section overrides |
+| `--stage-triggers` | no | JSON array of stage trigger objects |
 | `--advance-requirements` | no | JSON array of requirement strings |
-| `--branch-conditions` | no | JSON array of branch condition strings |
-| `--environment` | no | JSON object of environment key/value pairs |
 
-Output columns on success: `ID`, `NAME`, `KIND`. Use `--json` for the full pipeline resource (stages included).
+Output columns on success are `ID`, `NAME`, and `KIND`. Use `pipelines stages list --json` with the pipeline ID to retrieve the resulting stages.
 
 **APIs:** `GET /api/pipelines/:id` then `PATCH /api/pipelines/:id`
 
@@ -699,11 +707,13 @@ loopctl pipelines stages update <pipeline-id> <stage-id> \
 
 # Change gate and add failure policy
 loopctl pipelines stages update <pipeline-id> <stage-id> \
-  --gate ci_pass \
-  --on-failure '{"max_rework_count":3}'
+  --gate automated \
+  --on-failure rework \
+  --max-rework-count 3 \
+  --rework-allowed-positions 0,1
 
 # Preview without making API calls
-loopctl pipelines stages update <pipeline-id> <stage-id> --gate manual --dry-run
+loopctl pipelines stages update <pipeline-id> <stage-id> --gate human --dry-run
 ```
 
 Accepts the same flags as `stages add` except `--name` (the stage is identified by the `<stage-id>` positional argument). At least one flag must be provided.
@@ -982,7 +992,7 @@ At least one flag must be provided.
 
 #### tasks cancel
 
-Cancel an in-progress task by ID. On success, prints a confirmation. With `--json`, emits `{"id":"...","status":"cancelled","stage":"..."}`. Attempting to cancel an already-finished task surfaces the API's human-readable error.
+Cancel an in-progress task by ID. On success, prints `task <id>: status <status>, stage <stage>`. With `--json`, emits `{"id":"...","status":"rejected","stage":"..."}` for a task the API reports as rejected. Both modes use the status and stage returned by the API. Attempting to cancel an already-finished task exits with the API's error.
 
 ```bash
 loopctl tasks cancel <id>
@@ -1072,8 +1082,8 @@ loopctl tasks comments create <task-id> --body "..." --dry-run
 | Flag | Required | Description |
 |------|----------|-------------|
 | `--body` | yes | Comment body text |
-| `--input-tokens` | no | Input token count for billing |
-| `--output-tokens` | no | Output token count for billing |
+| `--input-tokens` | no | Input token count for billing, sent alongside the comment object |
+| `--output-tokens` | no | Output token count for billing, sent alongside the comment object |
 
 **API:** `POST /api/tasks/:id/comments`
 
@@ -1235,7 +1245,7 @@ loopctl tasks recordings content <task-id> <recording-id> --dry-run
 
 ### topup
 
-Fund your LoopControl account. When the account balance is insufficient, the API returns HTTP 402 with the available payment products and rails. `loopctl topup` settles the payment automatically when a wallet is configured, or prints a Stripe hosted-checkout link for manual payment in a browser.
+Fund your LoopControl account. `loopctl topup` reads the billing API's HTTP 402 funding menu. It uses the first available package that matches the requested product kind or the exact package ID you supply. The command settles payment with a configured wallet or prints a hosted checkout URL.
 
 ```bash
 # Print the checkout link for the default top-up package (no wallet configured)
@@ -1244,6 +1254,7 @@ loopctl topup
 # Choose a specific product
 loopctl topup --product trial
 loopctl topup --product subscription
+loopctl topup --product 50h
 
 # Machine-stable JSON output (for scripting or agents)
 loopctl topup --json
@@ -1253,7 +1264,7 @@ loopctl topup --json
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--product` | `topup` | Product to fund: `trial` (5-hour trial), `topup` (top-up package), or `subscription` (subscription prepay) |
+| `--product` | `topup` | Package ID or a product kind such as `trial`, `topup`, or `subscription` |
 
 #### Payment rails
 
@@ -1261,8 +1272,8 @@ loopctl topup --json
 
 | Rail | Requires | Behavior |
 |------|----------|----------|
-| `x402` | `LOOPCTL_ARBITRUM_PRIVATE_KEY` | Signs and submits a USDC payment on Arbitrum (EIP-3009), then retries the request automatically |
-| `l402` | `LOOPCTL_LN_HOST` + `LOOPCTL_LN_MACAROON_HEX` | Pays the Lightning invoice via the configured LND node, then retries the request automatically |
+| `x402` | `LOOPCTL_ARBITRUM_PRIVATE_KEY` | Signs and submits an exact USDC payment on Arbitrum (EIP-3009), then waits for settlement |
+| `l402` | `LOOPCTL_LN_HOST` + `LOOPCTL_LN_MACAROON_HEX` | Pays the Lightning invoice via the configured LND node, submits the payment proof, and waits for settlement |
 | `human_link` | _(none)_ | Prints the Stripe checkout URL for manual payment in a browser (default fallback) |
 
 Rails are tried in preference order: `x402` → `l402` → `human_link`. The first configured rail that the 402 response also advertises wins.
@@ -1278,6 +1289,8 @@ Wallet credentials are supplied via environment variables — never stored in th
 | `LOOPCTL_ARBITRUM_PRIVATE_KEY` | 64-char hex secp256k1 private key (no `0x` prefix) |
 
 **L402 (Lightning via LND REST):**
+
+Loopctl submits the Lightning proof in `Authorization` and authenticates the payment submission with the active account token in `X-Api-Token`.
 
 | Variable | Description |
 |----------|-------------|
@@ -1297,26 +1310,18 @@ loopctl topup   # settles automatically; no browser required
 ```bash
 export LOOPCTL_LN_HOST=https://localhost:8080
 export LOOPCTL_LN_MACAROON_HEX=<hex-macaroon>
-loopctl topup   # pays the Lightning invoice and retries automatically
+loopctl topup   # pays the Lightning invoice and waits for settlement
 ```
 
 #### JSON output
 
-With `--json`, the output depends on which rail settled the payment:
+With `--json`, the command obtains a hosted checkout URL and returns a stable object:
 
 ```json
 {"product": "topup", "rail": "human_link", "url": "https://checkout.stripe.com/..."}
 ```
 
-```json
-{"rail": "x402", "status": "paid", "from": "0x...", "product": "topup"}
-```
-
-```json
-{"rail": "l402", "status": "paid", "product": "topup"}
-```
-
-**API:** `POST /api/topup`
+**API:** `GET /api/billing/funding_envelope`, the selected `POST /api/billing/topups`, `POST /api/billing/x402_payments`, or `POST /api/billing/l402_payments`, and `GET /api/billing/pending_purchases/:id` for checkout or settlement.
 
 ---
 
@@ -1675,6 +1680,8 @@ When adding a new loopctl command, update `internal/schema/coverage.go`:
 - Add a `Covered` entry for each API operation the command calls
 - Declare any non-pagination query parameters in `QueryParams`
 - Set `Paginated: true` for commands that follow `links.next` pagination
+
+`TestCommandResponseContracts` executes covered commands against responses built from the embedded OpenAPI specification. It checks actual decoder projections, followed links, and command output. Add an invocation and its HTTP steps to the matrix when introducing or changing a response reader.
 
 **Module proxy**: `ctlkit` (`github.com/dotdevlabs/ctlkit`) is a public GitHub repo but is not indexed by the public Go module proxy. Set these env vars when building outside CI so Go fetches it directly and skips the checksum database:
 

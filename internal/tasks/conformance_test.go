@@ -344,8 +344,8 @@ func TestConformance_TasksUnblock(t *testing.T) {
 	var violations []string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		violations = schema.CheckRequest(r, endpoints)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = fmt.Fprint(w, `{"id":1,"status":"open","stage":"implementing"}`)
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		_, _ = fmt.Fprint(w, `{"data":{"type":"tasks","id":"1","attributes":{"status":"open","stage":"implementing"}}}`)
 	}))
 	defer ts.Close()
 
@@ -353,7 +353,9 @@ func TestConformance_TasksUnblock(t *testing.T) {
 	cmd := unblockCmd()
 	cmd.SetContext(ctx)
 	cmd.SetOut(io.Discard)
-	_ = cmd.RunE(cmd, []string{"t1"})
+	if err := cmd.RunE(cmd, []string{"t1"}); err != nil {
+		t.Fatal(err)
+	}
 
 	if len(violations) != 0 {
 		t.Errorf("conformance violations for tasks unblock: %v", violations)

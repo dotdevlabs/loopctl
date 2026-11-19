@@ -9,7 +9,12 @@ import (
 
 // RailInfo holds per-rail payment info for a fundable product.
 type RailInfo struct {
-	URL string `json:"url"`
+	URL       string `json:"url"`
+	Method    string `json:"-"`
+	PackageID string `json:"-"`
+	Scheme    string `json:"-"`
+	Network   string `json:"-"`
+	Version   int    `json:"-"`
 
 	// x402 fields (Arbitrum USDC via EIP-3009)
 	Amount    string `json:"amount,omitempty"`    // USDC token units (wei-equivalent)

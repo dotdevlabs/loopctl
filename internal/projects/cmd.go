@@ -4,7 +4,9 @@ package projects
 import (
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -14,7 +16,25 @@ import (
 	"github.com/dotdevlabs/ctlkit/pkg/output"
 
 	"github.com/dotdevlabs/loopctl/internal/apiclient"
+	"github.com/dotdevlabs/loopctl/internal/flagmeta"
 )
+
+var agentSizeIDPattern = regexp.MustCompile(`^[0-9]{1,19}$`)
+
+func projectResource(res apiclient.SingleResult[ProjectAttrs]) apiclient.CollectionResource[ProjectAttrs] {
+	return apiclient.CollectionResource[ProjectAttrs]{
+		Resource:      res.Resource,
+		Relationships: res.SelectRelationships("agent_size", "platform"),
+	}
+}
+
+func projectPlatform(resource interface{ DecodeRelationship(string, any) error }) (string, error) {
+	var platform struct {
+		Data apiclient.ResourceIdentifier `json:"data"`
+	}
+	err := resource.DecodeRelationship("platform", &platform)
+	return platform.Data.ID, err
+}
 
 // ProjectAttrs holds the attributes nested under JSON:API data.attributes.
 type ProjectAttrs struct {
@@ -22,7 +42,6 @@ type ProjectAttrs struct {
 	WebhookSecretConfigured bool    `json:"webhook_secret_configured"`
 	Name                    string  `json:"name"`
 	DisplayName             string  `json:"display_name"`
-	PlatformID              string  `json:"platform_id"`
 	GitRepoURL              string  `json:"git_repo_url"`
 	GitBranch               string  `json:"git_branch"`
 	CreatedAt               string  `json:"created_at"`
@@ -50,7 +69,7 @@ func listCmd() *cobra.Command {
 			activeCtx := ctxutil.ActiveContextFrom(ctx)
 			r := ctxutil.RendererFrom(ctx)
 
-			col, err := apiclient.GetJSONAPICollectionAllPages[ProjectAttrs](ctx, activeCtx, "/api/projects")
+			col, err := apiclient.GetJSONAPICollectionAllPages[ProjectAttrs](ctx, activeCtx, "/api/projects", "agent_size", "platform")
 			if err != nil {
 				return err
 			}
@@ -63,7 +82,11 @@ func listCmd() *cobra.Command {
 			}
 			rows := make([][]string, len(col.Data))
 			for i, p := range col.Data {
-				rows[i] = []string{p.ID, p.Attributes.Name, p.Attributes.PlatformID, p.Attributes.GitRepoURL}
+				platform, err := projectPlatform(p)
+				if err != nil {
+					return err
+				}
+				rows[i] = []string{p.ID, p.Attributes.Name, platform, p.Attributes.GitRepoURL}
 			}
 			return r.Render(cols, rows, col)
 		},
@@ -81,7 +104,7 @@ func getCmd() *cobra.Command {
 			r := ctxutil.RendererFrom(ctx)
 
 			path := "/api/projects/" + url.PathEscape(args[0])
-			res, err := apiclient.GetJSONAPISingle[ProjectAttrs](ctx, activeCtx, path)
+			res, err := apiclient.GetJSONAPISingleFull[ProjectAttrs](ctx, activeCtx, path)
 			if err != nil {
 				return err
 			}
@@ -98,8 +121,12 @@ func getCmd() *cobra.Command {
 			if res.Attributes.WebhookURL != nil {
 				webhookURL = *res.Attributes.WebhookURL
 			}
-			rows := [][]string{{res.ID, res.Attributes.Name, res.Attributes.PlatformID, res.Attributes.GitRepoURL, webhookURL, fmt.Sprint(res.Attributes.WebhookSecretConfigured)}}
-			return r.Render(cols, rows, res)
+			platform, err := projectPlatform(res)
+			if err != nil {
+				return err
+			}
+			rows := [][]string{{res.ID, res.Attributes.Name, platform, res.Attributes.GitRepoURL, webhookURL, fmt.Sprint(res.Attributes.WebhookSecretConfigured)}}
+			return r.Render(cols, rows, projectResource(res))
 		},
 	}
 }
@@ -271,7 +298,7 @@ func createCmd() *cobra.Command {
 				}
 			}
 
-			res, err := apiclient.PostJSONBodyJSONAPIResponse[ProjectAttrs](ctx, activeCtx, "/api/projects", body)
+			res, err := apiclient.WriteJSONAPISingleFull[ProjectAttrs](ctx, activeCtx, http.MethodPost, "/api/projects", body)
 			if err != nil {
 				return err
 			}
@@ -286,8 +313,12 @@ func createCmd() *cobra.Command {
 				{Header: "PLATFORM"},
 				{Header: "REPO"},
 			}
-			rows := [][]string{{res.ID, res.Attributes.Name, res.Attributes.PlatformID, res.Attributes.GitRepoURL}}
-			return r.Render(cols, rows, res)
+			responsePlatformID, err := projectPlatform(res)
+			if err != nil {
+				return err
+			}
+			rows := [][]string{{res.ID, res.Attributes.Name, responsePlatformID, res.Attributes.GitRepoURL}}
+			return r.Render(cols, rows, projectResource(res))
 		},
 	}
 
@@ -305,7 +336,7 @@ func createCmd() *cobra.Command {
 }
 
 func updateCmd() *cobra.Command {
-	var webhookURL, webhookSecret string
+	var webhookURL, webhookSecret, agentSizeID string
 	var secretStdin, disableWebhook bool
 	var (
 		displayName     string
@@ -344,6 +375,16 @@ func updateCmd() *cobra.Command {
 			ctx = apiclient.WithSensitiveValue(ctx, webhookSecret)
 
 			patch := map[string]any{}
+			if cmd.Flags().Changed("agent-size-id") {
+				switch {
+				case agentSizeID == "":
+					patch["agent_size_id"] = nil
+				case agentSizeIDPattern.MatchString(agentSizeID):
+					patch["agent_size_id"] = agentSizeID
+				default:
+					return clierror.New(clierror.CodeUsage, "agent size ID must contain 1 to 19 digits", "")
+				}
+			}
 			if cmd.Flags().Changed("webhook-url") {
 				patch["webhook_url"] = webhookURL
 			}
@@ -401,7 +442,7 @@ func updateCmd() *cobra.Command {
 			body := map[string]any{"project": patch}
 			path := "/api/projects/" + url.PathEscape(args[0])
 
-			res, err := apiclient.PatchJSONBodyJSONAPIResponse[ProjectAttrs](ctx, activeCtx, path, body)
+			res, err := apiclient.WriteJSONAPISingleFull[ProjectAttrs](ctx, activeCtx, http.MethodPatch, path, body)
 			if err != nil {
 				return err
 			}
@@ -412,8 +453,12 @@ func updateCmd() *cobra.Command {
 				{Header: "PLATFORM"},
 				{Header: "REPO"},
 			}
-			rows := [][]string{{res.ID, res.Attributes.Name, res.Attributes.PlatformID, res.Attributes.GitRepoURL}}
-			return r.Render(cols, rows, res)
+			responsePlatformID, err := projectPlatform(res)
+			if err != nil {
+				return err
+			}
+			rows := [][]string{{res.ID, res.Attributes.Name, responsePlatformID, res.Attributes.GitRepoURL}}
+			return r.Render(cols, rows, projectResource(res))
 		},
 	}
 
@@ -427,6 +472,8 @@ func updateCmd() *cobra.Command {
 	cmd.Flags().StringVar(&containerImage, "container-image", "", "Container image")
 	cmd.Flags().IntVar(&platformID, "platform-id", 0, "Platform ID")
 	cmd.Flags().IntVar(&pipelineID, "pipeline-id", 0, "Pipeline ID (sets the project's default pipeline)")
+	cmd.Flags().StringVar(&agentSizeID, "agent-size-id", "", "Agent size catalog ID; pass an empty value to clear the assignment")
+	flagmeta.SchemaFromSpec(cmd, "agent-size-id", "#/components/schemas/ProjectAgentSizeUpdateId", false)
 	cmd.Flags().StringVar(&failurePolicy, "failure-policy", "", "Failure policy")
 	cmd.Flags().IntVar(&fallbackAgentID, "fallback-agent-id", 0, "Fallback agent ID")
 

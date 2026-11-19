@@ -28,7 +28,7 @@ func TestCurrentStageInputs(t *testing.T) {
 			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/vnd.api+json")
 				if r.Method == http.MethodGet {
-					_, _ = fmt.Fprint(w, `{"data":{"type":"pipelines","id":"p1","attributes":{"name":"Pipeline","kind":"feature","stages":[{"stage_type":"existing","approval_button_text":"Keep label"}]}}}`)
+					_, _ = fmt.Fprint(w, pipelineWithStagesResponse("p1", "Pipeline", []map[string]any{{"stage_type": "existing", "approval_button_text": "Keep label"}}))
 					return
 				}
 				captured, _ = io.ReadAll(r.Body)
@@ -134,7 +134,7 @@ func TestApprovalButtonTextRequests(t *testing.T) {
 						}
 						w.Header().Set("Content-Type", "application/vnd.api+json")
 						if tc.name == "add" && r.Method == http.MethodGet {
-							_, _ = fmt.Fprint(w, `{"data":{"type":"pipelines","id":"p1","attributes":{"stages":[]}}}`)
+							_, _ = fmt.Fprint(w, pipelineNoStagesResponse("p1", "Pipeline"))
 							return
 						}
 						if got := r.Method + " " + r.URL.Path; got != tc.request {

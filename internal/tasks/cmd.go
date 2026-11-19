@@ -3,7 +3,6 @@ package tasks
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"net/url"
@@ -45,7 +44,6 @@ type TaskAttrs struct {
 	MergeCommitSHA              string       `json:"merge_commit_sha"`
 	CIStatus                    string       `json:"ci_status"`
 	CIStatusURL                 string       `json:"ci_status_url"`
-	CodeReviewStatus            string       `json:"code_review_status"`
 	BlockedReason               string       `json:"blocked_reason"`
 	CompletedAt                 string       `json:"completed_at"`
 	PickedUpAt                  string       `json:"picked_up_at"`
@@ -68,17 +66,13 @@ type ActivityAttrs struct {
 	CreatedAt   string `json:"created_at"`
 }
 
-// CancellationResult is the flat JSON response from the cancellation endpoint.
-type CancellationResult struct {
-	Status string `json:"status"`
-	Stage  string `json:"stage"`
+type taskActionAttrs struct {
+	Status *string `json:"status"`
+	Stage  *string `json:"stage"`
 }
 
-// UnblockResult is the flat JSON response from the unblock endpoint.
-type UnblockResult struct {
-	ID     int    `json:"id"`
-	Stage  string `json:"stage"`
-	Status string `json:"status"`
+func (a taskActionAttrs) output(id string) map[string]string {
+	return map[string]string{"id": id, "status": *a.Status, "stage": *a.Stage}
 }
 
 // NewCmd returns the "tasks" parent command with all verb subcommands.
@@ -429,25 +423,17 @@ func cancelCmd() *cobra.Command {
 			out := cmd.OutOrStdout()
 
 			path := "/api/tasks/" + url.PathEscape(args[0]) + "/cancellation"
-			raw, err := apiclient.PostJSON[json.RawMessage](ctx, activeCtx, path, nil)
+			res, err := apiclient.PostJSONAPIAction[taskActionAttrs](ctx, activeCtx, path)
 			if err != nil {
 				return err
 			}
-
-			var result map[string]any
-			if len(raw) > 0 {
-				if err := json.Unmarshal(raw, &result); err != nil {
-					return fmt.Errorf("cancellation response contract error: %w", err)
-				}
+			if res.Attributes.Status == nil || res.Attributes.Stage == nil {
+				return fmt.Errorf("cancellation response contract error: status and stage must be strings in data.attributes")
 			}
-			status, statusOK := result["status"].(string)
-			stage, stageOK := result["stage"].(string)
-			if !statusOK || !stageOK {
-				return fmt.Errorf("cancellation response contract error: status and stage must be strings")
-			}
+			status, stage := *res.Attributes.Status, *res.Attributes.Stage
 
 			if ctxutil.GlobalFlagsFrom(ctx).JSON {
-				return output.JSONTo(out, map[string]string{"id": args[0], "status": status, "stage": stage})
+				return output.JSONTo(out, res.Attributes.output(args[0]))
 			}
 			_, _ = fmt.Fprintf(out, "task %s: status %s, stage %s\n", args[0], status, stage)
 			return nil
@@ -473,13 +459,16 @@ func unblockCmd() *cobra.Command {
 			out := cmd.OutOrStdout()
 
 			path := "/api/tasks/" + url.PathEscape(args[0]) + "/unblock"
-			result, err := apiclient.PostJSONFlatErr[UnblockResult](ctx, activeCtx, path, nil)
+			res, err := apiclient.PostJSONAPIAction[taskActionAttrs](ctx, activeCtx, path)
 			if err != nil {
 				return err
 			}
+			if res.Attributes.Status == nil || res.Attributes.Stage == nil {
+				return fmt.Errorf("unblock response contract error: status and stage must be strings in data.attributes")
+			}
 
 			if ctxutil.GlobalFlagsFrom(ctx).JSON {
-				return output.JSONTo(out, map[string]string{"id": args[0], "status": result.Status, "stage": result.Stage})
+				return output.JSONTo(out, res.Attributes.output(args[0]))
 			}
 			_, _ = fmt.Fprintf(out, "task %s unblocked\n", args[0])
 			return nil
@@ -546,7 +535,7 @@ func watchTask(
 		if err != nil {
 			return false, err
 		}
-		if sp := apiclient.SelfLinkPath(res.SelfLink, activeCtx.BaseURL); sp != "" {
+		if sp := apiclient.SelfLinkPath(res.Self(), activeCtx.BaseURL); sp != "" {
 			taskPath = sp
 			activitiesPath = sp + "/activities"
 		}

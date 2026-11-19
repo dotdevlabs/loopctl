@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/hex"
 	"fmt"
 	"io"
 	"math/big"
@@ -33,7 +32,6 @@ func (s *stubSigner) Sign(_ X402SignParams) (X402Signature, error) {
 }
 
 func makeX402Info(serverURL, product string) apiclient.FundingInfo {
-	nonce := make([]byte, 32)
 	return apiclient.FundingInfo{
 		Rails: []string{"x402", "human_link"},
 		Products: []apiclient.Product{
@@ -43,11 +41,12 @@ func makeX402Info(serverURL, product string) apiclient.FundingInfo {
 				Rails: map[string]apiclient.RailInfo{
 					"x402": {
 						Amount:    "1000000",
-						Recipient: "0xRecipient0000000000000000000000000000000",
-						Token:     "0xToken000000000000000000000000000000000",
-						ChainID:   42161,
-						Deadline:  9999999999,
-						Nonce:     "0x" + hex.EncodeToString(nonce),
+						Recipient: "0x" + strings.Repeat("1", 40),
+						Token:     "0x" + strings.Repeat("2", 40),
+						PackageID: "10h",
+						Network:   "arbitrum",
+						Scheme:    "exact",
+						Version:   1,
 					},
 					"human_link": {URL: serverURL + "/checkout"},
 				},
@@ -70,13 +69,16 @@ func TestX402PayerSuccess(t *testing.T) {
 	var gotHeader string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotHeader = r.Header.Get("X-PAYMENT")
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `{}`)
+		if r.Method != http.MethodPost || r.URL.Path != x402Endpoint || r.URL.Query().Get("package_id") != "10h" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL)
+		}
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = fmt.Fprint(w, `{"data":{"id":"usdc-1","attributes":{"status":"settled"}}}`)
 	}))
 	defer ts.Close()
 
 	signer := &stubSigner{addr: "0xFromAddr"}
-	p := &X402Payer{Endpoint: "/api/topup", signer: signer}
+	p := &X402Payer{Endpoint: x402Endpoint, signer: signer}
 	ctx := makeX402Ctx(t, ts.URL)
 	info := makeX402Info(ts.URL, "topup")
 
@@ -184,8 +186,8 @@ func TestX402PayerFromWalletConfig(t *testing.T) {
 
 func TestX402PayerJSONOutput(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `{}`)
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = fmt.Fprint(w, `{"data":{"id":"usdc-1","attributes":{"status":"settled"}}}`)
 	}))
 	defer ts.Close()
 
@@ -260,25 +262,5 @@ func TestSecp256k1SignerInvalidKey(t *testing.T) {
 	p := &X402Payer{signer: signer}
 	if p.Configured() {
 		t.Error("expected X402Payer.Configured() == false with empty address")
-	}
-}
-
-func TestHexToBytes32(t *testing.T) {
-	nonce := "0x" + strings.Repeat("ab", 32)
-	b, err := hexToBytes32(nonce)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	for i, v := range b {
-		if v != 0xab {
-			t.Errorf("byte[%d] = %x; want ab", i, v)
-		}
-	}
-}
-
-func TestHexToBytes32WrongLength(t *testing.T) {
-	_, err := hexToBytes32("0xdeadbeef")
-	if err == nil {
-		t.Error("expected error for wrong length")
 	}
 }

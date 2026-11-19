@@ -165,8 +165,8 @@ func TestAgentsGetJSON(t *testing.T) {
 	if !strings.Contains(got, "claude-agent") {
 		t.Errorf("expected agent slug in JSON output; got:\n%s", got)
 	}
-	if !strings.Contains(got, "anthropic") {
-		t.Errorf("expected credentials_schema service in JSON output; got:\n%s", got)
+	if !strings.Contains(got, "ANTHROPIC_API_KEY") {
+		t.Errorf("expected credentials_schema env_var in JSON output; got:\n%s", got)
 	}
 }
 

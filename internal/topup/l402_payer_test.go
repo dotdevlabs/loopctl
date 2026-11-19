@@ -37,8 +37,9 @@ func makeL402Info(product string, macaroon, invoice string) apiclient.FundingInf
 				Label: "Top-up",
 				Rails: map[string]apiclient.RailInfo{
 					"l402": {
-						Macaroon: macaroon,
-						Invoice:  invoice,
+						PackageID: "10h",
+						Macaroon:  macaroon,
+						Invoice:   invoice,
 					},
 					"human_link": {URL: "https://checkout.example.com"},
 				},
@@ -64,13 +65,16 @@ func TestL402PayerSuccess(t *testing.T) {
 
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotAuth = r.Header.Get("Authorization")
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `{}`)
+		if r.Method != http.MethodPost || r.URL.Path != l402Endpoint || r.URL.Query().Get("package_id") != "10h" {
+			t.Errorf("unexpected request %s %s", r.Method, r.URL)
+		}
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = fmt.Fprint(w, `{"data":{"id":"lightning-1","attributes":{"status":"settled"}}}`)
 	}))
 	defer ts.Close()
 
 	invoicer := &stubInvoicer{preimage: wantPreimage}
-	p := &L402Payer{Endpoint: "/api/topup", invoicer: invoicer}
+	p := &L402Payer{Endpoint: l402Endpoint, invoicer: invoicer}
 	ctx := makeL402Ctx(t, ts.URL)
 	info := makeL402Info("topup", wantMacaroon, "lnbc100n1...")
 
@@ -165,8 +169,8 @@ func TestL402PayerFromWalletConfig(t *testing.T) {
 
 func TestL402PayerJSONOutput(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		fmt.Fprint(w, `{}`)
+		w.WriteHeader(http.StatusAccepted)
+		_, _ = fmt.Fprint(w, `{"data":{"id":"lightning-1","attributes":{"status":"settled"}}}`)
 	}))
 	defer ts.Close()
 

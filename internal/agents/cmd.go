@@ -16,7 +16,6 @@ import (
 
 // AgentCredentialSchemaEntry describes one credential required by an agent (never a credential value).
 type AgentCredentialSchemaEntry struct {
-	Service  string  `json:"service"`
 	EnvVar   *string `json:"env_var"`
 	FilePath *string `json:"file_path"`
 	Encoding *string `json:"encoding"`

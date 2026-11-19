@@ -15,19 +15,24 @@ import (
 
 // pipelineWithStagesResponse returns a JSON:API pipeline response including stages.
 func pipelineWithStagesResponse(id, name string, stages []map[string]any) string {
-	stagesJSON, _ := json.Marshal(stages)
+	links := make([]map[string]string, 0, len(stages))
+	included := make([]map[string]any, 0, len(stages))
+	for i, stage := range stages {
+		link := map[string]string{"type": "pipeline_stages", "id": fmt.Sprint(i + 1)}
+		links = append(links, link)
+		included = append(included, map[string]any{"type": link["type"], "id": link["id"], "attributes": stage})
+	}
+	linksJSON, _ := json.Marshal(links)
+	stagesJSON, _ := json.Marshal(included)
 	return fmt.Sprintf(
-		`{"data":{"type":"pipelines","id":%q,"attributes":{"name":%q,"kind":"my-kind","stages":%s}}}`,
-		id, name, stagesJSON,
+		`{"data":{"type":"pipelines","id":%q,"attributes":{"name":%q,"kind":"my-kind"},"relationships":{"stages":{"data":%s}}},"included":%s}`,
+		id, name, linksJSON, stagesJSON,
 	)
 }
 
 // pipelineNoStagesResponse returns a JSON:API pipeline response with no stages.
 func pipelineNoStagesResponse(id, name string) string {
-	return fmt.Sprintf(
-		`{"data":{"type":"pipelines","id":%q,"attributes":{"name":%q,"kind":"my-kind"}}}`,
-		id, name,
-	)
+	return pipelineWithStagesResponse(id, name, nil)
 }
 
 // ---- List tests ----

@@ -69,10 +69,12 @@ has the form `task <task-id>: status <status>, stage <stage>`. JSON output conta
 `id`, `status`, and `stage`; scripts should use the returned values rather than
 assume a particular cancellation status.
 
-If the response is empty or either `status` or `stage` is missing, null, or not
-a string, the command fails with a cancellation response contract error instead
-of reporting success. This error describes the response; it does not establish
-whether the server applied the cancellation.
+The command reads `status` and `stage` from `data.attributes` in the JSON:API
+response. Both fields must be strings. An invalid response causes the command
+to fail. Use `loopctl tasks get <task-id>` to verify the task's state afterward.
+
+If the API refuses a cancellation, for example because the task is already
+rejected, the command exits with an error and displays the server's message.
 
 ## Create and update todos
 
