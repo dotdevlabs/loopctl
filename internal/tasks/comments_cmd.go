@@ -14,11 +14,9 @@ import (
 
 // CommentAttrs holds the attributes for a task comment.
 type CommentAttrs struct {
-	Body         string `json:"body"`
-	CommentType  string `json:"comment_type"`
-	InputTokens  int    `json:"input_tokens"`
-	OutputTokens int    `json:"output_tokens"`
-	CreatedAt    string `json:"created_at"`
+	Body        string `json:"body"`
+	CommentType string `json:"comment_type"`
+	CreatedAt   string `json:"created_at"`
 }
 
 // commentsCmd returns the "comments" parent command.
@@ -92,13 +90,13 @@ func commentsCreateCmd() *cobra.Command {
 			r := ctxutil.RendererFrom(ctx)
 
 			commentBody := map[string]any{"body": body}
+			reqBody := map[string]any{"comment": commentBody}
 			if cmd.Flags().Changed("input-tokens") {
-				commentBody["input_tokens"] = inputTokens
+				reqBody["input_tokens"] = inputTokens
 			}
 			if cmd.Flags().Changed("output-tokens") {
-				commentBody["output_tokens"] = outputTokens
+				reqBody["output_tokens"] = outputTokens
 			}
-			reqBody := map[string]any{"comment": commentBody}
 
 			path := "/api/tasks/" + url.PathEscape(args[0]) + "/comments"
 			res, err := apiclient.PostJSONBodyJSONAPIResponse[CommentAttrs](ctx, activeCtx, path, reqBody)

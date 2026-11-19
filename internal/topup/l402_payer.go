@@ -51,29 +51,18 @@ func (p *L402Payer) Pay(ctx context.Context, product string, info apiclient.Fund
 	if railInfo.Macaroon == "" {
 		return fmt.Errorf("l402: no macaroon in rail info for product %q", product)
 	}
+	if railInfo.PackageID == "" {
+		return fmt.Errorf("l402: no package ID for product %q", product)
+	}
 
 	preimage, err := p.invoicer.PayInvoice(ctx, railInfo.Invoice)
 	if err != nil {
 		return fmt.Errorf("l402: paying invoice: %w", err)
 	}
 
-	activeCtx := ctxutil.ActiveContextFrom(ctx)
-	fullURL := strings.TrimRight(activeCtx.BaseURL, "/") + p.Endpoint //nolint:gosec // G107: URL from user config
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, bytes.NewReader([]byte("{}")))
-	if err != nil {
-		return fmt.Errorf("l402: building request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", fmt.Sprintf("L402 %s:%s", railInfo.Macaroon, preimage))
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("l402: request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("l402: payment request returned %d", resp.StatusCode)
+	headers := http.Header{"Authorization": {fmt.Sprintf("L402 %s:%s", railInfo.Macaroon, preimage)}}
+	if err := submitPayment(ctx, p.Endpoint, railInfo.PackageID, headers); err != nil {
+		return fmt.Errorf("l402: %w", err)
 	}
 
 	jsonMode := ctxutil.GlobalFlagsFrom(ctx).JSON

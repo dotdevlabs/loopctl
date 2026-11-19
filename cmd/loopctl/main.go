@@ -13,6 +13,7 @@ import (
 
 	"github.com/dotdevlabs/loopctl/internal/account"
 	"github.com/dotdevlabs/loopctl/internal/agents"
+	"github.com/dotdevlabs/loopctl/internal/agentsizes"
 	"github.com/dotdevlabs/loopctl/internal/apiclient"
 	"github.com/dotdevlabs/loopctl/internal/credentials"
 	"github.com/dotdevlabs/loopctl/internal/environments"
@@ -40,6 +41,7 @@ func rootConfig() root.BuildConfig {
 		Commands: []*cobra.Command{
 			account.NewCmd(),
 			agents.NewCmd(),
+			agentsizes.NewCmd(),
 			credentials.NewCmd(),
 			environments.NewCmd(),
 			onboard.NewCmd(defaultBaseURL),

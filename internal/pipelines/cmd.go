@@ -16,11 +16,10 @@ import (
 
 // PipelineAttrs holds the attributes returned by /api/pipelines.
 type PipelineAttrs struct {
-	Name        string            `json:"name"`
-	Description string            `json:"description"`
-	Kind        string            `json:"kind"`
-	StageCount  int               `json:"stage_count"`
-	Stages      []json.RawMessage `json:"stages,omitempty"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Kind        string `json:"kind"`
+	StageCount  int    `json:"stage_count"`
 }
 
 // NewCmd returns the "pipelines" parent command.

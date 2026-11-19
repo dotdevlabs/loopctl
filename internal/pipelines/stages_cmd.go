@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sort"
+	"strconv"
 
 	"github.com/spf13/cobra"
 
@@ -26,6 +27,7 @@ type PipelineStageAttrs struct {
 	OnFailure               string          `json:"on_failure"`
 	MaxReworkCount          *int            `json:"max_rework_count"`
 	ReworkToPosition        *int            `json:"rework_to_position"`
+	ReworkAllowedPositions  []int           `json:"rework_allowed_positions"`
 	Position                int             `json:"position"`
 	AgentID                 *string         `json:"agent_id"`
 	EnvironmentID           *string         `json:"environment_id"`
@@ -54,9 +56,13 @@ type StageInput struct {
 	OnFailure               string          `json:"on_failure,omitempty"`
 	MaxReworkCount          *int            `json:"max_rework_count,omitempty"`
 	ReworkToPosition        *int            `json:"rework_to_position,omitempty"`
+	ReworkAllowedPositions  *[]int          `json:"rework_allowed_positions,omitempty"`
 	RunsInContainerOverride *bool           `json:"runs_in_container_override,omitempty"`
 	Position                *int            `json:"position,omitempty"`
+	AgentID                 *int64          `json:"agent_id,omitempty"`
+	EnvironmentID           *int64          `json:"environment_id,omitempty"`
 	PromptSections          json.RawMessage `json:"prompt_sections,omitempty"`
+	PromptConfiguration     json.RawMessage `json:"prompt_configuration,omitempty"`
 	StageTriggers           json.RawMessage `json:"stage_triggers,omitempty"`
 	AdvanceRequirements     json.RawMessage `json:"advance_requirements,omitempty"`
 }
@@ -134,22 +140,23 @@ const approvalButtonTextHelp = "Text for the human approval button; clear with -
 
 func stagesAddCmd() *cobra.Command {
 	var (
-		name               string
-		role               string
-		stageType          string
-		customStageName    string
-		instructions       string
-		gate               string
-		approvalButtonText string
-		advanceNotice      string
-		position           int
-		onFailure          string
-		maxReworkCount     int
-		reworkToPosition   int
-		runsInContainer    bool
-		promptSectionsJSON string
-		stageTriggersJSON  string
-		advanceReqJSON     string
+		name                   string
+		role                   string
+		stageType              string
+		customStageName        string
+		instructions           string
+		gate                   string
+		approvalButtonText     string
+		advanceNotice          string
+		position               int
+		onFailure              string
+		maxReworkCount         int
+		reworkToPosition       int
+		reworkAllowedPositions []string
+		runsInContainer        bool
+		promptSectionsJSON     string
+		stageTriggersJSON      string
+		advanceReqJSON         string
 	)
 
 	cmd := &cobra.Command{
@@ -198,6 +205,13 @@ func stagesAddCmd() *cobra.Command {
 				v := reworkToPosition
 				stage.ReworkToPosition = &v
 			}
+			if cmd.Flags().Changed("rework-allowed-positions") {
+				positions, err := parseReworkPositions(reworkAllowedPositions)
+				if err != nil {
+					return err
+				}
+				stage.ReworkAllowedPositions = &positions
+			}
 			if cmd.Flags().Changed("runs-in-container") {
 				b := runsInContainer
 				stage.RunsInContainerOverride = &b
@@ -238,11 +252,15 @@ func stagesAddCmd() *cobra.Command {
 
 			activeCtx := ctxutil.ActiveContextFrom(ctx)
 			r := ctxutil.RendererFrom(ctx)
-			pipeline, err := apiclient.GetJSONAPISingle[PipelineAttrs](ctx, activeCtx, path)
+			pipeline, err := apiclient.GetJSONAPISingleFull[PipelineAttrs](ctx, activeCtx, path)
 			if err != nil {
 				return err
 			}
-			stages := append(pipeline.Attributes.Stages, json.RawMessage(stageRaw))
+			stages, err := replacementStages(pipeline, "")
+			if err != nil {
+				return err
+			}
+			stages = append(stages, stage)
 
 			body := map[string]any{"pipeline": map[string]any{"stages": stages}}
 			res, err := apiclient.PatchJSONBodyJSONAPIResponse[PipelineAttrs](ctx, activeCtx, path, body)
@@ -271,6 +289,7 @@ func stagesAddCmd() *cobra.Command {
 	flagmeta.EnumFromSpec(cmd, "on-failure", "#/components/schemas/PipelineStageInput/properties/on_failure")
 	cmd.Flags().IntVar(&maxReworkCount, "max-rework-count", 0, "Maximum number of rework iterations")
 	cmd.Flags().IntVar(&reworkToPosition, "rework-to-position", 0, "Stage position to rework to")
+	cmd.Flags().StringSliceVar(&reworkAllowedPositions, "rework-allowed-positions", nil, "Earlier stage positions allowed for rework")
 	cmd.Flags().BoolVar(&runsInContainer, "runs-in-container", false, "runs_in_container_override flag")
 	cmd.Flags().StringVar(&promptSectionsJSON, "prompt-sections", "", "JSON object of prompt section overrides")
 	flagmeta.SchemaFromSpec(cmd, "prompt-sections", "#/components/schemas/PromptSections", false)
@@ -283,21 +302,22 @@ func stagesAddCmd() *cobra.Command {
 
 func stagesUpdateCmd() *cobra.Command {
 	var (
-		role               string
-		stageType          string
-		customStageName    string
-		instructions       string
-		gate               string
-		approvalButtonText string
-		advanceNotice      string
-		position           int
-		onFailure          string
-		maxReworkCount     int
-		reworkToPosition   int
-		runsInContainer    bool
-		promptSectionsJSON string
-		stageTriggersJSON  string
-		advanceReqJSON     string
+		role                   string
+		stageType              string
+		customStageName        string
+		instructions           string
+		gate                   string
+		approvalButtonText     string
+		advanceNotice          string
+		position               int
+		onFailure              string
+		maxReworkCount         int
+		reworkToPosition       int
+		reworkAllowedPositions []string
+		runsInContainer        bool
+		promptSectionsJSON     string
+		stageTriggersJSON      string
+		advanceReqJSON         string
 	)
 
 	cmd := &cobra.Command{
@@ -313,7 +333,7 @@ func stagesUpdateCmd() *cobra.Command {
 			flagNames := []string{
 				"role", "stage-type", "custom-stage-name", "instructions",
 				"gate", "approval-button-text", "advance-notice", "position", "on-failure",
-				"max-rework-count", "rework-to-position", "runs-in-container",
+				"max-rework-count", "rework-to-position", "rework-allowed-positions", "runs-in-container",
 				"prompt-sections", "stage-triggers", "advance-requirements",
 			}
 			anyChanged := false
@@ -375,6 +395,13 @@ func stagesUpdateCmd() *cobra.Command {
 			if cmd.Flags().Changed("rework-to-position") {
 				patch["rework_to_position"] = reworkToPosition
 			}
+			if cmd.Flags().Changed("rework-allowed-positions") {
+				positions, err := parseReworkPositions(reworkAllowedPositions)
+				if err != nil {
+					return err
+				}
+				patch["rework_allowed_positions"] = positions
+			}
 			if cmd.Flags().Changed("runs-in-container") {
 				patch["runs_in_container_override"] = runsInContainer
 			}
@@ -426,6 +453,7 @@ func stagesUpdateCmd() *cobra.Command {
 	flagmeta.EnumFromSpec(cmd, "on-failure", "#/components/schemas/PipelineStageInput/properties/on_failure")
 	cmd.Flags().IntVar(&maxReworkCount, "max-rework-count", 0, "Maximum number of rework iterations")
 	cmd.Flags().IntVar(&reworkToPosition, "rework-to-position", 0, "Stage position to rework to")
+	cmd.Flags().StringSliceVar(&reworkAllowedPositions, "rework-allowed-positions", nil, "Earlier stage positions allowed for rework")
 	cmd.Flags().BoolVar(&runsInContainer, "runs-in-container", false, "runs_in_container_override flag")
 	cmd.Flags().StringVar(&promptSectionsJSON, "prompt-sections", "", "JSON object of prompt section overrides")
 	flagmeta.SchemaFromSpec(cmd, "prompt-sections", "#/components/schemas/PromptSections", false)
@@ -456,34 +484,14 @@ func stagesRemoveCmd() *cobra.Command {
 			r := ctxutil.RendererFrom(ctx)
 
 			// Read current stages.
-			pipeline, err := apiclient.GetJSONAPISingle[PipelineAttrs](ctx, activeCtx, "/api/pipelines/"+id)
+			pipeline, err := apiclient.GetJSONAPISingleFull[PipelineAttrs](ctx, activeCtx, "/api/pipelines/"+id)
 			if err != nil {
 				return err
 			}
 
-			// Filter out the named stage.
-			found := false
-			filtered := make([]json.RawMessage, 0, len(pipeline.Attributes.Stages))
-			for _, raw := range pipeline.Attributes.Stages {
-				var stageMap map[string]any
-				if err := json.Unmarshal(raw, &stageMap); err != nil {
-					return fmt.Errorf("decoding stage: %w", err)
-				}
-				nameVal, _ := stageMap["name"].(string)
-				if nameVal == stageName {
-					found = true
-					continue
-				}
-				filtered = append(filtered, raw)
-			}
-
-			if !found {
-				return fmt.Errorf("stage %q not found in pipeline %s", stageName, id)
-			}
-
-			// If filtered is nil (last stage removed), use empty slice so JSON encodes as [].
-			if filtered == nil {
-				filtered = []json.RawMessage{}
+			filtered, err := replacementStages(pipeline, stageName)
+			if err != nil {
+				return err
 			}
 
 			body := map[string]any{"pipeline": map[string]any{"stages": filtered}}
@@ -511,21 +519,17 @@ func validateJSON(raw, flag string) (json.RawMessage, error) {
 // relatedStages follows only the pipeline's explicit stage linkage.
 func relatedStages(res apiclient.SingleResult[PipelineAttrs]) ([]httpclient.Resource[PipelineStageAttrs], error) {
 	var relationship struct {
-		Data json.RawMessage `json:"data"`
+		Data []apiclient.ResourceIdentifier `json:"data"`
 	}
-	if err := json.Unmarshal(res.Relationships["stages"], &relationship); err != nil {
+	if err := res.DecodeRelationship("stages", &relationship); err != nil {
 		return nil, fmt.Errorf("decoding stages relationship: %w", err)
 	}
-	data := bytes.TrimSpace(relationship.Data)
-	if len(data) == 0 || data[0] != '[' {
+	if relationship.Data == nil {
 		return nil, fmt.Errorf("stages relationship data must be an array")
 	}
-	var ids []apiclient.ResourceIdentifier
-	if err := json.Unmarshal(data, &ids); err != nil {
-		return nil, fmt.Errorf("decoding stages linkage: %w", err)
-	}
+	ids := relationship.Data
 	included := make(map[apiclient.ResourceIdentifier]json.RawMessage)
-	for _, resource := range res.Included {
+	for _, resource := range res.IncludedResources() {
 		included[apiclient.ResourceIdentifier{ID: resource.ID, Type: resource.Type}] = resource.Attributes
 	}
 	stages := make([]httpclient.Resource[PipelineStageAttrs], 0, len(ids))
@@ -546,11 +550,91 @@ func relatedStages(res apiclient.SingleResult[PipelineAttrs]) ([]httpclient.Reso
 		if len(bytes.TrimSpace(raw)) == 0 || bytes.TrimSpace(raw)[0] != '{' {
 			return nil, fmt.Errorf("stage %s attributes must be an object", id.ID)
 		}
-		if err := json.Unmarshal(raw, &attrs); err != nil {
+		if err := res.Decode("/included/*/attributes", raw, &attrs); err != nil {
 			return nil, fmt.Errorf("decoding stage %s attributes: %w", id.ID, err)
 		}
 		stages = append(stages, httpclient.Resource[PipelineStageAttrs]{ID: id.ID, Type: id.Type, Attributes: attrs})
 	}
 	sort.SliceStable(stages, func(i, j int) bool { return stages[i].Attributes.Position < stages[j].Attributes.Position })
 	return stages, nil
+}
+
+func replacementStages(pipeline apiclient.SingleResult[PipelineAttrs], remove string) ([]StageInput, error) {
+	resources, err := relatedStages(pipeline)
+	if err != nil {
+		return nil, err
+	}
+	found := false
+	stages := make([]StageInput, 0, len(resources))
+	for _, resource := range resources {
+		attrs := resource.Attributes
+		name := dereference(attrs.Name)
+		customName := dereference(attrs.CustomStageName)
+		if remove != "" && (customName == remove || name == remove) {
+			found = true
+			continue
+		}
+		agentID, err := numericID(attrs.AgentID)
+		if err != nil {
+			return nil, fmt.Errorf("stage %s agent ID: %w", resource.ID, err)
+		}
+		environmentID, err := numericID(attrs.EnvironmentID)
+		if err != nil {
+			return nil, fmt.Errorf("stage %s environment ID: %w", resource.ID, err)
+		}
+		requirements, err := json.Marshal(attrs.AdvanceRequirements)
+		if err != nil {
+			return nil, err
+		}
+		stage := StageInput{
+			StageType: attrs.StageType, CustomStageName: customName, Name: name, Instructions: attrs.Instructions,
+			Gate: attrs.Gate, ApprovalButtonText: attrs.ApprovalButtonText, OnFailure: attrs.OnFailure,
+			MaxReworkCount: attrs.MaxReworkCount, ReworkToPosition: attrs.ReworkToPosition,
+			Position: &attrs.Position, RunsInContainerOverride: attrs.RunsInContainerOverride,
+			AgentID: agentID, EnvironmentID: environmentID, AdvanceNotice: dereference(attrs.AdvanceNotice),
+			PromptSections: attrs.PromptSections, StageTriggers: attrs.StageTriggers,
+		}
+		configuration := bytes.TrimSpace(attrs.PromptConfiguration)
+		if len(configuration) > 0 && !bytes.Equal(configuration, []byte("{}")) {
+			stage.PromptConfiguration = configuration
+		}
+		if attrs.AdvanceRequirements != nil {
+			stage.AdvanceRequirements = requirements
+		}
+		if attrs.ReworkAllowedPositions != nil {
+			stage.ReworkAllowedPositions = &attrs.ReworkAllowedPositions
+		}
+		stages = append(stages, stage)
+	}
+	if remove != "" && !found {
+		return nil, fmt.Errorf("stage %q not found in pipeline %s", remove, pipeline.ID)
+	}
+	return stages, nil
+}
+
+func dereference(value *string) string {
+	if value == nil {
+		return ""
+	}
+	return *value
+}
+
+func numericID(value *string) (*int64, error) {
+	if value == nil {
+		return nil, nil
+	}
+	id, err := strconv.ParseInt(*value, 10, 64)
+	return &id, err
+}
+
+func parseReworkPositions(values []string) ([]int, error) {
+	positions := make([]int, len(values))
+	for i, value := range values {
+		position, err := strconv.Atoi(value)
+		if err != nil {
+			return nil, fmt.Errorf("--rework-allowed-positions: invalid position %q", value)
+		}
+		positions[i] = position
+	}
+	return positions, nil
 }

@@ -890,6 +890,19 @@ func TestProjectsUpdateNoFlags(t *testing.T) {
 	}
 }
 
+func TestProjectsUpdateRejectsMalformedAgentSize(t *testing.T) {
+	cmd := updateCmd()
+	var out bytes.Buffer
+	cmd.SetOut(&out)
+	cmd.SetContext(makeCtx(t, "", "tok", false, &out))
+	if err := cmd.Flags().Set("agent-size-id", "12bad"); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.RunE(cmd, []string{"1"}); err == nil || !strings.Contains(err.Error(), "agent size ID") || out.Len() != 0 {
+		t.Fatalf("expected invalid agent size error with no output, got %v, %q", err, &out)
+	}
+}
+
 func TestProjectsUpdate404(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/vnd.api+json")

@@ -52,18 +52,21 @@ type rawResourceLinks struct {
 
 // rawResource is used to decode a JSON:API resource with deferred attribute parsing.
 type rawResource struct {
+	resourceData
 	Relationships map[string]json.RawMessage `json:"relationships,omitempty"`
-	ID            string                     `json:"id"`
-	Type          string                     `json:"type"`
-	Attributes    json.RawMessage            `json:"attributes"`
 	Links         rawResourceLinks           `json:"links,omitempty"`
+}
+
+type resourceData struct {
+	ID         string          `json:"id"`
+	Type       string          `json:"type"`
+	Attributes json.RawMessage `json:"attributes"`
 }
 
 // rawCollectionLinks holds the top-level links on a JSON:API collection response.
 type rawCollectionLinks struct {
 	First string `json:"first,omitempty"`
 	Prev  string `json:"prev,omitempty"`
-	Self  string `json:"self,omitempty"`
 	Next  string `json:"next,omitempty"`
 	Last  string `json:"last,omitempty"`
 }
@@ -87,6 +90,28 @@ type SingleResult[T any] struct {
 	SelfLink      string
 	Relationships map[string]json.RawMessage
 	Included      []IncludedResource
+	response      *http.Response
+}
+
+func (r SingleResult[T]) SelectRelationships(names ...string) map[string]json.RawMessage {
+	for _, name := range names {
+		ObserveResponse(r.response, "/data/relationships/"+name, json.RawMessage(nil))
+	}
+	return SelectRelationships(r.Relationships, names...)
+}
+
+func (r SingleResult[T]) Decode(path string, data []byte, target any) error {
+	return DecodeResponse(r.response, path, data, target)
+}
+
+func (r SingleResult[T]) Self() string {
+	ObserveResponse(r.response, "/data/links", rawResourceLinks{})
+	return r.SelfLink
+}
+
+func (r SingleResult[T]) IncludedResources() []IncludedResource {
+	ObserveResponse(r.response, "/included", []IncludedResource{})
+	return r.Included
 }
 
 // GetJSONAPISingle GETs path and decodes the JSON:API single-resource response.
@@ -102,12 +127,32 @@ func GetJSONAPISingle[T any](ctx context.Context, activeCtx *config.Context, pat
 // GetJSONAPISingleFull GETs path and decodes the JSON:API single-resource response
 // including data.links.self into SingleResult.SelfLink.
 func GetJSONAPISingleFull[T any](ctx context.Context, activeCtx *config.Context, path string) (SingleResult[T], error) {
+	return requestJSONAPISingle[T](ctx, activeCtx, http.MethodGet, path, nil)
+}
+
+func PostJSONAPIAction[T any](ctx context.Context, activeCtx *config.Context, path string) (httpclient.Resource[T], error) {
+	res, err := requestJSONAPISingle[T](ctx, activeCtx, http.MethodPost, path, nil)
+	return res.Resource, err
+}
+
+func WriteJSONAPISingleFull[T any](ctx context.Context, activeCtx *config.Context, method, path string, body any) (SingleResult[T], error) {
+	b, err := json.Marshal(body)
+	if err != nil {
+		return SingleResult[T]{}, fmt.Errorf("encoding request body: %w", err)
+	}
+	return requestJSONAPISingle[T](ctx, activeCtx, method, path, bytes.NewReader(b))
+}
+
+func requestJSONAPISingle[T any](ctx context.Context, activeCtx *config.Context, method, path string, body io.Reader) (SingleResult[T], error) {
 	fullURL := strings.TrimRight(activeCtx.BaseURL, "/") + path
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
+	req, err := http.NewRequestWithContext(ctx, method, fullURL, body)
 	if err != nil {
 		return SingleResult[T]{}, fmt.Errorf("building request: %w", err)
 	}
 	req.Header.Set("Accept", "application/vnd.api+json")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 	req.Header.Set("Authorization", "Bearer "+activeCtx.Token)
 	req.Header.Set("User-Agent", browserUserAgent)
 
@@ -128,7 +173,7 @@ func GetJSONAPISingleFull[T any](ctx context.Context, activeCtx *config.Context,
 	}
 
 	respBody = sanitizeProjectResponse(ctx, req.URL.Path, respBody)
-	logVerbose(verboseFrom(ctx), http.MethodGet, fullURL, resp.StatusCode, respBody)
+	logVerbose(verboseFrom(ctx), method, fullURL, resp.StatusCode, respBody)
 
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		type rawDoc struct {
@@ -145,31 +190,65 @@ func GetJSONAPISingleFull[T any](ctx context.Context, activeCtx *config.Context,
 		if len(doc.Errors) > 0 {
 			return SingleResult[T]{}, extractJSONAPIError(doc.Errors)
 		}
+		ObserveResponse(resp, "/data", &doc.Data.resourceData)
 		res := httpclient.Resource[T]{ID: doc.Data.ID, Type: doc.Data.Type}
 		if len(doc.Data.Attributes) > 0 {
-			if err := json.Unmarshal(doc.Data.Attributes, &res.Attributes); err != nil {
+			if err := DecodeResponse(resp, "/data/attributes", doc.Data.Attributes, &res.Attributes); err != nil {
 				return SingleResult[T]{}, fmt.Errorf("decoding attributes: %w", err)
 			}
 		}
-		return SingleResult[T]{Resource: res, SelfLink: doc.Data.Links.Self, Relationships: doc.Data.Relationships, Included: doc.Included}, nil
+		return SingleResult[T]{Resource: res, SelfLink: doc.Data.Links.Self, Relationships: doc.Data.Relationships, Included: doc.Included, response: resp}, nil
 	}
 
-	return SingleResult[T]{}, &HTTPError{StatusCode: resp.StatusCode, Err: errorRespJSONAPI(respBody, resp.StatusCode)}
+	return SingleResult[T]{}, &HTTPError{StatusCode: resp.StatusCode, Err: responseError(resp, respBody)}
 }
 
 // rawCollectionDoc is the wire-format wrapper for a JSON:API collection response.
 type rawCollectionDoc struct {
-	Data   []rawResource      `json:"data"`
-	Links  rawCollectionLinks `json:"links"`
-	Meta   map[string]any     `json:"meta,omitempty"`
-	Errors []jsonAPIErrEntry  `json:"errors"`
+	collectionPagination
+	Data   []rawResource     `json:"data"`
+	Errors []jsonAPIErrEntry `json:"errors"`
+}
+
+type collectionPagination struct {
+	Links rawCollectionLinks `json:"links"`
+	Meta  json.RawMessage    `json:"meta,omitempty"`
+}
+
+type CollectionResource[T any] struct {
+	httpclient.Resource[T]
+	Relationships map[string]json.RawMessage `json:"relationships,omitempty"`
+	response      *http.Response
+}
+
+func (r CollectionResource[T]) DecodeRelationship(name string, target any) error {
+	return decodeRelationship(r.response, "/data/*/relationships/"+name, r.Relationships[name], target)
+}
+
+func (r SingleResult[T]) DecodeRelationship(name string, target any) error {
+	return decodeRelationship(r.response, "/data/relationships/"+name, r.Relationships[name], target)
+}
+
+func decodeRelationship(resp *http.Response, path string, data json.RawMessage, target any) error {
+	if len(data) == 0 {
+		ObserveResponse(resp, path, target)
+		return nil
+	}
+	return DecodeResponse(resp, path, data, target)
+}
+
+type Collection[T any] struct {
+	Data     []CollectionResource[T] `json:"data"`
+	Links    httpclient.Links        `json:"links"`
+	Meta     map[string]any          `json:"meta,omitempty"`
+	PageMeta httpclient.PageMeta
 }
 
 // fetchJSONAPICollectionPage fetches one page from an absolute URL and decodes it.
-func fetchJSONAPICollectionPage[T any](ctx context.Context, token, fullURL string) (httpclient.Collection[T], error) {
+func fetchJSONAPICollectionPage[T any](ctx context.Context, token, fullURL string, paginated bool, relationships ...string) (Collection[T], error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fullURL, nil)
 	if err != nil {
-		return httpclient.Collection[T]{}, fmt.Errorf("building request: %w", err)
+		return Collection[T]{}, fmt.Errorf("building request: %w", err)
 	}
 	req.Header.Set("Accept", "application/vnd.api+json")
 	req.Header.Set("Authorization", "Bearer "+token)
@@ -178,17 +257,17 @@ func fetchJSONAPICollectionPage[T any](ctx context.Context, token, fullURL strin
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		if ctx.Err() != nil {
-			return httpclient.Collection[T]{}, ctx.Err()
+			return Collection[T]{}, ctx.Err()
 		}
-		return httpclient.Collection[T]{}, fmt.Errorf("request failed: %w", err)
+		return Collection[T]{}, fmt.Errorf("request failed: %w", err)
 	}
 
 	respBody, readErr := io.ReadAll(resp.Body)
 	if closeErr := resp.Body.Close(); closeErr != nil {
-		return httpclient.Collection[T]{}, fmt.Errorf("closing response body: %w", closeErr)
+		return Collection[T]{}, fmt.Errorf("closing response body: %w", closeErr)
 	}
 	if readErr != nil {
-		return httpclient.Collection[T]{}, fmt.Errorf("reading response: %w", readErr)
+		return Collection[T]{}, fmt.Errorf("reading response: %w", readErr)
 	}
 
 	respBody = sanitizeProjectResponse(ctx, req.URL.Path, respBody)
@@ -198,42 +277,68 @@ func fetchJSONAPICollectionPage[T any](ctx context.Context, token, fullURL strin
 		var doc rawCollectionDoc
 		if len(respBody) > 0 {
 			if err := json.Unmarshal(respBody, &doc); err != nil {
-				return httpclient.Collection[T]{}, fmt.Errorf("decoding response: %w", err)
+				return Collection[T]{}, fmt.Errorf("decoding response: %w", err)
 			}
 		}
 		if len(doc.Errors) > 0 {
-			return httpclient.Collection[T]{}, extractJSONAPIError(doc.Errors)
+			return Collection[T]{}, extractJSONAPIError(doc.Errors)
 		}
-		col := httpclient.Collection[T]{
-			Data: make([]httpclient.Resource[T], len(doc.Data)),
-			Links: httpclient.Links{
+		col := Collection[T]{
+			Data: make([]CollectionResource[T], len(doc.Data)),
+		}
+		if paginated {
+			ObserveResponse(resp, "", &doc.collectionPagination)
+			col.Links = httpclient.Links{
 				First: doc.Links.First,
 				Prev:  doc.Links.Prev,
 				Next:  doc.Links.Next,
 				Last:  doc.Links.Last,
-			},
-			Meta: doc.Meta,
-		}
-		for i, item := range doc.Data {
-			res := httpclient.Resource[T]{ID: item.ID, Type: item.Type}
-			if len(item.Attributes) > 0 {
-				if err := json.Unmarshal(item.Attributes, &res.Attributes); err != nil {
-					return httpclient.Collection[T]{}, fmt.Errorf("decoding attributes[%d]: %w", i, err)
+			}
+			if len(doc.Meta) != 0 {
+				if err := json.Unmarshal(doc.Meta, &col.Meta); err != nil {
+					return Collection[T]{}, fmt.Errorf("decoding pagination metadata: %w", err)
 				}
 			}
-			col.Data[i] = res
+		}
+		for i, item := range doc.Data {
+			ObserveResponse(resp, "/data/*", &item.resourceData)
+			res := httpclient.Resource[T]{ID: item.ID, Type: item.Type}
+			if len(item.Attributes) > 0 {
+				if err := DecodeResponse(resp, "/data/*/attributes", item.Attributes, &res.Attributes); err != nil {
+					return Collection[T]{}, fmt.Errorf("decoding attributes[%d]: %w", i, err)
+				}
+			}
+			col.Data[i] = CollectionResource[T]{Resource: res, Relationships: SelectRelationships(item.Relationships, relationships...), response: resp}
+			for _, name := range relationships {
+				ObserveResponse(resp, "/data/*/relationships/"+name, json.RawMessage(nil))
+			}
 		}
 		return col, nil
 	}
 
-	return httpclient.Collection[T]{}, &HTTPError{StatusCode: resp.StatusCode, Err: errorRespJSONAPI(respBody, resp.StatusCode)}
+	return Collection[T]{}, &HTTPError{StatusCode: resp.StatusCode, Err: responseError(resp, respBody)}
+}
+
+func SelectRelationships(available map[string]json.RawMessage, names ...string) map[string]json.RawMessage {
+	selected := make(map[string]json.RawMessage, len(names))
+	for _, name := range names {
+		if value, ok := available[name]; ok {
+			selected[name] = value
+		}
+	}
+	return selected
 }
 
 // GetJSONAPICollection GETs path and decodes the JSON:API collection response.
 // On non-2xx it extracts the human-readable error and returns a CLIError.
-func GetJSONAPICollection[T any](ctx context.Context, activeCtx *config.Context, path string) (httpclient.Collection[T], error) {
+func GetJSONAPICollection[T any](ctx context.Context, activeCtx *config.Context, path string, relationships ...string) (Collection[T], error) {
 	fullURL := strings.TrimRight(activeCtx.BaseURL, "/") + path
-	return fetchJSONAPICollectionPage[T](ctx, activeCtx.Token, fullURL)
+	return fetchJSONAPICollectionPage[T](ctx, activeCtx.Token, fullURL, true, relationships...)
+}
+
+func GetJSONAPIUnpaginatedCollection[T any](ctx context.Context, activeCtx *config.Context, path string, relationships ...string) (Collection[T], error) {
+	fullURL := strings.TrimRight(activeCtx.BaseURL, "/") + path
+	return fetchJSONAPICollectionPage[T](ctx, activeCtx.Token, fullURL, false, relationships...)
 }
 
 // resolveNextURL handles both absolute and relative next links.
@@ -246,18 +351,18 @@ func resolveNextURL(next, baseURL string) string {
 
 // GetJSONAPICollectionAllPages fetches the first page at path, then follows the server-provided
 // links.next URLs until exhausted, accumulating all items. Stops after 1000 pages to prevent loops.
-func GetJSONAPICollectionAllPages[T any](ctx context.Context, activeCtx *config.Context, path string) (httpclient.Collection[T], error) {
-	result, err := GetJSONAPICollection[T](ctx, activeCtx, path)
+func GetJSONAPICollectionAllPages[T any](ctx context.Context, activeCtx *config.Context, path string, relationships ...string) (Collection[T], error) {
+	result, err := GetJSONAPICollection[T](ctx, activeCtx, path, relationships...)
 	if err != nil {
-		return httpclient.Collection[T]{}, err
+		return Collection[T]{}, err
 	}
 
 	const maxPages = 1000
 	for page := 1; result.Links.Next != "" && page < maxPages; page++ {
 		nextURL := resolveNextURL(result.Links.Next, activeCtx.BaseURL)
-		nextPage, err := fetchJSONAPICollectionPage[T](ctx, activeCtx.Token, nextURL)
+		nextPage, err := fetchJSONAPICollectionPage[T](ctx, activeCtx.Token, nextURL, true, relationships...)
 		if err != nil {
-			return httpclient.Collection[T]{}, err
+			return Collection[T]{}, err
 		}
 		result.Data = append(result.Data, nextPage.Data...)
 		result.Links = nextPage.Links
@@ -445,6 +550,14 @@ func PostJSONAPISingle[T any](ctx context.Context, activeCtx *config.Context, pa
 // Pass nil body to send a request with no body.
 // On non-2xx it extracts JSON:API or flat error info and returns a CLIError.
 func PostJSON[T any](ctx context.Context, activeCtx *config.Context, path string, body any) (T, error) {
+	return postJSON[T](ctx, activeCtx, path, "application/json", body)
+}
+
+func PostJSONAPIResponse[T any](ctx context.Context, activeCtx *config.Context, path string, body any) (T, error) {
+	return postJSON[T](ctx, activeCtx, path, "application/vnd.api+json", body)
+}
+
+func postJSON[T any](ctx context.Context, activeCtx *config.Context, path, accept string, body any) (T, error) {
 	var zero T
 	var reqBody []byte
 	if body != nil {
@@ -467,7 +580,7 @@ func PostJSON[T any](ctx context.Context, activeCtx *config.Context, path string
 	if reqBody != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Accept", accept)
 	req.Header.Set("Authorization", "Bearer "+activeCtx.Token)
 	req.Header.Set("User-Agent", browserUserAgent)
 
@@ -492,14 +605,14 @@ func PostJSON[T any](ctx context.Context, activeCtx *config.Context, path string
 	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 		var result T
 		if len(respBody) > 0 {
-			if err := json.Unmarshal(respBody, &result); err != nil {
+			if err := DecodeResponse(resp, "", respBody, &result); err != nil {
 				return zero, fmt.Errorf("decoding response: %w", err)
 			}
 		}
 		return result, nil
 	}
 
-	return zero, errorRespJSONAPI(respBody, resp.StatusCode)
+	return zero, responseError(resp, respBody)
 }
 
 // PostJSONFlatErr POSTs body to path and decodes the flat JSON response body directly into T.
@@ -567,127 +680,16 @@ func PostJSONFlatErr[T any](ctx context.Context, activeCtx *config.Context, path
 // Unlike PostJSONAPISingle, it sets Content-Type: application/json (not application/vnd.api+json).
 // On non-2xx it extracts JSON:API errors[].detail/title and returns a CLIError.
 func PostJSONBodyJSONAPIResponse[T any](ctx context.Context, activeCtx *config.Context, path string, body any) (httpclient.Resource[T], error) {
-	b, err := json.Marshal(body)
-	if err != nil {
-		return httpclient.Resource[T]{}, fmt.Errorf("encoding request body: %w", err)
-	}
-
-	url := strings.TrimRight(activeCtx.BaseURL, "/") + path
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(b))
-	if err != nil {
-		return httpclient.Resource[T]{}, fmt.Errorf("building request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/vnd.api+json")
-	req.Header.Set("Authorization", "Bearer "+activeCtx.Token)
-	req.Header.Set("User-Agent", browserUserAgent)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		if ctx.Err() != nil {
-			return httpclient.Resource[T]{}, ctx.Err()
-		}
-		return httpclient.Resource[T]{}, fmt.Errorf("request failed: %w", err)
-	}
-
-	respBody, readErr := io.ReadAll(resp.Body)
-	if closeErr := resp.Body.Close(); closeErr != nil {
-		return httpclient.Resource[T]{}, fmt.Errorf("closing response body: %w", closeErr)
-	}
-	if readErr != nil {
-		return httpclient.Resource[T]{}, fmt.Errorf("reading response: %w", readErr)
-	}
-
-	logVerbose(verboseFrom(ctx), http.MethodPost, url, resp.StatusCode, respBody)
-
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		type rawDoc struct {
-			Data   rawResource       `json:"data"`
-			Errors []jsonAPIErrEntry `json:"errors"`
-		}
-		var doc rawDoc
-		if len(respBody) > 0 {
-			if err := json.Unmarshal(respBody, &doc); err != nil {
-				return httpclient.Resource[T]{}, fmt.Errorf("decoding response: %w", err)
-			}
-		}
-		if len(doc.Errors) > 0 {
-			return httpclient.Resource[T]{}, extractJSONAPIError(doc.Errors)
-		}
-		res := httpclient.Resource[T]{ID: doc.Data.ID, Type: doc.Data.Type}
-		if len(doc.Data.Attributes) > 0 {
-			if err := json.Unmarshal(doc.Data.Attributes, &res.Attributes); err != nil {
-				return httpclient.Resource[T]{}, fmt.Errorf("decoding attributes: %w", err)
-			}
-		}
-		return res, nil
-	}
-
-	return httpclient.Resource[T]{}, errorRespJSONAPI(respBody, resp.StatusCode)
+	res, err := WriteJSONAPISingleFull[T](ctx, activeCtx, http.MethodPost, path, body)
+	return res.Resource, err
 }
 
 // PatchJSONBodyJSONAPIResponse PATCHes a JSON body to path and decodes the JSON:API single-resource response.
 // Unlike PatchJSONAPISingle, it sets Content-Type: application/json (not application/vnd.api+json).
 // On non-2xx it extracts JSON:API errors[].detail/title and returns a CLIError.
 func PatchJSONBodyJSONAPIResponse[T any](ctx context.Context, activeCtx *config.Context, path string, body any) (httpclient.Resource[T], error) {
-	b, err := json.Marshal(body)
-	if err != nil {
-		return httpclient.Resource[T]{}, fmt.Errorf("encoding request body: %w", err)
-	}
-
-	url := strings.TrimRight(activeCtx.BaseURL, "/") + path
-	req, err := http.NewRequestWithContext(ctx, http.MethodPatch, url, bytes.NewReader(b))
-	if err != nil {
-		return httpclient.Resource[T]{}, fmt.Errorf("building request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/vnd.api+json")
-	req.Header.Set("Authorization", "Bearer "+activeCtx.Token)
-	req.Header.Set("User-Agent", browserUserAgent)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		if ctx.Err() != nil {
-			return httpclient.Resource[T]{}, ctx.Err()
-		}
-		return httpclient.Resource[T]{}, fmt.Errorf("request failed: %w", err)
-	}
-
-	respBody, readErr := io.ReadAll(resp.Body)
-	if closeErr := resp.Body.Close(); closeErr != nil {
-		return httpclient.Resource[T]{}, fmt.Errorf("closing response body: %w", closeErr)
-	}
-	if readErr != nil {
-		return httpclient.Resource[T]{}, fmt.Errorf("reading response: %w", readErr)
-	}
-
-	respBody = sanitizeProjectResponse(ctx, path, respBody)
-	logVerbose(verboseFrom(ctx), http.MethodPatch, url, resp.StatusCode, respBody)
-
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		type rawDoc struct {
-			Data   rawResource       `json:"data"`
-			Errors []jsonAPIErrEntry `json:"errors"`
-		}
-		var doc rawDoc
-		if len(respBody) > 0 {
-			if err := json.Unmarshal(respBody, &doc); err != nil {
-				return httpclient.Resource[T]{}, fmt.Errorf("decoding response: %w", err)
-			}
-		}
-		if len(doc.Errors) > 0 {
-			return httpclient.Resource[T]{}, extractJSONAPIError(doc.Errors)
-		}
-		res := httpclient.Resource[T]{ID: doc.Data.ID, Type: doc.Data.Type}
-		if len(doc.Data.Attributes) > 0 {
-			if err := json.Unmarshal(doc.Data.Attributes, &res.Attributes); err != nil {
-				return httpclient.Resource[T]{}, fmt.Errorf("decoding attributes: %w", err)
-			}
-		}
-		return res, nil
-	}
-
-	return httpclient.Resource[T]{}, errorRespJSONAPI(respBody, resp.StatusCode)
+	res, err := WriteJSONAPISingleFull[T](ctx, activeCtx, http.MethodPatch, path, body)
+	return res.Resource, err
 }
 
 // PostEnvelope POSTs a JSON body to path and decodes a successful response into
@@ -808,6 +810,25 @@ type jsonAPIErrEntry struct {
 	Detail string `json:"detail"`
 }
 
+type jsonAPIErrorDocument struct {
+	Errors []jsonAPIErrEntry `json:"errors"`
+}
+
+func responseError(resp *http.Response, body []byte) error {
+	if resp.StatusCode == http.StatusPaymentRequired && !strings.HasPrefix(resp.Header.Get("Content-Type"), "application/vnd.api+json") {
+		return parse402(body)
+	}
+	return DecodeAPIError(resp, body)
+}
+
+func DecodeAPIError(resp *http.Response, body []byte) error {
+	mediaType := resp.Header.Get("Content-Type")
+	if len(body) != 0 && strings.HasPrefix(mediaType, "application/vnd.api+json") {
+		ObserveResponse(resp, "", &jsonAPIErrorDocument{})
+	}
+	return clierror.New(statusToCode(resp.StatusCode), extractAPIError(body, resp.StatusCode), "")
+}
+
 func extractJSONAPIError(errs []jsonAPIErrEntry) error {
 	parts := make([]string, 0, len(errs))
 	for _, e := range errs {
@@ -829,9 +850,7 @@ func extractJSONAPIOrFlatError(body []byte, status int) string {
 
 func extractAPIError(body []byte, status int) string {
 	if len(body) > 0 {
-		var errDoc struct {
-			Errors []jsonAPIErrEntry `json:"errors"`
-		}
+		var errDoc jsonAPIErrorDocument
 		if json.Unmarshal(body, &errDoc) == nil && len(errDoc.Errors) > 0 {
 			parts := make([]string, 0, len(errDoc.Errors))
 			for _, e := range errDoc.Errors {

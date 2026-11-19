@@ -79,6 +79,9 @@ components:
   schemas:
     TaskStageWebhook:
       type: object
+      description: A rework records consecutive changes into reworking, into reworked,
+        and into the configured target. A pipeline missing either lifecycle stage
+        records one change directly to the target.
       additionalProperties: false
       required: [event_id, event_type, task_id, project_id, previous_stage, new_stage, previous_stage_label, new_stage_label, previous_stage_id, new_stage_id, stage_version, changed_at]
       properties:
@@ -98,7 +101,8 @@ components:
           description: Previous stage type name.
         new_stage:
           type: string
-          description: New stage type name, matching the task read stage.
+          description: Stage type entered at this version. The current task read may
+            already be at a later version, including after a three-edge rework.
         previous_stage_label:
           type: string
         new_stage_label:
@@ -203,7 +207,9 @@ components:
           - "$ref": "#/components/schemas/TaskStateEventData"
           - "$ref": "#/components/schemas/TaskStageChangedEventData"
           - "$ref": "#/components/schemas/TaskContainerEventData"
-          - "$ref": "#/components/schemas/TaskCompletionEventData"
+          - "$ref": "#/components/schemas/TaskCompletionRequestedEventData"
+          - "$ref": "#/components/schemas/TaskCompletionAcceptedEventData"
+          - "$ref": "#/components/schemas/TaskCompletionRejectedEventData"
           - "$ref": "#/components/schemas/TaskBlockedEventData"
           - "$ref": "#/components/schemas/ContainerStatusEventData"
           - "$ref": "#/components/schemas/ContainerDeploymentEventData"
@@ -231,6 +237,8 @@ components:
           enum:
           - ready
           - blocked
+          - reworking
+          - reworked
           - completed
           - rejected
           x-loopcontrol-optional-reason: Event-specific metadata; present only when
@@ -241,6 +249,8 @@ components:
       additionalProperties: false
     TaskStageChangedEventData:
       type: object
+      description: Each committed edge is recorded, including the edges into
+        reworking, into reworked, and into the configured target.
       required:
       - stage
       - phase
@@ -263,6 +273,8 @@ components:
           enum:
           - ready
           - blocked
+          - reworking
+          - reworked
           - completed
           - rejected
           x-loopcontrol-optional-reason: Event-specific metadata; present only when
@@ -312,70 +324,45 @@ components:
         reason:
           type: string
       additionalProperties: false
-    TaskCompletionEventData:
+    TaskCompletionRequestedEventData:
       type: object
-      required:
-      - stage
-      properties:
+      description: One event per request. The stage comes from the attributable
+        invocation, or from the task before processing the request.
+      required: [stage, result]
+      properties: &task_completion_properties
         stage:
           type: string
           nullable: true
         result:
           type: string
-          x-loopcontrol-optional-reason: Event-specific metadata; present only when
-            supplied by the lifecycle event producer, including historical persisted
-            events.
-        has_summary:
-          type: boolean
-          x-loopcontrol-optional-reason: Event-specific metadata; present only when
-            supplied by the lifecycle event producer, including historical persisted
-            events.
-        has_message:
-          type: boolean
-          x-loopcontrol-optional-reason: Event-specific metadata; present only when
-            supplied by the lifecycle event producer, including historical persisted
-            events.
+          enum: [passed, failed, blocked, invalid]
+          description: Effective reported result. Omission defaults to passed.
+            Unsupported values are recorded as invalid.
+      additionalProperties: false
+    TaskCompletionAcceptedEventData:
+      type: object
+      description: Recorded after the requested stage transition succeeds.
+      required: [stage, result, outcome]
+      properties:
+        <<: *task_completion_properties
         outcome:
           type: string
-          enum:
-          - advanced
-          - awaiting_human_gate
-          - waiting_on_requirements
-          - rework
-          - blocked
-          - rejected
-          x-loopcontrol-optional-reason: Event-specific metadata; present only when
-            supplied by the lifecycle event producer, including historical persisted
-            events.
-        to_stage:
-          type: string
-          x-loopcontrol-optional-reason: Event-specific metadata; present only when
-            supplied by the lifecycle event producer, including historical persisted
-            events.
-        gate:
-          type: string
-          enum:
-          - human
-          x-loopcontrol-optional-reason: Event-specific metadata; present only when
-            supplied by the lifecycle event producer, including historical persisted
-            events.
-        waiting_on:
-          type: array
-          items:
-            type: string
-          x-loopcontrol-optional-reason: Event-specific metadata; present only when
-            supplied by the lifecycle event producer, including historical persisted
-            events.
+          enum: [advanced, rework, blocked]
+      additionalProperties: false
+    TaskCompletionRejectedEventData:
+      type: object
+      description: Recorded when a check rejects a completion or its invocation
+        is obsolete.
+      required: [stage, result, reason, message]
+      properties:
+        <<: *task_completion_properties
         reason:
           type: string
-          x-loopcontrol-optional-reason: Event-specific metadata; present only when
-            supplied by the lifecycle event producer, including historical persisted
-            events.
-        rework:
-          type: boolean
-          x-loopcontrol-optional-reason: Event-specific metadata; present only when
-            supplied by the lifecycle event producer, including historical persisted
-            events.
+          enum: [invalid_completion, pending_comments, human_gate, unmet_requirements,
+            guard_rejection, invalid_transition, obsolete_invocation]
+        message:
+          type: string
+          description: Server-authored explanation without submitted text or Git diagnostics.
       additionalProperties: false
     TaskBlockedEventData:
       type: object
@@ -1519,6 +1506,11 @@ components:
         rework_to_position:
           type: integer
           nullable: true
+        rework_allowed_positions:
+          type: array
+          items:
+            type: integer
+          description: Earlier workflow positions allowed for rework. An empty list allows the default position only.
         position:
           type: integer
         agent_id:
@@ -1569,6 +1561,7 @@ components:
       - on_failure
       - max_rework_count
       - rework_to_position
+      - rework_allowed_positions
       - position
       - agent_id
       - environment_id
@@ -1654,6 +1647,10 @@ components:
           type: integer
         rework_to_position:
           type: integer
+        rework_allowed_positions:
+          type: array
+          items:
+            type: integer
         position:
           type: integer
         agent_id:
@@ -1757,6 +1754,10 @@ components:
           type: integer
         rework_to_position:
           type: integer
+        rework_allowed_positions:
+          type: array
+          items:
+            type: integer
         position:
           type: integer
         agent_id:
@@ -1816,6 +1817,11 @@ components:
         rework_to_position:
           type: integer
           nullable: true
+        rework_allowed_positions:
+          type: array
+          items:
+            type: integer
+          description: Earlier workflow positions allowed for rework. An empty list allows the default position only.
         position:
           type: integer
         agent_id:
@@ -1865,6 +1871,7 @@ components:
       - on_failure
       - max_rework_count
       - rework_to_position
+      - rework_allowed_positions
       - position
       - agent_id
       - environment_id
@@ -1954,6 +1961,61 @@ components:
       - name
       - built_in
       - stage_count
+    ProjectAgentSizeRelationship:
+      type: object
+      required: [data]
+      properties:
+        data:
+          description: The assigned agent size, or null when the project has no assignment.
+          type: object
+          nullable: true
+          required: [type, id]
+          properties:
+            type:
+              type: string
+              enum: [agent_sizes]
+            id:
+              type: string
+          additionalProperties: false
+      additionalProperties: false
+    AgentSizeResource:
+      type: object
+      required: [type, id, attributes]
+      properties:
+        type:
+          type: string
+          enum: [agent_sizes]
+        id:
+          type: string
+        attributes:
+          type: object
+          required: [name, multiplier, cpu_limit_millicores, memory_limit_mib]
+          properties:
+            name:
+              type: string
+            multiplier:
+              type: integer
+            cpu_limit_millicores:
+              description: Main container CPU limit in millicores. Null uses the multiplier-derived limit.
+              type: integer
+              minimum: 1
+              maximum: 2147483647
+              nullable: true
+            memory_limit_mib:
+              description: Main container memory limit in MiB. Null uses the multiplier-derived limit.
+              type: integer
+              minimum: 1
+              maximum: 2147483647
+              nullable: true
+          additionalProperties: false
+      additionalProperties: false
+    ProjectAgentSizeUpdateId:
+      description: Agent size ID from the catalog. Send null to clear the assignment or omit this field to retain it.
+      anyOf:
+      - type: integer
+        nullable: true
+      - type: string
+        pattern: '^[0-9]{1,19}$'
     ProjectAttributes:
       type: object
       properties:
@@ -3831,6 +3893,54 @@ paths:
             status: 404
             setup: [authenticated]
             path: {agent_session_id: missing}
+  "/api/codex_token_refresh":
+    post:
+      operationId: post-api-codex-token-refresh
+      summary: Acknowledge a native Codex token refresh
+      description: Codex sends its session-scoped placeholder only in the JSON body without an authorization header. A current handle requests coordinated refresh. An older handle is acknowledged while Kubernetes delivers the newer Secret revision. The response carries no credentials.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [grant_type, refresh_token]
+              additionalProperties: true
+              x-loopcontrol-open-reason: ignored_inputs
+              properties:
+                grant_type: {type: string, enum: [refresh_token]}
+                refresh_token: {type: string, description: Session-scoped placeholder from the projected Codex login.}
+      responses:
+        '200':
+          description: Refresh acknowledged. Credentials arrive through the Kubernetes Secret.
+          content:
+            application/json:
+              schema: {type: object, additionalProperties: false}
+        '400': {description: Missing or invalid refresh grant.}
+        '401': {description: Invalid placeholder or session, or failed credential.}
+      x-loopcontrol-contract:
+        scenarios:
+          success:
+            status: 200
+            setup: [unauthenticated]
+            body:
+              grant_type: refresh_token
+              refresh_token: {fixture: {resource: codex_refresh_placeholder}}
+          missing_grant:
+            status: 400
+            setup: [unauthenticated]
+            request_media_type: application/json
+            omit_body_field: grant_type
+            body:
+              refresh_token: invalid
+          missing_placeholder:
+            status: 401
+            setup: [unauthenticated]
+            request_media_type: application/json
+            omit_body_field: refresh_token
+            body:
+              grant_type: refresh_token
   "/api/agent_sessions/{agent_session_id}/codex_refresh":
     post:
       operationId: post-api-agent-session-codex-refresh
@@ -4588,7 +4698,7 @@ paths:
               required:
               - provider_capacity_snapshot
       responses:
-        '503':
+        '409':
           description: Capacity observation row locks are busy. Retry the same observation after one second.
           headers:
             Retry-After:
@@ -4694,7 +4804,7 @@ paths:
                 observation_id: 11111111-1111-4111-8111-111111111111
             media_type: application/vnd.api+json
           busy:
-            status: 503
+            status: 409
             setup:
             - capacity_session
             - capacity_lock_busy
@@ -6652,6 +6762,94 @@ paths:
           operation: expect
           arguments:
           - 'balance_credit: [ :minutes, :bucket, :description ]'
+  "/api/agent_sizes":
+    get:
+      operationId: get-api-agent-sizes
+      summary: Lists the global agent size catalog in ascending ID order.
+      parameters:
+      - name: page[number]
+        in: query
+        schema:
+          type: integer
+          default: 1
+      - name: page[size]
+        in: query
+        schema:
+          type: integer
+          default: 20
+          minimum: 1
+          maximum: 100
+      responses:
+        '200':
+          description: Paginated list of agent sizes
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                required: [data, links, meta]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      "$ref": "#/components/schemas/AgentSizeResource"
+                  links:
+                    "$ref": "#/components/schemas/JsonApiLinks"
+                  meta:
+                    "$ref": "#/components/schemas/JsonApiPaginationMeta"
+                additionalProperties: false
+        '400':
+          description: Invalid pagination parameter
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+        '401':
+          description: Missing or invalid credentials; the response body is empty.
+      x-loopcontrol-contract:
+        scenarios:
+          success:
+            status: 200
+            setup: [authenticated]
+            media_type: application/vnd.api+json
+            query: {}
+            assertions:
+            - pointer: /data/0/attributes
+              equals: {name: standard, multiplier: 1, cpu_limit_millicores: null, memory_limit_mib: null}
+            - pointer: /data/2
+              equals:
+                type: agent_sizes
+                id: {fixture: {resource: agent_size, identity: four_x}}
+                attributes: {name: 4x, multiplier: 4, cpu_limit_millicores: 4000, memory_limit_mib: 12288}
+          pagination_second_page:
+            status: 200
+            setup: [authenticated]
+            media_type: application/vnd.api+json
+            query: {page: {number: '2', size: '1'}}
+            assertions:
+            - pointer: /data/0/id
+              equals: {fixture: {resource: agent_size, identity: large}}
+          error_400:
+            status: 400
+            setup: [authenticated]
+            media_type: application/vnd.api+json
+            query: {page: invalid}
+          unauthenticated:
+            status: 401
+            setup: [unauthenticated]
+            query: {}
+          authentication_apiKeyAuth:
+            status: 200
+            setup: [authenticated]
+            media_type: application/vnd.api+json
+            query: {}
+            authentication: apiKeyAuth
+          authentication_browserSession:
+            status: 200
+            setup: [authenticated]
+            media_type: application/vnd.api+json
+            query: {}
+            authentication: browserSession
+        input_constraints: []
   "/api/platforms":
     get:
       operationId: get-api-platforms
@@ -8221,6 +8419,10 @@ paths:
                             type: integer
                           rework_to_position:
                             type: integer
+                          rework_allowed_positions:
+                            type: array
+                            items:
+                              type: integer
                           position:
                             type: integer
                           agent_id:
@@ -8980,6 +9182,10 @@ paths:
                             type: integer
                           rework_to_position:
                             type: integer
+                          rework_allowed_positions:
+                            type: array
+                            items:
+                              type: integer
                           position:
                             type: integer
                           agent_id:
@@ -9677,6 +9883,10 @@ paths:
                             type: integer
                           rework_to_position:
                             type: integer
+                          rework_allowed_positions:
+                            type: array
+                            items:
+                              type: integer
                           position:
                             type: integer
                           agent_id:
@@ -10657,6 +10867,8 @@ paths:
                         relationships:
                           type: object
                           properties:
+                            agent_size:
+                              "$ref": "#/components/schemas/ProjectAgentSizeRelationship"
                             platform:
                               "$ref": "#/components/schemas/JsonApiToOneRelationship"
                             pipeline:
@@ -10668,6 +10880,7 @@ paths:
                           - platform
                           - pipeline
                           - environment
+                          - agent_size
                         links:
                           type: object
                           required:
@@ -10956,7 +11169,10 @@ paths:
                         - platform
                         - pipeline
                         - environment
+                        - agent_size
                         properties:
+                          agent_size:
+                            "$ref": "#/components/schemas/ProjectAgentSizeRelationship"
                           platform:
                             type: object
                             additionalProperties: false
@@ -11215,6 +11431,8 @@ paths:
                       relationships:
                         type: object
                         properties:
+                          agent_size:
+                            "$ref": "#/components/schemas/ProjectAgentSizeRelationship"
                           platform:
                             "$ref": "#/components/schemas/JsonApiToOneRelationship"
                           pipeline:
@@ -11226,6 +11444,7 @@ paths:
                         - platform
                         - pipeline
                         - environment
+                        - agent_size
                       links:
                         type: object
                         required:
@@ -11320,6 +11539,8 @@ paths:
                     disable_webhook:
                       type: boolean
                       description: Clears both settings. Previously committed events retain their snapshots.
+                    agent_size_id:
+                      "$ref": "#/components/schemas/ProjectAgentSizeUpdateId"
                     display_name:
                       type: string
                     git_branch:
@@ -11383,6 +11604,8 @@ paths:
                       relationships:
                         type: object
                         properties:
+                          agent_size:
+                            "$ref": "#/components/schemas/ProjectAgentSizeRelationship"
                           platform:
                             "$ref": "#/components/schemas/JsonApiToOneRelationship"
                           pipeline:
@@ -11394,6 +11617,7 @@ paths:
                         - platform
                         - pipeline
                         - environment
+                        - agent_size
                       links:
                         type: object
                         required:
@@ -11412,7 +11636,7 @@ paths:
               schema:
                 "$ref": "#/components/schemas/JsonApiErrors"
         '422':
-          description: Validation failed
+          description: Validation failed, including unknown or malformed agent size IDs.
           content:
             application/vnd.api+json:
               schema:
@@ -11423,6 +11647,49 @@ paths:
           "$ref": "#/components/responses/BadRequest"
       x-loopcontrol-contract:
         scenarios:
+          agent_size_set:
+            status: 200
+            setup: [authenticated]
+            media_type: application/vnd.api+json
+            body:
+              project:
+                agent_size_id: {fixture: {resource: agent_size, identity: four_x}}
+            assertions:
+            - pointer: /data/relationships/agent_size/data
+              equals:
+                type: agent_sizes
+                id: {fixture: {resource: agent_size, identity: four_x}}
+          agent_size_clear:
+            status: 200
+            setup: [authenticated]
+            media_type: application/vnd.api+json
+            body:
+              project:
+                agent_size_id: null
+            assertions:
+            - pointer: /data/relationships/agent_size/data
+              equals: null
+          agent_size_unknown:
+            status: 422
+            setup: [authenticated]
+            media_type: application/vnd.api+json
+            body:
+              project:
+                agent_size_id: 9999999999
+            assertions:
+            - pointer: /errors/0/status
+              equals: '422'
+          agent_size_malformed:
+            status: 422
+            setup: [authenticated]
+            media_type: application/vnd.api+json
+            invalid_request: A malformed agent size ID is rejected without integer coercion.
+            body:
+              project:
+                agent_size_id: "123bad"
+            assertions:
+            - pointer: /errors/0/status
+              equals: '422'
           webhook_enable:
             status: 200
             setup:
@@ -11653,7 +11920,7 @@ paths:
         - field: ''
           operation: expect
           arguments:
-          - 'project: [ :webhook_url, :webhook_signing_secret, :disable_webhook, :display_name, :git_branch, :environment_id, :container_image, :platform_id, :failure_policy, :fallback_agent_id, :default_agent_id, :pipeline_id, mcp_config: {} ]'
+          - 'project: [ :webhook_url, :webhook_signing_secret, :disable_webhook, :display_name, :git_branch, :environment_id, :container_image, :platform_id, :failure_policy, :fallback_agent_id, :default_agent_id, :pipeline_id, :agent_size_id, mcp_config: {} ]'
     put:
       operationId: put-api-project
       summary: Updates a project.
@@ -11681,6 +11948,8 @@ paths:
                       writeOnly: true
                     disable_webhook:
                       type: boolean
+                    agent_size_id:
+                      "$ref": "#/components/schemas/ProjectAgentSizeUpdateId"
                     display_name:
                       type: string
                     git_branch:
@@ -11744,6 +12013,8 @@ paths:
                       relationships:
                         type: object
                         properties:
+                          agent_size:
+                            "$ref": "#/components/schemas/ProjectAgentSizeRelationship"
                           platform:
                             "$ref": "#/components/schemas/JsonApiToOneRelationship"
                           pipeline:
@@ -11755,6 +12026,7 @@ paths:
                         - platform
                         - pipeline
                         - environment
+                        - agent_size
                       links:
                         type: object
                         required:
@@ -11773,7 +12045,7 @@ paths:
               schema:
                 "$ref": "#/components/schemas/JsonApiErrors"
         '422':
-          description: Validation failed
+          description: Validation failed, including unknown or malformed agent size IDs.
           content:
             application/vnd.api+json:
               schema:
@@ -11784,6 +12056,49 @@ paths:
           "$ref": "#/components/responses/BadRequest"
       x-loopcontrol-contract:
         scenarios:
+          agent_size_set:
+            status: 200
+            setup: [authenticated]
+            media_type: application/vnd.api+json
+            body:
+              project:
+                agent_size_id: {fixture: {resource: agent_size, identity: four_x}}
+            assertions:
+            - pointer: /data/relationships/agent_size/data
+              equals:
+                type: agent_sizes
+                id: {fixture: {resource: agent_size, identity: four_x}}
+          agent_size_clear:
+            status: 200
+            setup: [authenticated]
+            media_type: application/vnd.api+json
+            body:
+              project:
+                agent_size_id: null
+            assertions:
+            - pointer: /data/relationships/agent_size/data
+              equals: null
+          agent_size_unknown:
+            status: 422
+            setup: [authenticated]
+            media_type: application/vnd.api+json
+            body:
+              project:
+                agent_size_id: 9999999999
+            assertions:
+            - pointer: /errors/0/status
+              equals: '422'
+          agent_size_malformed:
+            status: 422
+            setup: [authenticated]
+            media_type: application/vnd.api+json
+            invalid_request: A malformed agent size ID is rejected without integer coercion.
+            body:
+              project:
+                agent_size_id: "123bad"
+            assertions:
+            - pointer: /errors/0/status
+              equals: '422'
           success:
             status: 200
             setup:
@@ -11948,7 +12263,7 @@ paths:
         - field: ''
           operation: expect
           arguments:
-          - 'project: [ :webhook_url, :webhook_signing_secret, :disable_webhook, :display_name, :git_branch, :environment_id, :container_image, :platform_id, :failure_policy, :fallback_agent_id, :default_agent_id, :pipeline_id, mcp_config: {} ]'
+          - 'project: [ :webhook_url, :webhook_signing_secret, :disable_webhook, :display_name, :git_branch, :environment_id, :container_image, :platform_id, :failure_policy, :fallback_agent_id, :default_agent_id, :pipeline_id, :agent_size_id, mcp_config: {} ]'
   "/api/containers/{id}":
     patch:
       operationId: patch-api-container
@@ -13526,7 +13841,7 @@ paths:
   "/api/tasks/{id}/logs":
     get:
       operationId: get-api-task-logs
-      summary: Fetches Loki log lines for the task's container.
+      summary: Fetches agent and configured application logs for the task.
       parameters:
       - name: id
         in: path
@@ -13592,6 +13907,7 @@ paths:
                               - line
                               - container
                               - labels
+                              - source
                               properties:
                                 timestamp:
                                   type: string
@@ -13600,6 +13916,11 @@ paths:
                                   type: string
                                 container:
                                   type: string
+                                source:
+                                  type: string
+                                  enum:
+                                  - agent
+                                  - application
                                 labels:
                                   type: object
                                   additionalProperties:
@@ -14896,6 +15217,11 @@ paths:
     post:
       operationId: post-api-task-stage-completion
       summary: Advances, fails, or blocks a task at its current pipeline stage.
+      description: Passing the code-producing stage requires a clean working tree,
+        a pushed HEAD, a new commit when a pass baseline exists, and a substantive
+        branch diff. If the task needs no change, submit result blocked with a
+        blocked_reason. Other stages can record noop_reason in completion transition
+        metadata for audit.
       parameters:
       - name: task_id
         in: path
@@ -14928,6 +15254,9 @@ paths:
                   - failed
                   - blocked
                   default: passed
+                rework_target_stage:
+                  type: string
+                  description: Exact allowed stage name from the prompt. Required when passing the reworking stage.
                 message:
                   type: string
                 summary:
@@ -14942,6 +15271,8 @@ paths:
                     snapshot. Required when blocked_reason is credential_authentication_failed.
                 noop_reason:
                   type: string
+                  description: Audit value for stages that do not produce code. It does not
+                    allow the code-producing stage to pass.
                 local_head_sha:
                   type: string
                 remote_head_sha:
@@ -14985,6 +15316,8 @@ paths:
                       snapshot. Required when blocked_reason is credential_authentication_failed.
                   noop_reason:
                     type: string
+                    description: Audit value for stages that do not produce code. It does not
+                      allow the code-producing stage to pass.
                   local_head_sha:
                     type: string
                   remote_head_sha:
@@ -15034,6 +15367,8 @@ paths:
                       snapshot. Required when blocked_reason is credential_authentication_failed.
                   noop_reason:
                     type: string
+                    description: Audit value for stages that do not produce code. It does not
+                      allow the code-producing stage to pass.
                   local_head_sha:
                     type: string
                   remote_head_sha:
@@ -15081,6 +15416,8 @@ paths:
                       snapshot. Required when blocked_reason is credential_authentication_failed.
                   noop_reason:
                     type: string
+                    description: Audit value for stages that do not produce code. It does not
+                      allow the code-producing stage to pass.
                   local_head_sha:
                     type: string
                   remote_head_sha:
@@ -15119,7 +15456,7 @@ paths:
                 "$ref": "#/components/schemas/TaskDocument"
         '422':
           description: Guard-rejected completion or invalid state transition. Rejected
-            submissions make no writes and can be retried by the active session.
+            submissions leave the stage and active session available for retry.
           content:
             application/vnd.api+json:
               schema:
@@ -15143,7 +15480,11 @@ paths:
             body:
               result: passed
               summary: Contract completion
-              noop_reason: Contract completion needs no code change
+              working_tree_clean: true
+              local_head_sha: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+              remote_head_sha: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+              branch_diff_files:
+              - app/models/task.rb
               agent_session_id:
                 fixture:
                   resource: agent_session
@@ -15229,7 +15570,11 @@ paths:
             body:
               result: passed
               summary: Contract completion
-              noop_reason: Contract completion needs no code change
+              working_tree_clean: true
+              local_head_sha: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+              remote_head_sha: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+              branch_diff_files:
+              - app/models/task.rb
               agent_session_id:
                 fixture:
                   resource: agent_session
@@ -15248,7 +15593,11 @@ paths:
             body:
               result: passed
               summary: Contract completion
-              noop_reason: Contract completion needs no code change
+              working_tree_clean: true
+              local_head_sha: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+              remote_head_sha: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+              branch_diff_files:
+              - app/models/task.rb
               agent_session_id:
                 fixture:
                   resource: agent_session
@@ -15267,7 +15616,11 @@ paths:
             body:
               result: passed
               summary: Contract completion
-              noop_reason: Contract completion needs no code change
+              working_tree_clean: true
+              local_head_sha: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+              remote_head_sha: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+              branch_diff_files:
+              - app/models/task.rb
               agent_session_id:
                 fixture:
                   resource: agent_session
@@ -15326,7 +15679,11 @@ paths:
             body:
               result: passed
               summary: Contract completion
-              noop_reason: Contract completion needs no code change
+              working_tree_clean: true
+              local_head_sha: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+              remote_head_sha: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+              branch_diff_files:
+              - app/models/task.rb
               agent_session_id:
                 fixture:
                   resource: agent_session
@@ -15561,7 +15918,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: working_task_without_executor
+                  identity: waiting_for_pull_request
           error_409:
             status: 409
             setup:
@@ -15613,7 +15970,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: working_task_without_executor
+                  identity: waiting_for_pull_request
             authentication: apiKeyAuth
           authentication_browserSession:
             status: 202
@@ -15624,7 +15981,7 @@ paths:
               task_id:
                 fixture:
                   resource: task
-                  identity: working_task_without_executor
+                  identity: waiting_for_pull_request
             authentication: browserSession
         input_constraints: []
   "/api/tasks/{task_id}/prompt_sync":
@@ -17789,6 +18146,8 @@ paths:
     get:
       operationId: get-api-task-transitions
       summary: Lists the pipeline stage transitions for a task in chronological order.
+      description: Rework history includes the transitions through the nonterminal
+        lifecycle stages reworking and reworked before arrival at the configured target.
       parameters:
       - name: task_id
         in: path
@@ -18418,7 +18777,8 @@ paths:
   "/api/tasks/{task_id}/containers":
     get:
       operationId: get-api-task-containers
-      summary: Lists containers associated with a task.
+      summary: Lists containers created for a task.
+      description: Returns containers whose stored task of origin is the requested task, including released and archived containers, newest first.
       parameters:
       - name: task_id
         in: path
@@ -18532,6 +18892,30 @@ paths:
                   resource: task
                   identity: contract
             query: {}
+          released_container_history:
+            status: 200
+            setup:
+            - authenticated
+            media_type: application/vnd.api+json
+            path:
+              task_id:
+                fixture:
+                  resource: task
+                  identity: completed_task
+            query: {}
+            assertions:
+            - pointer: "/data/0/id"
+              equals:
+                fixture:
+                  resource: container
+                  identity: completed_task_newer_executor
+            - pointer: "/data/1/id"
+              equals:
+                fixture:
+                  resource: container
+                  identity: completed_task_older_executor
+            - pointer: "/meta/total_count"
+              equals: 2
           error_400:
             status: 400
             setup:

@@ -20,11 +20,19 @@ type OperationCoverage struct {
 // Covered maps every loopctl-covered operation to its coverage metadata.
 // Adding a new loopctl command requires a new entry here.
 var Covered = map[OperationKey]OperationCoverage{
+	{Method: "GET", Path: "/api/billing/funding_envelope"}:                        {Command: "topup"},
+	{Method: "POST", Path: "/api/billing/topups"}:                                 {Command: "topup"},
+	{Method: "POST", Path: "/api/billing/x402_payments"}:                          {Command: "topup", QueryParams: []string{"package_id"}},
+	{Method: "POST", Path: "/api/billing/l402_payments"}:                          {Command: "topup", QueryParams: []string{"package_id"}},
+	{Method: "GET", Path: "/api/billing/pending_purchases/:id"}:                   {Command: "topup"},
 	{Method: "POST", Path: "/api/registrations"}:                                  {Command: "onboard"},
 	{Method: "GET", Path: "/api/platforms"}:                                       {Command: "platforms list", Paginated: true},
+	{Method: "GET", Path: "/api/agent_sizes"}:                                     {Command: "agent-sizes list", Paginated: true},
 	{Method: "GET", Path: "/api/platforms/:id"}:                                   {Command: "platforms get"},
 	{Method: "GET", Path: "/api/agents"}:                                          {Command: "agents list", Paginated: true},
 	{Method: "GET", Path: "/api/agents/:id"}:                                      {Command: "agents get"},
+	{Method: "GET", Path: "/api/credential_sets"}:                                 {Command: "credentials list"},
+	{Method: "GET", Path: "/api/credential_sets/:id"}:                             {Command: "credentials get"},
 	{Method: "PATCH", Path: "/api/agents/:id"}:                                    {Command: "agents update"},
 	{Method: "POST", Path: "/api/balance_credits"}:                                {Command: "account credit"},
 	{Method: "GET", Path: "/api/tasks/:task_id/containers"}:                       {Command: "tasks containers", Paginated: true},
@@ -72,11 +80,11 @@ var Covered = map[OperationKey]OperationCoverage{
 // Excluded maps operations intentionally not covered by loopctl with the reason.
 // These are server-internal, UI-only, container-internal, or otherwise not agent-facing.
 var Excluded = map[OperationKey]string{
+	{Method: "POST", Path: "/api/codex_token_refresh"}:                                     "session infrastructure coordinates credential delivery and has no interactive CLI use",
 	{Method: "POST", Path: "/api/agent_sessions/:agent_session_id/comment_deliveries"}:     "container-internal: agent session receives waiting steering comments",
 	{Method: "POST", Path: "/api/agent_sessions/:agent_session_id/codex_refresh"}:          "container-internal: agent session refreshes provider credentials",
 	{Method: "POST", Path: "/api/agent_sessions/:agent_session_id/authentication_failure"}: "container-internal: agent session reports authentication failure",
 
-	{Method: "GET", Path: "/api/billing/pending_purchases/:id"}:                        "billing checkout polling is not implemented in loopctl",
 	{Method: "GET", Path: "/api/github/repository_creations/:id"}:                      "GitHub repository creation polling is not implemented in loopctl",
 	{Method: "GET", Path: "/api/global_prompt"}:                                        "platform-admin global prompt configuration; not yet implemented in loopctl",
 	{Method: "PATCH", Path: "/api/global_prompt"}:                                      "platform-admin global prompt configuration; not yet implemented in loopctl",
@@ -101,11 +109,7 @@ var Excluded = map[OperationKey]string{
 	{Method: "GET", Path: "/api/github/repositories"}:                                  "used by web UI repo picker; not loopctl-facing",
 	{Method: "POST", Path: "/api/github/repositories"}:                                 "used by web UI repo creation flow; not loopctl-facing",
 	{Method: "GET", Path: "/api/github/repositories/:owner/:repo/branches"}:            "used by web UI branch picker; not loopctl-facing",
-	{Method: "GET", Path: "/api/billing/funding_envelope"}:                             "topup command uses /api/topup (legacy); billing/* endpoints not yet migrated in loopctl",
-	{Method: "POST", Path: "/api/billing/x402_payments"}:                               "topup command uses /api/topup (legacy); billing/* endpoints not yet migrated in loopctl",
-	{Method: "POST", Path: "/api/billing/l402_payments"}:                               "topup command uses /api/topup (legacy); billing/* endpoints not yet migrated in loopctl",
 	{Method: "GET", Path: "/api/billing/topup_packages"}:                               "not yet implemented in loopctl",
-	{Method: "POST", Path: "/api/billing/topups"}:                                      "not yet implemented in loopctl",
 	{Method: "POST", Path: "/api/billing/usdc_payments"}:                               "internal crediting endpoint; not agent-facing",
 	// New in API v1.1.0 — agent-session and machine-event infrastructure.
 	{Method: "PATCH", Path: "/api/credential_device_authorizations/:id"}:    "device-auth pod internal; not an account API token endpoint",
@@ -129,7 +133,5 @@ var Excluded = map[OperationKey]string{
 	{Method: "PUT", Path: "/api/environments/:environment_id/entries/:id"}: "PUT alias for PATCH /api/environments/:environment_id/entries/:id; loopctl uses PATCH",
 	{Method: "PUT", Path: "/api/task_kinds/:id"}:                           "PUT alias for PATCH /api/task_kinds/:id; loopctl uses PATCH",
 	// New in API v1.2.0 — credential capacity and container capacity snapshots.
-	{Method: "GET", Path: "/api/credential_sets"}:                                       "credential capacity read; not yet implemented in loopctl",
-	{Method: "GET", Path: "/api/credential_sets/:id"}:                                   "credential capacity read; not yet implemented in loopctl",
 	{Method: "POST", Path: "/api/containers/:container_id/provider_capacity_snapshots"}: "container-internal: agent container records provider capacity observations",
 }

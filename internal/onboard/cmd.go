@@ -14,6 +14,8 @@ import (
 
 	"github.com/dotdevlabs/ctlkit/pkg/config"
 	"github.com/dotdevlabs/ctlkit/pkg/output"
+
+	"github.com/dotdevlabs/loopctl/internal/apiclient"
 )
 
 // RegistrationAttrs holds the attributes returned by POST /api/registrations.
@@ -153,7 +155,7 @@ func postRegistration(ctx context.Context, baseURL, email, tokenName, accountNam
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("registration failed (%d): %s", resp.StatusCode, extractError(respBody, resp.StatusCode))
+		return nil, fmt.Errorf("registration failed (%d): %w", resp.StatusCode, apiclient.DecodeAPIError(resp, respBody))
 	}
 
 	var doc struct {
@@ -161,7 +163,7 @@ func postRegistration(ctx context.Context, baseURL, email, tokenName, accountNam
 			Attributes RegistrationAttrs `json:"attributes"`
 		} `json:"data"`
 	}
-	if err := json.Unmarshal(respBody, &doc); err != nil {
+	if err := apiclient.DecodeResponse(resp, "", respBody, &doc); err != nil {
 		return nil, fmt.Errorf("decoding response: %w", err)
 	}
 
@@ -183,29 +185,4 @@ func buildRegistration(email, tokenName, accountName string) map[string]any {
 		reg["account_name"] = accountName
 	}
 	return reg
-}
-
-func extractError(body []byte, status int) string {
-	if len(body) > 0 {
-		var errDoc struct {
-			Errors []struct {
-				Detail string `json:"detail"`
-				Title  string `json:"title"`
-			} `json:"errors"`
-		}
-		if json.Unmarshal(body, &errDoc) == nil && len(errDoc.Errors) > 0 {
-			parts := make([]string, 0, len(errDoc.Errors))
-			for _, e := range errDoc.Errors {
-				if e.Detail != "" {
-					parts = append(parts, e.Detail)
-				} else if e.Title != "" {
-					parts = append(parts, e.Title)
-				}
-			}
-			if len(parts) > 0 {
-				return strings.Join(parts, "; ")
-			}
-		}
-	}
-	return http.StatusText(status)
 }

@@ -1,8 +1,8 @@
 package topup
 
 import (
-	"bytes"
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -10,7 +10,9 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"regexp"
 	"strings"
+	"time"
 
 	secp "github.com/decred/dcrd/dcrec/secp256k1/v4"
 	secp256ecdsa "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
@@ -65,6 +67,8 @@ func NewX402Payer(endpoint string, cfg wallet.ArbitrumConfig) *X402Payer {
 func (p *X402Payer) RailName() string { return "x402" }
 func (p *X402Payer) Configured() bool { return p.signer != nil && p.signer.Address() != "" }
 
+var evmAddressPattern = regexp.MustCompile(`^0x[0-9a-fA-F]{40}$`)
+
 func (p *X402Payer) Pay(ctx context.Context, product string, info apiclient.FundingInfo, out io.Writer) error {
 	railInfo, err := findRail(info, product, "x402")
 	if err != nil {
@@ -72,14 +76,20 @@ func (p *X402Payer) Pay(ctx context.Context, product string, info apiclient.Fund
 	}
 
 	amountBig, ok := new(big.Int).SetString(railInfo.Amount, 10)
-	if !ok {
+	if !ok || amountBig.Sign() <= 0 || amountBig.BitLen() > 256 {
 		return fmt.Errorf("x402: invalid amount %q", railInfo.Amount)
 	}
 
-	nonceBytes, err := hexToBytes32(railInfo.Nonce)
-	if err != nil {
-		return fmt.Errorf("x402: invalid nonce: %w", err)
+	if railInfo.Version != 1 || railInfo.Scheme != "exact" ||
+		(railInfo.Network != "arbitrum" && railInfo.Network != "arbitrum-mainnet" && railInfo.Network != "eip155:42161") {
+		return fmt.Errorf("x402: unsupported requirements for version %d, scheme %q, network %q", railInfo.Version, railInfo.Scheme, railInfo.Network)
 	}
+	if railInfo.PackageID == "" || !evmAddressPattern.MatchString(railInfo.Recipient) || !evmAddressPattern.MatchString(railInfo.Token) {
+		return fmt.Errorf("x402: missing or invalid package and payment addresses")
+	}
+	var nonceBytes [32]byte
+	_, _ = rand.Read(nonceBytes[:])
+	deadline := time.Now().Add(5 * time.Minute).Unix()
 
 	from := p.signer.Address()
 	sig, err := p.signer.Sign(X402SignParams{
@@ -87,35 +97,34 @@ func (p *X402Payer) Pay(ctx context.Context, product string, info apiclient.Fund
 		To:          railInfo.Recipient,
 		Value:       amountBig,
 		ValidAfter:  0,
-		ValidBefore: railInfo.Deadline,
+		ValidBefore: deadline,
 		Nonce:       nonceBytes,
-		ChainID:     railInfo.ChainID,
+		ChainID:     42161,
 		Token:       railInfo.Token,
 	})
 	if err != nil {
 		return fmt.Errorf("x402: signing failed: %w", err)
 	}
 
-	payloadJSON, err := json.Marshal(struct {
+	authorization := struct {
 		From        string `json:"from"`
 		To          string `json:"to"`
 		Value       string `json:"value"`
 		ValidAfter  string `json:"validAfter"`
 		ValidBefore string `json:"validBefore"`
 		Nonce       string `json:"nonce"`
-		V           uint8  `json:"v"`
-		R           string `json:"r"`
-		S           string `json:"s"`
 	}{
 		From:        from,
 		To:          railInfo.Recipient,
 		Value:       amountBig.String(),
 		ValidAfter:  "0",
-		ValidBefore: fmt.Sprintf("%d", railInfo.Deadline),
+		ValidBefore: fmt.Sprint(deadline),
 		Nonce:       "0x" + hex.EncodeToString(nonceBytes[:]),
-		V:           sig.V,
-		R:           "0x" + hex.EncodeToString(sig.R[:]),
-		S:           "0x" + hex.EncodeToString(sig.S[:]),
+	}
+	signature := fmt.Sprintf("0x%x%x%02x", sig.R, sig.S, sig.V)
+	payloadJSON, err := json.Marshal(map[string]any{
+		"x402Version": railInfo.Version, "scheme": railInfo.Scheme, "network": railInfo.Network,
+		"payload": map[string]any{"signature": signature, "authorization": authorization},
 	})
 	if err != nil {
 		return fmt.Errorf("x402: encoding payment header: %w", err)
@@ -123,24 +132,8 @@ func (p *X402Payer) Pay(ctx context.Context, product string, info apiclient.Fund
 
 	paymentHeader := base64.StdEncoding.EncodeToString(payloadJSON)
 
-	activeCtx := ctxutil.ActiveContextFrom(ctx)
-	fullURL := strings.TrimRight(activeCtx.BaseURL, "/") + p.Endpoint //nolint:gosec // G107: URL from user config
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, fullURL, bytes.NewReader([]byte("{}")))
-	if err != nil {
-		return fmt.Errorf("x402: building request: %w", err)
-	}
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "Bearer "+activeCtx.Token)
-	req.Header.Set("X-PAYMENT", paymentHeader)
-
-	resp, err := http.DefaultClient.Do(req)
-	if err != nil {
-		return fmt.Errorf("x402: request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("x402: payment request returned %d", resp.StatusCode)
+	if err := submitPayment(ctx, p.Endpoint, railInfo.PackageID, http.Header{"X-Payment": {paymentHeader}}); err != nil {
+		return fmt.Errorf("x402: %w", err)
 	}
 
 	jsonMode := ctxutil.GlobalFlagsFrom(ctx).JSON
@@ -168,21 +161,6 @@ func findRail(info apiclient.FundingInfo, product, rail string) (apiclient.RailI
 		}
 	}
 	return apiclient.RailInfo{}, fmt.Errorf("product %q not found in funding info", product)
-}
-
-// hexToBytes32 decodes a hex string (with or without 0x prefix) into [32]byte.
-func hexToBytes32(s string) ([32]byte, error) {
-	s = strings.TrimPrefix(s, "0x")
-	b, err := hex.DecodeString(s)
-	if err != nil {
-		return [32]byte{}, err
-	}
-	if len(b) != 32 {
-		return [32]byte{}, fmt.Errorf("expected 32 bytes, got %d", len(b))
-	}
-	var out [32]byte
-	copy(out[:], b)
-	return out, nil
 }
 
 // secp256k1Signer implements ArbitrumSigner using EIP-3009 / EIP-712.

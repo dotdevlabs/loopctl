@@ -16,12 +16,12 @@ import (
 )
 
 const body402 = `{
-	"rails": ["human_link"],
-	"products": [
-		{"key": "trial", "label": "5-hour trial", "rails": {"human_link": {"url": "https://checkout.stripe.com/trial"}}},
-		{"key": "topup", "label": "Top-up package", "rails": {"human_link": {"url": "https://checkout.stripe.com/topup"}}},
-		{"key": "subscription", "label": "Subscription prepay", "rails": {"human_link": {"url": "https://checkout.stripe.com/sub"}}}
-	]
+	"errors":[{"status":"402","title":"Payment Required","detail":"Choose a product"}],
+	"meta":{"enabled_rails":["human_link"],"fundable_products":[
+		{"id":"trial_5h","kind":"trial","hours":5,"price_cents":100,"one_time":true,"available":true,"payment_rails":{"human_link":{"method":"GET","href":"https://checkout.stripe.com/trial"}}},
+		{"id":"10h","kind":"topup","hours":10,"price_cents":200,"one_time":false,"available":true,"payment_rails":{"human_link":{"method":"GET","href":"https://checkout.stripe.com/topup"}}},
+		{"id":"subscription","kind":"subscription_prepay","available":true,"payment_rails":{"human_link":{"method":"GET","href":"https://checkout.stripe.com/sub"}}}
+	]}
 }`
 
 func makeCtx(t *testing.T, serverURL, token string, jsonMode bool, out io.Writer) context.Context {
@@ -36,11 +36,11 @@ func makeCtx(t *testing.T, serverURL, token string, jsonMode bool, out io.Writer
 
 func TestTopupCmdPrintsLink(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/topup" {
+		if r.URL.Path != fundingEndpoint {
 			t.Errorf("unexpected path: %s", r.URL.Path)
 		}
-		if r.Method != http.MethodPost {
-			t.Errorf("expected POST; got: %s", r.Method)
+		if r.Method != http.MethodGet {
+			t.Errorf("expected GET; got: %s", r.Method)
 		}
 		w.WriteHeader(http.StatusPaymentRequired)
 		_, _ = fmt.Fprint(w, body402)
@@ -158,7 +158,7 @@ func TestTopupCmdServerError(t *testing.T) {
 	}
 }
 
-func TestTopupCmd2xxFunded(t *testing.T) {
+func TestTopupCmdUnexpectedSuccessStatus(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = fmt.Fprint(w, `{}`)
@@ -172,17 +172,13 @@ func TestTopupCmd2xxFunded(t *testing.T) {
 	cmd.SetContext(ctx)
 	cmd.SetOut(&out)
 
-	if err := cmd.RunE(cmd, nil); err != nil {
-		t.Fatalf("expected no error on 200; got: %v", err)
-	}
-	got := out.String()
-	if !strings.Contains(got, "already funded") {
-		t.Errorf("expected 'already funded' message; got: %q", got)
+	if err := cmd.RunE(cmd, nil); err == nil || out.Len() != 0 {
+		t.Fatalf("expected an error with no success output on undocumented 200; got %v, %s", err, &out)
 	}
 }
 
 func TestTopupCmdMissingRail(t *testing.T) {
-	body := `{"rails":[],"products":[{"key":"topup","label":"Top-up","rails":{}}]}`
+	body := `{"meta":{"enabled_rails":[],"fundable_products":[{"id":"10h","kind":"topup","available":true,"payment_rails":{}}]}}`
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusPaymentRequired)
 		_, _ = fmt.Fprint(w, body)
@@ -206,7 +202,7 @@ func TestTopupCmdMissingRail(t *testing.T) {
 }
 
 func TestTopupCmdProductNotInBody(t *testing.T) {
-	body := `{"rails":["human_link"],"products":[{"key":"other","label":"Other","rails":{"human_link":{"url":"https://example.com"}}}]}`
+	body := `{"meta":{"enabled_rails":[],"fundable_products":[{"id":"trial_5h","kind":"trial","available":true,"payment_rails":{}}]}}`
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusPaymentRequired)
 		_, _ = fmt.Fprint(w, body)
