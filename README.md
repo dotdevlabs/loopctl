@@ -1290,6 +1290,8 @@ Wallet credentials are supplied via environment variables — never stored in th
 
 **L402 (Lightning via LND REST):**
 
+Loopctl submits the Lightning proof in `Authorization` and authenticates the payment submission with the active account token in `X-Api-Token`.
+
 | Variable | Description |
 |----------|-------------|
 | `LOOPCTL_LN_HOST` | LND REST base URL, e.g. `https://localhost:8080` |

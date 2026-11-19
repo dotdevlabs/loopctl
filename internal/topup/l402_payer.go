@@ -60,7 +60,10 @@ func (p *L402Payer) Pay(ctx context.Context, product string, info apiclient.Fund
 		return fmt.Errorf("l402: paying invoice: %w", err)
 	}
 
-	headers := http.Header{"Authorization": {fmt.Sprintf("L402 %s:%s", railInfo.Macaroon, preimage)}}
+	headers := http.Header{
+		"Authorization": {fmt.Sprintf("L402 %s:%s", railInfo.Macaroon, preimage)},
+		"X-Api-Token":   {ctxutil.ActiveContextFrom(ctx).Token},
+	}
 	if err := submitPayment(ctx, p.Endpoint, railInfo.PackageID, headers); err != nil {
 		return fmt.Errorf("l402: %w", err)
 	}

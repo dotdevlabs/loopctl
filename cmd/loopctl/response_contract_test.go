@@ -336,8 +336,15 @@ func runResponseCase(t *testing.T, tc responseCase, endpoints []schema.EndpointA
 			wantPackage := "10h"
 			if strings.Contains(step.path, "l402") {
 				wantPackage = "50h"
+				if r.Header.Get("X-Api-Token") != "fixture-token" {
+					t.Error("Lightning payment is missing the active account token in X-Api-Token")
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
 				if !strings.HasPrefix(r.Header.Get("Authorization"), "L402 ") {
-					t.Error("payment is missing L402 authorization")
+					t.Error("Lightning payment is missing the L402 proof in Authorization")
+					w.WriteHeader(http.StatusPaymentRequired)
+					return
 				}
 			} else if r.Header.Get("X-Payment") == "" {
 				t.Error("payment is missing x402 authorization")
