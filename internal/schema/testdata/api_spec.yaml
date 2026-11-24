@@ -2,7 +2,7 @@
 openapi: 3.0.3
 info:
   title: LoopControl API
-  version: 1.5.0
+  version: 1.6.0
   description: API for managing containerized agent environments on a Kubernetes cluster.
 servers:
 - url: "/"
@@ -77,6 +77,72 @@ components:
       description: Signed Rails session cookie; fallback when no active API token
         is found.
   schemas:
+    UsageDateOrTime:
+      type: string
+      description: ISO 8601 calendar date or date-time. Date-times may include seconds, fractional seconds and a UTC offset.
+      pattern: '^\d{4}-\d{2}-\d{2}([Tt]([01]\d|2[0-3]):[0-5]\d(:[0-5]\d([.,]\d+)?)?([Zz]|[+-]([01]\d|2[0-3]):?[0-5]\d)?)?$'
+    UsageAttributes:
+      type: object
+      additionalProperties: false
+      required: [period, billable_compute_minutes, compute_cost, projects, days, overage_minutes, overage_charge, balance]
+      properties:
+        period:
+          type: object
+          additionalProperties: false
+          required: [start, end, kind, billing_cycle_end]
+          properties:
+            start: {type: string, format: date-time}
+            end: {type: string, format: date-time, description: Exclusive end of the usage window.}
+            kind: {type: string, enum: [billing_cycle, requested_period, trailing_30_days]}
+            billing_cycle_end: {type: string, format: date-time, nullable: true}
+        billable_compute_minutes: {type: integer, minimum: 0}
+        compute_cost:
+          type: object
+          additionalProperties: false
+          required: [amount_cents, currency, final]
+          properties:
+            amount_cents: {type: integer, description: Account compute rate applied to the reported minutes and rounded up in cents.}
+            currency: {type: string, description: Lowercase ISO 4217 currency code.}
+            final: {type: boolean, description: True when the window has elapsed and no overlapping open billable period can still change its compute usage.}
+        projects:
+          type: array
+          description: Projects with billable usage, ordered by ID, followed by one unattributed row with null ID and name. Minutes sum to the total.
+          items:
+            type: object
+            additionalProperties: false
+            required: [project_id, project_name, minutes]
+            properties:
+              project_id: {type: string, nullable: true}
+              project_name: {type: string, nullable: true}
+              minutes: {type: integer, minimum: 0}
+        days:
+          type: array
+          description: Each intersecting UTC day in chronological order, including days with zero usage. Minutes sum to the total.
+          items:
+            type: object
+            additionalProperties: false
+            required: [date, minutes]
+            properties:
+              date: {type: string, format: date}
+              minutes: {type: integer, minimum: 0}
+        overage_minutes: {type: integer, minimum: 0}
+        overage_charge:
+          type: object
+          description: Calculated charge for the reported overage minutes.
+          additionalProperties: false
+          required: [amount_cents, currency]
+          properties:
+            amount_cents: {type: integer}
+            currency: {type: string, description: Lowercase ISO 4217 currency code.}
+        balance:
+          type: object
+          description: Present-day balances regardless of the requested window.
+          additionalProperties: false
+          required: [monthly_remaining_minutes, topup_remaining_minutes, plan_monthly_minutes]
+          properties:
+            monthly_remaining_minutes: {type: integer}
+            topup_remaining_minutes: {type: integer}
+            plan_monthly_minutes: {type: integer, nullable: true}
     TaskStageWebhook:
       type: object
       description: A rework records consecutive changes into reworking, into reworked,
@@ -486,6 +552,10 @@ components:
         agent_id:
           type: integer
           format: int64
+        cli_token:
+          type: string
+          description: Session-bound bearer returned only to the authenticated agent on claim.
+          x-loopcontrol-optional-reason: Emitted for claims authenticated with the matching agent's backing API token.
     AgentSessionFailedAttributes:
       type: object
       additionalProperties: false
@@ -2189,6 +2259,22 @@ components:
       - error_context
       - created_at
       - updated_at
+    TaskBlockedReasonDetails:
+      type: object
+      nullable: true
+      additionalProperties: false
+      required: [title, explanation, next_action, cause]
+      properties:
+        title:
+          type: string
+        explanation:
+          type: string
+        next_action:
+          type: string
+        cause:
+          type: string
+          nullable: true
+          description: For a clean agent exit, the last comment from that session or the localized no-explanation text.
     TaskListAttributes:
       type: object
       properties:
@@ -2237,6 +2323,9 @@ components:
         blocked_reason:
           type: string
           nullable: true
+          description: Server-generated reasons include agent_ended_without_stage_result for a clean exit before stage completion.
+        blocked_reason_details:
+          "$ref": "#/components/schemas/TaskBlockedReasonDetails"
         completed_at:
           type: string
           format: date-time
@@ -2304,6 +2393,7 @@ components:
       - ci_status
       - ci_status_url
       - blocked_reason
+      - blocked_reason_details
       - completed_at
       - picked_up_at
       - project_id
@@ -2451,6 +2541,9 @@ components:
         blocked_reason:
           type: string
           nullable: true
+          description: Server-generated reasons include agent_ended_without_stage_result for a clean exit before stage completion.
+        blocked_reason_details:
+          "$ref": "#/components/schemas/TaskBlockedReasonDetails"
         completed_at:
           type: string
           format: date-time
@@ -2509,6 +2602,7 @@ components:
       - ci_status
       - ci_status_url
       - blocked_reason
+      - blocked_reason_details
       - completed_at
       - picked_up_at
       - depends_on
@@ -3878,6 +3972,78 @@ components:
           schema:
             "$ref": "#/components/schemas/JsonApiErrors"
 paths:
+  "/api/usage":
+    get:
+      operationId: get-api-usage
+      summary: Read billable compute usage for the account of the API token.
+      description: >-
+        Without from or to, reports usage from the subscription billing cycle start
+        through now and separately provides the cycle end. Accounts without a complete
+        cycle receive the trailing 30 days. Requested windows include from and exclude
+        to. Equal endpoints produce an empty window. BYO-exempt compute is excluded.
+      security:
+      - bearerAuth: []
+      - apiKeyAuth: []
+      parameters:
+      - name: from
+        in: query
+        description: Inclusive ISO 8601 date or date-time. Dates start at midnight UTC. Date-times without an offset use UTC.
+        schema:
+          $ref: '#/components/schemas/UsageDateOrTime'
+      - name: to
+        in: query
+        description: Exclusive ISO 8601 date or date-time in the same format as from. Requires from and defaults to now.
+        schema:
+          $ref: '#/components/schemas/UsageDateOrTime'
+      responses:
+        '200':
+          description: Account usage for the effective window.
+          content:
+            application/vnd.api+json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data]
+                properties:
+                  data:
+                    type: object
+                    additionalProperties: false
+                    required: [type, id, attributes]
+                    properties:
+                      type: {type: string, enum: [usage]}
+                      id: {type: string, description: The authenticated account ID.}
+                      attributes:
+                        $ref: '#/components/schemas/UsageAttributes'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          description: Missing, invalid or expired account API token.
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
+      x-loopcontrol-contract:
+        scenarios:
+          success:
+            status: 200
+            setup: [authenticated]
+            media_type: application/vnd.api+json
+            query: {}
+          requested:
+            status: 200
+            setup: [authenticated]
+            media_type: application/vnd.api+json
+            query: {from: '2026-01-01', to: '2026-01-03T00:00:00Z'}
+          invalid_window:
+            status: 400
+            setup: [authenticated]
+            media_type: application/vnd.api+json
+            query: {from: '2026-02-30'}
+          unauthenticated:
+            status: 401
+            setup: [unauthenticated]
+            media_type: application/vnd.api+json
+            query: {}
   "/api/agent_sessions/{agent_session_id}/comment_deliveries":
     post:
       operationId: post-api-agent-session-comment-deliveries
@@ -4570,7 +4736,9 @@ paths:
         claimed before the container database status synchronizes to running. Claiming
         an assigned session changes it to started and emits agent.session_started.
         Repeating the claim for that same started session is idempotent and emits
-        no duplicate event.
+        no duplicate event. An authenticated claim with the matching agent's API token
+        returns a session-bound CLI bearer. It retains the backing token's permissions,
+        revocation, and expiry. The bearer is returned only by this operation.
       parameters:
       - name: container_id
         in: path
@@ -4997,7 +5165,10 @@ paths:
         failure for the current unlaunched attempt, including the brief claim-to-exec
         window, without retaining a started_at timestamp. Stale startup reports are
         ignored. Deterministic workspace errors block and retain the workspace; eligible
-        transient errors stop the old container before bounded replacement. Successful
+        transient errors stop the old container before bounded replacement. An explicit
+        zero exit code with reason premature_exit, optionally followed by a stream URL,
+        immediately blocks the current running invocation with agent_ended_without_stage_result.
+        This is a server-generated reason, separate from stage completion input. Successful
         stage completion is reported only through POST /api/tasks/{task_id}/stage_completion.'
       parameters:
       requestBody:
@@ -16982,6 +17153,10 @@ paths:
         User comments steer by default. Agent comments steer when they mention
         an account agent. The full comment body is stored as written.
 
+        A session-bound bearer from the claim endpoint attributes a comment to
+        its writing session. The task must match that session. Legacy bearers
+        and user authentication can post comments without a session attribution.
+
         At a paused stage with an allowed rework destination, the task takes
         the configured rework path even without a container. With no permitted
         destination, the task stays paused. At an active stage, the current
@@ -19540,8 +19715,10 @@ paths:
   "/api/tasks/{task_id}/unblock":
     post:
       operationId: post-api-task-unblock
-      summary: Unblocks a task blocked with max_reworks_exceeded, resets the rework
-        counter, and resumes the task at the implementing stage.
+      summary: Unblocks a task and resumes execution.
+      description: A task blocked with agent_ended_without_stage_result retries the
+        exact interrupted stage after executor teardown. Other blocks follow
+        their configured unblock behavior.
       parameters:
       - name: task_id
         in: path
