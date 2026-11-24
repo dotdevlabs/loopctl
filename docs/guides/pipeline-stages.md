@@ -94,11 +94,15 @@ published stage attributes:
 - `stage_type`, `custom_stage_name`, `name`, `role`, `instructions`, `position`
 - `gate`, `approval_button_text`, `on_failure`, `max_rework_count`, `rework_to_position`, `rework_allowed_positions`
 - `agent_id`, `environment_id`, `runs_in_container_override`
-- `advance_requirements`, `advance_notice`
+- `advance_requirements`, `advance_notice`, `failure_conditions`
 - `prompt_sections`, `prompt_configuration`, `stage_triggers`
 
 `attributes.approval_button_text` is `null` when the API omits the label or
 returns `null`.
+
+When the API includes `attributes.failure_conditions`, the JSON output preserves
+the ordered array, including an empty array. Each condition has `when`, `action`,
+and `reason` fields. The server applies the first matching condition.
 
 Nested prompt values are preserved in full, as are nullable values, zero,
 `false`, and empty collections. Scripts consuming this command should read the
