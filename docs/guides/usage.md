@@ -6,7 +6,7 @@ Run `loopctl usage` to see billable compute for the account selected by your act
 loopctl usage
 ```
 
-The default period starts at the current billing cycle start and runs through now. If the account has no billing cycle, the default covers the trailing 30 days.
+The default period starts at the current billing cycle start and runs through now. If the account has no billing cycle, the default covers the trailing 30 days. The report labels the period `billing_cycle`, `trailing_30_days`, or `requested_period` and shows the billing cycle end when available. The project table labels usage without a project as `Unattributed`.
 
 ## Choose a period
 
@@ -23,9 +23,11 @@ Add `--daily` to see minutes for each UTC day in the window, including days with
 loopctl usage --from 2026-11-01 --to 2026-12-01 --daily
 ```
 
+If the API rejects a period, `loopctl usage` prints the API's error message to standard error and exits with a nonzero status.
+
 ## Use the report in a script
 
-`--json` prints the API document, including the project and daily breakdowns. Use `--format` to select fields with a Go template.
+`--json` prints the API document, including the project and daily breakdowns. `--daily` controls the table display. Use `--format` to select fields with a Go template. If you supply both `--json` and `--format`, `--json` takes precedence.
 
 ```bash
 loopctl usage --json
