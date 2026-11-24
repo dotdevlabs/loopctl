@@ -109,6 +109,11 @@ func loopWorkflows() []airef.Workflow {
 			},
 		},
 		{
+			Name:        "Request task rework with a comment",
+			Description: tasks.CommentCreateDescription,
+			Steps:       []string{"`" + tasks.CommentCreateExample + "`"},
+		},
+		{
 			Name:        "Cancel a task",
 			Description: "Cancel an in-progress task by its ID.",
 			Steps: []string{

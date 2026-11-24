@@ -1070,7 +1070,16 @@ Output columns: `ID`, `BODY` (truncated to 60 characters), `COMMENT_TYPE`, `CREA
 
 Post a comment on a task. Token counts are optional billing metadata.
 
+The server treats a body starting with `/rework` followed by a description of the change as a rework request.
+
+- At a human gate, the request sends the task back for rework.
+- While an agent is working, the request stops the agent session and sends the task back for rework.
+- For pending, blocked, completed, or rejected tasks, the server stores the comment and leaves the task unchanged.
+- A bare `/rework` returns a validation error and the server does not store the comment.
+- Comments without the `/rework` prefix never start rework. The agent working on the task receives them as guidance.
+
 ```bash
+loopctl tasks comments create <task-id> --body "/rework <description of the change>"
 loopctl tasks comments create <task-id> --body "Implementation complete."
 loopctl tasks comments create <task-id> --body "..." --input-tokens 1234 --output-tokens 567
 loopctl tasks comments create <task-id> --body "..." --json

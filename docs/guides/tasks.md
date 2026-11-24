@@ -57,6 +57,26 @@ document for a terminal or blocked task. A timeout produces
 to `loopctl tasks create`; JSON mode emits only the final result rather than a
 separate creation document.
 
+## Request rework with a comment
+
+Start the comment body with the case-sensitive `/rework` token, followed by a
+space and a description of the requested change.
+
+```bash
+loopctl tasks comments create <task-id> --body "/rework <description of the change>"
+```
+
+- At a human gate, the task goes back to an allowed rework stage. If there is
+  no permitted destination, it stays paused.
+- While an agent is working, the server stops the session and sends the task
+  back for rework. If there is no rework destination, the current stage restarts.
+- For pending, blocked, completed, or rejected tasks, the server stores the
+  comment and leaves the task in its current state.
+- A bare `/rework` returns a validation error and creates no comment.
+
+Post an ordinary comment to give the working agent guidance without starting
+rework. See `loopctl tasks comments create --help` for the command reference.
+
 ## Cancel a task
 
 ```bash

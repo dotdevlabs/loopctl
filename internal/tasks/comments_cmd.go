@@ -66,6 +66,16 @@ func commentsListCmd() *cobra.Command {
 	}
 }
 
+const CommentCreateDescription = `Post a comment on a task. The server treats a body starting with /rework followed by a description of the change as a rework request.
+
+- At a human gate, the request sends the task back for rework.
+- While an agent is working, the request stops the agent session and sends the task back for rework.
+- For pending, blocked, completed, or rejected tasks, the server stores the comment and leaves the task unchanged.
+- A bare /rework returns a validation error and the server does not store the comment.
+- Comments without the /rework prefix never start rework. The agent working on the task receives them as guidance.`
+
+const CommentCreateExample = `loopctl tasks comments create <task-id> --body "/rework <description of the change>"`
+
 func commentsCreateCmd() *cobra.Command {
 	var (
 		body         string
@@ -74,9 +84,11 @@ func commentsCreateCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:   "create <task-id>",
-		Short: "Post a comment on a task",
-		Args:  cobra.ExactArgs(1),
+		Use:     "create <task-id>",
+		Short:   "Post a comment on a task",
+		Long:    CommentCreateDescription,
+		Example: "  " + CommentCreateExample,
+		Args:    cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx := cmd.Context()
 

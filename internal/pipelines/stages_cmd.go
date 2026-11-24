@@ -32,6 +32,7 @@ type PipelineStageAttrs struct {
 	AgentID                 *string         `json:"agent_id"`
 	EnvironmentID           *string         `json:"environment_id"`
 	AdvanceRequirements     []string        `json:"advance_requirements"`
+	FailureConditions       json.RawMessage `json:"failure_conditions,omitempty"`
 	AdvanceNotice           *string         `json:"advance_notice"`
 	RunsInContainerOverride *bool           `json:"runs_in_container_override"`
 	PromptSections          json.RawMessage `json:"prompt_sections"`

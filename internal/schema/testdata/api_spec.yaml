@@ -1481,6 +1481,37 @@ components:
       - type
       - id
       - attributes
+    PipelineStageFailureCondition:
+      type: object
+      required:
+      - when
+      - action
+      - reason
+      additionalProperties: false
+      properties:
+        when:
+          type: object
+          minProperties: 1
+          additionalProperties: true
+          x-loopcontrol-open-reason: free_form
+          description: Task column names mapped to expected JSON values. All values must match after string conversion. Null matches an empty column.
+        action:
+          type: string
+          enum:
+          - rework
+          - block
+          description: Rework requires the stage's rework policy and an earlier workflow target.
+        reason:
+          type: string
+          minLength: 1
+          pattern: '\S'
+          description: Reason stored on the resulting task transition.
+    PipelineStageFailureConditions:
+      type: array
+      default: []
+      description: Ordered conditions evaluated for a working task. The first match wins. An empty list disables stage failure evaluation.
+      items:
+        "$ref": "#/components/schemas/PipelineStageFailureCondition"
     PipelineStage:
       type: object
       description: Attributes of a single workflow stage in pipeline responses.
@@ -1523,6 +1554,8 @@ components:
           type: array
           items:
             type: string
+        failure_conditions:
+          "$ref": "#/components/schemas/PipelineStageFailureConditions"
         advance_notice:
           type: string
           nullable: true
@@ -1566,6 +1599,7 @@ components:
       - agent_id
       - environment_id
       - advance_requirements
+      - failure_conditions
       - advance_notice
       - approval_button_text
       - runs_in_container_override
@@ -1661,6 +1695,8 @@ components:
           type: array
           items:
             type: string
+        failure_conditions:
+          "$ref": "#/components/schemas/PipelineStageFailureConditions"
         advance_notice:
           type: string
         approval_button_text:
@@ -1768,6 +1804,8 @@ components:
           type: array
           items:
             type: string
+        failure_conditions:
+          "$ref": "#/components/schemas/PipelineStageFailureConditions"
         advance_notice:
           type: string
         approval_button_text:
@@ -1834,6 +1872,8 @@ components:
           type: array
           items:
             type: string
+        failure_conditions:
+          "$ref": "#/components/schemas/PipelineStageFailureConditions"
         advance_notice:
           type: string
           nullable: true
@@ -1876,6 +1916,7 @@ components:
       - agent_id
       - environment_id
       - advance_requirements
+      - failure_conditions
       - advance_notice
       - approval_button_text
       - runs_in_container_override
@@ -3841,7 +3882,7 @@ paths:
     post:
       operationId: post-api-agent-session-comment-deliveries
       summary: Receive waiting steering comments in the current agent session
-      description: Agent token only. Consumes all waiting comments in chronological order under the current task and session lock. Receipt records establish API handoff, not model comprehension. If the response is lost after commit, retry returns no previously consumed comments; arbitrary network failure does not provide transport-level exactly-once delivery. Initial prompt comments are excluded.
+      description: Agent token only. Consumes all waiting comments in chronological order under the current task, container and session locks. Receipt records establish API handoff, not model comprehension. If the response is lost after commit, retry returns no previously consumed comments; arbitrary network failure does not provide transport-level exactly-once delivery. Initial prompt comments are excluded.
       parameters:
       - name: agent_session_id
         in: path
@@ -3879,11 +3920,25 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+        '409':
+          description: An execution row is busy. This response writes no receipts. Retry the same request after one second.
+          headers:
+            Retry-After:
+              required: true
+              schema: {type: string, enum: ['1']}
+          content:
+            application/vnd.api+json:
+              schema:
+                $ref: '#/components/schemas/JsonApiErrors'
       x-loopcontrol-contract:
         scenarios:
           success:
             status: 200
             setup: [live_comment_session]
+            path: {agent_session_id: {fixture: {resource: agent_session}}}
+          busy:
+            status: 409
+            setup: [live_comment_session, comment_delivery_lock_busy]
             path: {agent_session_id: {fixture: {resource: agent_session}}}
           unauthenticated:
             status: 401
@@ -8433,6 +8488,8 @@ paths:
                             type: array
                             items:
                               type: string
+                          failure_conditions:
+                            "$ref": "#/components/schemas/PipelineStageFailureConditions"
                           advance_notice:
                             type: string
                           approval_button_text:
@@ -8558,6 +8615,31 @@ paths:
           description: Missing or invalid bearer token; the response body is empty.
       x-loopcontrol-contract:
         scenarios:
+          failure_condition_missing_when: &post-api-pipelines-missing-rule-member
+            status: 422
+            setup: [authenticated]
+            request_media_type: application/json
+            body:
+              pipeline:
+                name: Failure rule contract
+                kind: release
+                stages:
+                - name: Check
+                  instructions: Check the result.
+                  failure_conditions:
+                  - when: { ci_status: failure, pr_merged_at: null }
+                    action: block
+                    reason: ci_failure
+            assertions:
+            - pointer: /errors/0/status
+              equals: '422'
+            omit_body_field: [pipeline, stages, 0, failure_conditions, 0, when]
+          failure_condition_missing_action:
+            <<: *post-api-pipelines-missing-rule-member
+            omit_body_field: [pipeline, stages, 0, failure_conditions, 0, action]
+          failure_condition_missing_reason:
+            <<: *post-api-pipelines-missing-rule-member
+            omit_body_field: [pipeline, stages, 0, failure_conditions, 0, reason]
           success:
             status: 201
             setup:
@@ -8611,6 +8693,12 @@ paths:
                   advance_notice: Review
                   advance_requirements:
                   - pr_url
+                  failure_conditions:
+                  - when:
+                      ci_status: cancelled
+                      pr_merged_at: null
+                    action: block
+                    reason: ci_check_cancelled
                   runs_in_container_override: false
                   prompt_sections: &24
                     stage_introduction: Contract text
@@ -9196,6 +9284,8 @@ paths:
                             type: array
                             items:
                               type: string
+                          failure_conditions:
+                            "$ref": "#/components/schemas/PipelineStageFailureConditions"
                           advance_notice:
                             type: string
                           approval_button_text:
@@ -9326,6 +9416,33 @@ paths:
           description: Missing or invalid bearer token; the response body is empty.
       x-loopcontrol-contract:
         scenarios:
+          failure_condition_missing_when: &patch-api-pipeline-missing-rule-member
+            status: 422
+            setup: [authenticated]
+            request_media_type: application/json
+            path:
+              id: { fixture: { resource: pipeline, identity: contract } }
+            body:
+              pipeline:
+                name: Failure rule contract
+                kind: release
+                stages:
+                - name: Check
+                  instructions: Check the result.
+                  failure_conditions:
+                  - when: { ci_status: failure, pr_merged_at: null }
+                    action: block
+                    reason: ci_failure
+            assertions:
+            - pointer: /errors/0/status
+              equals: '422'
+            omit_body_field: [pipeline, stages, 0, failure_conditions, 0, when]
+          failure_condition_missing_action:
+            <<: *patch-api-pipeline-missing-rule-member
+            omit_body_field: [pipeline, stages, 0, failure_conditions, 0, action]
+          failure_condition_missing_reason:
+            <<: *patch-api-pipeline-missing-rule-member
+            omit_body_field: [pipeline, stages, 0, failure_conditions, 0, reason]
           success:
             status: 200
             setup:
@@ -9400,6 +9517,12 @@ paths:
                   advance_notice: Review
                   advance_requirements:
                   - pr_url
+                  failure_conditions:
+                  - when:
+                      ci_status: cancelled
+                      pr_merged_at: null
+                    action: block
+                    reason: ci_check_cancelled
                   runs_in_container_override: false
                   prompt_sections: &25
                     stage_introduction: Contract text
@@ -9897,6 +10020,8 @@ paths:
                             type: array
                             items:
                               type: string
+                          failure_conditions:
+                            "$ref": "#/components/schemas/PipelineStageFailureConditions"
                           advance_notice:
                             type: string
                           approval_button_text:
@@ -10022,6 +10147,33 @@ paths:
           description: Missing or invalid bearer token; the response body is empty.
       x-loopcontrol-contract:
         scenarios:
+          failure_condition_missing_when: &put-api-pipeline-missing-rule-member
+            status: 422
+            setup: [authenticated]
+            request_media_type: application/json
+            path:
+              id: { fixture: { resource: pipeline, identity: contract } }
+            body:
+              pipeline:
+                name: Failure rule contract
+                kind: release
+                stages:
+                - name: Check
+                  instructions: Check the result.
+                  failure_conditions:
+                  - when: { ci_status: failure, pr_merged_at: null }
+                    action: block
+                    reason: ci_failure
+            assertions:
+            - pointer: /errors/0/status
+              equals: '422'
+            omit_body_field: [pipeline, stages, 0, failure_conditions, 0, when]
+          failure_condition_missing_action:
+            <<: *put-api-pipeline-missing-rule-member
+            omit_body_field: [pipeline, stages, 0, failure_conditions, 0, action]
+          failure_condition_missing_reason:
+            <<: *put-api-pipeline-missing-rule-member
+            omit_body_field: [pipeline, stages, 0, failure_conditions, 0, reason]
           success:
             status: 200
             setup:
@@ -10096,6 +10248,12 @@ paths:
                   advance_notice: Review
                   advance_requirements:
                   - pr_url
+                  failure_conditions:
+                  - when:
+                      ci_status: cancelled
+                      pr_merged_at: null
+                    action: block
+                    reason: ci_check_cancelled
                   runs_in_container_override: false
                   prompt_sections: &27
                     stage_introduction: Contract text
@@ -10479,6 +10637,31 @@ paths:
                 "$ref": "#/components/schemas/JsonApiErrors"
       x-loopcontrol-contract:
         scenarios:
+          failure_condition_missing_when: &post-api-pipeline-stage-missing-rule-member
+            status: 422
+            setup: [authenticated]
+            request_media_type: application/json
+            path:
+              pipeline_id: { fixture: { resource: pipeline, identity: contract } }
+            body:
+              pipeline_stage:
+                stage_type: reviewed
+                position: 9
+                gate: human
+                failure_conditions:
+                - when: { ci_status: failure, pr_merged_at: null }
+                  action: block
+                  reason: ci_failure
+            assertions:
+            - pointer: /errors/0/status
+              equals: '422'
+            omit_body_field: [pipeline_stage, failure_conditions, 0, when]
+          failure_condition_missing_action:
+            <<: *post-api-pipeline-stage-missing-rule-member
+            omit_body_field: [pipeline_stage, failure_conditions, 0, action]
+          failure_condition_missing_reason:
+            <<: *post-api-pipeline-stage-missing-rule-member
+            omit_body_field: [pipeline_stage, failure_conditions, 0, reason]
           success:
             status: 201
             setup:
@@ -10495,9 +10678,17 @@ paths:
                 gate: human
                 position: 9
                 approval_button_text: Approve deployment
+                failure_conditions:
+                - when:
+                    ci_status: cancelled
+                    pr_merged_at: null
+                  action: block
+                  reason: ci_check_cancelled
             assertions:
             - pointer: /data/attributes/approval_button_text
               equals: Approve deployment
+            - pointer: /data/attributes/failure_conditions/0/reason
+              equals: ci_check_cancelled
           error_422:
             status: 422
             setup:
@@ -10635,6 +10826,29 @@ paths:
                 "$ref": "#/components/schemas/JsonApiErrors"
       x-loopcontrol-contract:
         scenarios:
+          failure_condition_missing_when: &patch-api-pipeline-stage-missing-rule-member
+            status: 422
+            setup: [authenticated]
+            request_media_type: application/json
+            path:
+              pipeline_id: { fixture: { resource: pipeline, identity: contract } }
+              id: { fixture: { resource: pipeline_stage, identity: contract } }
+            body:
+              pipeline_stage:
+                failure_conditions:
+                - when: { ci_status: failure, pr_merged_at: null }
+                  action: block
+                  reason: ci_failure
+            assertions:
+            - pointer: /errors/0/status
+              equals: '422'
+            omit_body_field: [pipeline_stage, failure_conditions, 0, when]
+          failure_condition_missing_action:
+            <<: *patch-api-pipeline-stage-missing-rule-member
+            omit_body_field: [pipeline_stage, failure_conditions, 0, action]
+          failure_condition_missing_reason:
+            <<: *patch-api-pipeline-stage-missing-rule-member
+            omit_body_field: [pipeline_stage, failure_conditions, 0, reason]
           success:
             status: 200
             setup:
@@ -10653,9 +10867,12 @@ paths:
               pipeline_stage:
                 custom_stage_name: Contract Updated Stage
                 approval_button_text: Approve merge
+                failure_conditions: []
             assertions:
             - pointer: /data/attributes/approval_button_text
               equals: Approve merge
+            - pointer: /data/attributes/failure_conditions
+              equals: []
           clear_approval_button_text:
             status: 200
             setup:
@@ -15218,10 +15435,10 @@ paths:
       operationId: post-api-task-stage-completion
       summary: Advances, fails, or blocks a task at its current pipeline stage.
       description: Passing the code-producing stage requires a clean working tree,
-        a pushed HEAD, a new commit when a pass baseline exists, and a substantive
-        branch diff. If the task needs no change, submit result blocked with a
-        blocked_reason. Other stages can record noop_reason in completion transition
-        metadata for audit.
+        matching local and remote HEADs, and a substantive branch diff. When the
+        HEAD matches the recorded rework baseline, submit a noop_reason explaining
+        why the committed and pushed code changes are sufficient. If the task
+        needs no change, submit result blocked with a blocked_reason.
       parameters:
       - name: task_id
         in: path
@@ -15271,8 +15488,10 @@ paths:
                     snapshot. Required when blocked_reason is credential_authentication_failed.
                 noop_reason:
                   type: string
-                  description: Audit value for stages that do not produce code. It does not
-                    allow the code-producing stage to pass.
+                  description: Reason recorded in completion transition metadata for audit.
+                    In the code-producing stage, this field can substitute for a new commit
+                    only during rework, with a clean working tree and substantive code changes
+                    already committed and pushed on the task branch.
                 local_head_sha:
                   type: string
                 remote_head_sha:
@@ -16756,7 +16975,28 @@ paths:
         input_constraints: []
     post:
       operationId: post-api-task-comments
-      summary: Posts a comment on a task from an agent.
+      summary: Posts a comment on a task.
+      description: |
+        A steering comment that begins with the exact, case-sensitive token
+        `/rework` followed by whitespace and a description requests rework.
+        User comments steer by default. Agent comments steer when they mention
+        an account agent. The full comment body is stored as written.
+
+        At a paused stage with an allowed rework destination, the task takes
+        the configured rework path even without a container. With no permitted
+        destination, the task stays paused. At an active stage, the current
+        session and container stop, and the task takes the configured rework
+        path or restarts the same stage if there is no rework destination. The
+        next agent receives the description once in its starting prompt.
+        At a lifecycle stage, the command is stored without changing the task
+        or delivering the description.
+
+        Other steering comments never initiate rework. They reach the live
+        session, wait for the next session, or restart an active stage whose
+        container has no live supported session.
+
+        A `/rework` command without a description returns HTTP 422
+        and creates no comment.
       parameters:
       - name: task_id
         in: path
@@ -16857,7 +17097,7 @@ paths:
                     additionalProperties: false
                 additionalProperties: false
         '422':
-          description: Validation failed
+          description: The body is blank or a /rework command is missing its required description.
           content:
             application/vnd.api+json:
               schema:
@@ -16896,6 +17136,19 @@ paths:
             body:
               comment:
                 body: ''
+          missing_rework_description:
+            status: 422
+            setup:
+            - documented_error
+            media_type: application/vnd.api+json
+            path:
+              task_id:
+                fixture:
+                  resource: task
+                  identity: working_task_with_pr
+            body:
+              comment:
+                body: /rework
           unauthenticated:
             status: 401
             setup:
