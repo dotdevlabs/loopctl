@@ -3,9 +3,13 @@ package main
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"os/exec"
+	"path/filepath"
 	"reflect"
 	"slices"
 	"strings"
@@ -41,7 +45,7 @@ func TestRootHasResourceCommands(t *testing.T) {
 	for _, sub := range cmd.Commands() {
 		names[sub.Name()] = true
 	}
-	for _, want := range []string{"onboard", "projects", "tasks", "task-kinds", "pipelines", "platforms", "schema"} {
+	for _, want := range []string{"onboard", "projects", "tasks", "task-kinds", "pipelines", "platforms", "schema", "usage"} {
 		if !names[want] {
 			t.Errorf("missing subcommand %q", want)
 		}
@@ -184,6 +188,81 @@ func TestAIMarkdown(t *testing.T) {
 	}
 	if !strings.Contains(got, "| yes |") {
 		t.Errorf("markdown missing a required-flag row; got:\n%s", got)
+	}
+}
+
+func TestAIUsage(t *testing.T) {
+	const example = "loopctl usage --from 2026-11-01 --to 2026-11-15 --daily"
+	markdown := runAI(t, "ai")
+	if !strings.Contains(markdown, "## usage\n") || !strings.Contains(markdown, "Show billable compute usage for the current account") {
+		t.Error("usage command missing from the Markdown reference")
+	}
+	for _, name := range []string{"from", "to", "daily"} {
+		if !strings.Contains(markdown, "| --"+name+" |") {
+			t.Errorf("--%s missing from the Markdown reference", name)
+		}
+	}
+	if !strings.Contains(runAI(t, "usage", "--help"), example) {
+		t.Error("usage example missing from help")
+	}
+	var ref airef.Reference
+	if err := json.Unmarshal([]byte(runAI(t, "ai", "--json")), &ref); err != nil {
+		t.Fatal(err)
+	}
+	usage := findCommand(ref.Commands, "usage")
+	if usage == nil || !strings.Contains(usage.Examples, example) {
+		t.Fatal("usage command or example missing from the JSON reference")
+	}
+	flags := make(map[string]airef.FlagRef)
+	for _, flag := range usage.Flags {
+		flags[flag.Name] = flag
+	}
+	periodSchema, err := schema.SpecSchema("#/components/schemas/UsageDateOrTime", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"from", "to"} {
+		flag := flags[name]
+		var compact bytes.Buffer
+		if err := json.Compact(&compact, flag.Schema); err != nil {
+			t.Fatalf("invalid schema for --%s: %v", name, err)
+		}
+		if flag.Type != "string" || flag.Required || compact.String() != periodSchema {
+			t.Errorf("unexpected metadata for --%s: %+v", name, flag)
+		}
+	}
+	if flag := flags["daily"]; flag.Type != "bool" || flag.Required {
+		t.Errorf("unexpected metadata for --daily: %+v", flag)
+	}
+}
+
+func TestUsageInvalidPeriodExit(t *testing.T) {
+	const invalidDate = "2026-11-31"
+	const detail = "from is not a valid calendar date"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet || r.URL.Path != "/api/usage" || r.URL.Query().Get("from") != invalidDate {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL)
+		}
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = fmt.Fprintf(w, `{"errors":[{"status":"400","title":"Invalid period","detail":%q}]}`, detail)
+	}))
+	defer server.Close()
+
+	binary := filepath.Join(t.TempDir(), "loopctl")
+	if out, err := exec.CommandContext(t.Context(), "go", "build", "-o", binary, ".").CombinedOutput(); err != nil {
+		t.Fatalf("build loopctl: %v\n%s", err, out)
+	}
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("LOOPCTL_CONTEXT", "")
+	t.Setenv("LOOPCTL_BASE_URL", server.URL)
+	cmd := exec.CommandContext(t.Context(), binary, "usage", "--token", "usage-test-token", "--from", invalidDate)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	stdout, err := cmd.Output()
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 || !strings.Contains(stderr.String(), detail) || len(stdout) != 0 {
+		t.Fatalf("want API detail on stderr and exit 1, got stdout=%q stderr=%q error=%v", stdout, stderr.String(), err)
 	}
 }
 

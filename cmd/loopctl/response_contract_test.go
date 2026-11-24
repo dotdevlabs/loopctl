@@ -110,6 +110,7 @@ func TestCommandResponseContracts(t *testing.T) {
 			"/data/relationships/tasks/data/0/id": "blocked-get-task",
 		})}, "blocked-get-task"},
 		oneResponse("account credit --minutes 1", "POST", "/api/balance_credits"),
+		oneResponse("usage", "GET", "/api/usage"),
 		{"topup", []responseStep{billing("10h"), purchase("/api/billing/topups", "stripe"),
 			poll("stripe", "https://checkout.example.test/session", "pending")}, "https://checkout.example.test/session"},
 		{"topup --product 10h", []responseStep{billing("10h"), purchase("/api/billing/x402_payments", "usdc"),

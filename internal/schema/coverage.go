@@ -35,6 +35,7 @@ var Covered = map[OperationKey]OperationCoverage{
 	{Method: "GET", Path: "/api/credential_sets/:id"}:                             {Command: "credentials get"},
 	{Method: "PATCH", Path: "/api/agents/:id"}:                                    {Command: "agents update"},
 	{Method: "POST", Path: "/api/balance_credits"}:                                {Command: "account credit"},
+	{Method: "GET", Path: "/api/usage"}:                                           {Command: "usage", QueryParams: []string{"from", "to"}},
 	{Method: "GET", Path: "/api/tasks/:task_id/containers"}:                       {Command: "tasks containers", Paginated: true},
 	{Method: "GET", Path: "/api/task_kinds"}:                                      {Command: "task-kinds list", Paginated: true},
 	{Method: "POST", Path: "/api/task_kinds"}:                                     {Command: "task-kinds create"},

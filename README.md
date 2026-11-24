@@ -274,6 +274,22 @@ Output columns: `ID`, `MINUTES`, `BUCKET`, `DESCRIPTION`, `MONTHLY_BALANCE_AFTER
 
 ---
 
+### usage
+
+Show billable compute time, cost, overage, remaining minutes, and usage by project for the active account. The default period is the current billing cycle through now, or the trailing 30 days if the account has no billing cycle.
+
+```bash
+loopctl usage
+loopctl usage --from 2026-11-01 --to 2026-11-15 --daily
+loopctl usage --json
+```
+
+See the [account usage guide](docs/guides/usage.md) for period boundaries and template output.
+
+**API:** `GET /api/usage`
+
+---
+
 ### credentials
 
 List and inspect credentials available to your account. Credential values are never printed.

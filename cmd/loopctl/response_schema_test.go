@@ -313,6 +313,8 @@ func validateStringFormat(format, value, path string) error {
 		}
 	case "date-time":
 		_, err = time.Parse(time.RFC3339, value)
+	case "date":
+		_, err = time.Parse(time.DateOnly, value)
 	case "email":
 		_, err = mail.ParseAddress(value)
 	case "url", "uri":
@@ -347,6 +349,8 @@ func (s *responseShape) exampleString(path string) (string, error) {
 		return "12345678-1234-4abc-8abc-123456789012", nil
 	case "date-time":
 		return "2026-11-19T20:00:00Z", nil
+	case "date":
+		return "2026-11-19", nil
 	case "email":
 		return "operator@example.test", nil
 	case "uri", "url":

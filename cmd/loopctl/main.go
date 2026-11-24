@@ -25,6 +25,7 @@ import (
 	"github.com/dotdevlabs/loopctl/internal/taskkinds"
 	"github.com/dotdevlabs/loopctl/internal/tasks"
 	"github.com/dotdevlabs/loopctl/internal/topup"
+	"github.com/dotdevlabs/loopctl/internal/usage"
 )
 
 // defaultBaseURL is the built-in server address; ctlkit resolves context,
@@ -52,6 +53,7 @@ func rootConfig() root.BuildConfig {
 			tasks.NewCmd(),
 			taskkinds.NewCmd(),
 			topup.NewCmd(),
+			usage.NewCmd(),
 		},
 		Workflows: loopWorkflows(),
 	}
