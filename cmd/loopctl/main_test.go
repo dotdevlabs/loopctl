@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"reflect"
+	"slices"
 	"strings"
 	"testing"
 
@@ -83,6 +84,34 @@ func findCommand(cmds []airef.CommandRef, use string) *airef.CommandRef {
 	return nil
 }
 
+const reworkWorkflowName = "Request task rework with a comment"
+const reworkExample = `loopctl tasks comments create <task-id> --body "/rework <description of the change>"`
+
+func assertReworkDescription(t *testing.T, got string) {
+	t.Helper()
+	for _, want := range []string{
+		"starting with /rework followed by a description of the change",
+		"At a human gate, the request sends the task back for rework",
+		"stops the agent session and sends the task back for rework",
+		"pending, blocked, completed, or rejected tasks, the server stores the comment and leaves the task unchanged",
+		"A bare /rework returns a validation error and the server does not store the comment",
+		"without the /rework prefix never start rework",
+		"The agent working on the task receives them as guidance",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("rework documentation missing %q", want)
+		}
+	}
+}
+
+func TestCommentsCreateHelp(t *testing.T) {
+	got := runAI(t, "tasks", "comments", "create", "--help")
+	assertReworkDescription(t, got)
+	if !strings.Contains(got, reworkExample) {
+		t.Errorf("command help missing example %q", reworkExample)
+	}
+}
+
 func TestAIJSON(t *testing.T) {
 	dec := json.NewDecoder(strings.NewReader(runAI(t, "ai", "--json")))
 	dec.DisallowUnknownFields()
@@ -103,6 +132,26 @@ func TestAIJSON(t *testing.T) {
 	tasksRef := findCommand(ref.Commands, "tasks")
 	if tasksRef == nil {
 		t.Fatal("tasks command missing")
+	}
+	comments := findCommand(tasksRef.Subcommands, "comments")
+	if comments == nil {
+		t.Fatal("tasks comments missing")
+	}
+	commentCreate := findCommand(comments.Subcommands, "create")
+	if commentCreate == nil {
+		t.Fatal("tasks comments create missing")
+	}
+	assertReworkDescription(t, commentCreate.Long)
+	reworkIndex := slices.IndexFunc(ref.Workflows, func(workflow airef.Workflow) bool {
+		return workflow.Name == reworkWorkflowName
+	})
+	if reworkIndex < 0 {
+		t.Fatalf("JSON missing workflow %q", reworkWorkflowName)
+	}
+	reworkWorkflow := ref.Workflows[reworkIndex]
+	assertReworkDescription(t, reworkWorkflow.Description)
+	if !slices.Equal(reworkWorkflow.Steps, []string{"`" + reworkExample + "`"}) {
+		t.Errorf("rework workflow steps = %q, want the example as inline code", reworkWorkflow.Steps)
 	}
 	create := findCommand(tasksRef.Subcommands, "create")
 	if create == nil {
@@ -135,6 +184,18 @@ func TestAIMarkdown(t *testing.T) {
 	}
 	if !strings.Contains(got, "| yes |") {
 		t.Errorf("markdown missing a required-flag row; got:\n%s", got)
+	}
+}
+
+func TestAIReworkMarkdown(t *testing.T) {
+	_, workflow, found := strings.Cut(runAI(t, "ai"), reworkWorkflowName)
+	if !found {
+		t.Fatalf("Markdown missing workflow %q", reworkWorkflowName)
+	}
+	workflow, _, _ = strings.Cut(workflow, "\n### ")
+	assertReworkDescription(t, workflow)
+	if !strings.Contains(workflow, "`"+reworkExample+"`") {
+		t.Errorf("rework workflow missing example %q", reworkExample)
 	}
 }
 

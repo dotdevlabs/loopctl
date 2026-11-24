@@ -3,6 +3,7 @@ package tasks
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,13 +18,27 @@ import (
 )
 
 func TestCommentsCreate(t *testing.T) {
-	var gotBody string
+	t.Run("ordinary", func(t *testing.T) {
+		testCommentsCreateBody(t, "  Hello\n")
+	})
+	t.Run("rework", func(t *testing.T) {
+		testCommentsCreateBody(t, "/rework Update the help.\nKeep  this spacing.  ")
+	})
+}
+
+func testCommentsCreateBody(t *testing.T, body string) {
+	t.Helper()
+	var payload struct {
+		Comment struct {
+			Body string `json:"body"`
+		} `json:"comment"`
+	}
+	var decodeErr error
 	var gotMethod, gotPath string
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		gotMethod = r.Method
 		gotPath = r.URL.Path
-		b, _ := io.ReadAll(r.Body)
-		gotBody = string(b)
+		decodeErr = json.NewDecoder(r.Body).Decode(&payload)
 		w.Header().Set("Content-Type", "application/vnd.api+json")
 		w.WriteHeader(http.StatusCreated)
 		_, _ = fmt.Fprint(w, `{"data":{"type":"task_comments","id":"c1","attributes":{"body":"Hello","created_at":"2026-01-01T00:00:00Z"}}}`)
@@ -35,7 +50,7 @@ func TestCommentsCreate(t *testing.T) {
 	cmd := commentsCreateCmd()
 	cmd.SetContext(ctx)
 	cmd.SetOut(&out)
-	_ = cmd.Flags().Set("body", "Hello")
+	_ = cmd.Flags().Set("body", body)
 	if err := cmd.RunE(cmd, []string{"t1"}); err != nil {
 		t.Fatalf("comments create failed: %v", err)
 	}
@@ -45,11 +60,11 @@ func TestCommentsCreate(t *testing.T) {
 	if gotPath != "/api/tasks/t1/comments" {
 		t.Errorf("expected /api/tasks/t1/comments; got %s", gotPath)
 	}
-	if !strings.Contains(gotBody, `"comment"`) {
-		t.Errorf("expected comment nesting key in body; got: %s", gotBody)
+	if decodeErr != nil {
+		t.Fatalf("decode comment request: %v", decodeErr)
 	}
-	if !strings.Contains(gotBody, `"Hello"`) {
-		t.Errorf("expected body value in request; got: %s", gotBody)
+	if payload.Comment.Body != body {
+		t.Errorf("comment.body = %q, want %q", payload.Comment.Body, body)
 	}
 	if !strings.Contains(out.String(), "c1") {
 		t.Errorf("expected comment id in output; got: %s", out.String())
