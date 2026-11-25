@@ -57,6 +57,11 @@ Add `--json` to get the task resource with `awaiting_human_gate` set to false an
 `awaiting_human_gate_stage` set to null. Add `--dry-run` to preview the request
 without sending it. The pipeline may advance after the command exits.
 
+If the API refuses approval, the command prints the error to stderr and exits
+non-zero. This can happen when the token cannot approve, the task is missing or
+outside your account, or the task has no pending human gate. If someone already
+approved the gate, the API reports the task's current stage in the error.
+
 With `--json`, approval notices go to stderr and stdout contains one final JSON
 document for a terminal or blocked task. A timeout produces
 `{"error":"timeout"}` on stdout. These rules also apply when adding `--watch`
