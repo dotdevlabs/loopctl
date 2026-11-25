@@ -1400,6 +1400,113 @@ func TestTasksUnblockDryRun(t *testing.T) {
 	}
 }
 
+func TestTasksApprove(t *testing.T) {
+	const response = `{"data":{"type":"tasks","id":"server-id","attributes":{"status":"implementing","stage":"review","awaiting_human_gate":false,"awaiting_human_gate_stage":null}}}`
+	const path = "/api/tasks/team%2Ftask/gate_approval"
+	for _, tc := range []struct {
+		name     string
+		status   int
+		detail   string
+		jsonMode bool
+		dryRun   bool
+	}{
+		{name: "confirmation", status: http.StatusOK},
+		{name: "JSON", status: http.StatusOK, jsonMode: true},
+		{name: "unauthorized", status: http.StatusUnauthorized},
+		{name: "forbidden", status: http.StatusForbidden, detail: "Human gate approval requires a user."},
+		{name: "not found", status: http.StatusNotFound, detail: "Task not found."},
+		{name: "no pending gate", status: http.StatusConflict, detail: "The task is not awaiting human approval at the implementing stage."},
+		{name: "already approved", status: http.StatusConflict, detail: "The task is not awaiting human approval at the pending stage."},
+		{name: "dry run", dryRun: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var requests atomic.Int32
+			ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				requests.Add(1)
+				if tc.dryRun {
+					t.Error("dry-run sent a request")
+					return
+				}
+				if r.Method != http.MethodPost || r.URL.RequestURI() != path {
+					t.Errorf("unexpected request: %s %s", r.Method, r.URL)
+				}
+				body, err := io.ReadAll(r.Body)
+				if err != nil || len(body) != 0 || r.Header.Get("Authorization") != "Bearer test-token" ||
+					r.Header.Get("Accept") != "application/vnd.api+json" || r.Header.Get("Content-Type") != "" {
+					t.Errorf("expected authenticated bodyless JSON:API request, got body %q, headers %v, error %v", body, r.Header, err)
+				}
+				if tc.status != http.StatusUnauthorized {
+					w.Header().Set("Content-Type", "application/vnd.api+json")
+				}
+				w.WriteHeader(tc.status)
+				switch {
+				case tc.status == http.StatusOK:
+					_, _ = fmt.Fprint(w, response)
+				case tc.detail != "":
+					_, _ = fmt.Fprintf(w, `{"errors":[{"status":"%d","detail":%q}]}`, tc.status, tc.detail)
+				}
+			}))
+			defer ts.Close()
+
+			var out bytes.Buffer
+			ctx := makeCtx(t, ts.URL, "test-token", tc.jsonMode, &out)
+			if tc.dryRun {
+				ctx = ctxutil.WithGlobalFlags(ctx, ctxutil.GlobalFlags{DryRun: true})
+			}
+			cmd := approveCmd()
+			cmd.SilenceUsage = true
+			cmd.SilenceErrors = true
+			cmd.SetContext(ctx)
+			cmd.SetOut(&out)
+			cmd.SetArgs([]string{"team/task"})
+			err := cmd.Execute()
+
+			wantRequests := int32(1)
+			if tc.dryRun {
+				wantRequests = 0
+			}
+			if got := requests.Load(); got != wantRequests {
+				t.Errorf("got %d requests, want %d", got, wantRequests)
+			}
+			switch {
+			case tc.status >= 400:
+				detail := tc.detail
+				if detail == "" {
+					detail = "Unauthorized"
+				}
+				if err == nil || !strings.Contains(err.Error(), detail) || out.Len() != 0 {
+					t.Fatalf("want error %q and no output, got %v and %q", detail, err, &out)
+				}
+			case err != nil:
+				t.Fatal(err)
+			case tc.jsonMode:
+				var result struct {
+					ID         string         `json:"id"`
+					Type       string         `json:"type"`
+					Attributes map[string]any `json:"attributes"`
+				}
+				if err := json.Unmarshal(out.Bytes(), &result); err != nil {
+					t.Fatal(err)
+				}
+				stage, hasGateStage := result.Attributes["awaiting_human_gate_stage"]
+				if result.ID != "server-id" || result.Type != "tasks" ||
+					result.Attributes["status"] != "implementing" || result.Attributes["stage"] != "review" ||
+					result.Attributes["awaiting_human_gate"] != false || !hasGateStage || stage != nil {
+					t.Fatalf("unexpected task resource: %s", &out)
+				}
+			default:
+				want := "task team/task approved\n"
+				if tc.dryRun {
+					want = "dry-run: would POST " + path + "\n"
+				}
+				if out.String() != want {
+					t.Errorf("stdout = %q, want %q", &out, want)
+				}
+			}
+		})
+	}
+}
+
 func TestTasksListGlobal(t *testing.T) {
 	ts := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/api/tasks" {

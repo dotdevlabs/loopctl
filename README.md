@@ -1034,6 +1034,24 @@ loopctl tasks unblock <id> --dry-run
 
 ---
 
+#### tasks approve
+
+Approve the current human gate of a task with a user-owned API token. On success,
+the command prints `task <id> approved`. With `--json`, it prints the task resource
+with its ID, type, and attributes, including the cleared approval fields.
+`--dry-run` previews the request without sending it. The task may remain at the
+approved stage until the pipeline advances.
+
+```bash
+loopctl tasks approve <id>
+loopctl tasks approve <id> --json
+loopctl tasks approve <id> --dry-run
+```
+
+**API:** `POST /api/tasks/:task_id/gate_approval`
+
+---
+
 #### tasks watch
 
 Follow server task state, streaming stage and activity changes. Exits successfully when `terminal` is true and `status` is `completed`; exits non-zero for terminal rejection, unexpected terminal status, blocked status (including its reason), or timeout. Stage names never determine completion. Human approval waits are reported once per waiting episode, with the stage and PR URL when available; watching continues through approval and later stages. With `--json`, progress goes to stderr and stdout contains one final JSON document. This also applies to `tasks create --watch`. Activity that already exists when the watch starts is not reported. A new `container.error` activity is printed with its detail but does not end the watch, because LoopControl retries the container.
@@ -1043,6 +1061,9 @@ loopctl tasks watch <id>
 loopctl tasks watch <id> --interval 30s --timeout 60m
 loopctl tasks watch <id> --json
 ```
+
+When the watch reports a human gate, run the displayed `loopctl tasks approve <id>`
+command from another terminal to approve it while the watch continues.
 
 **Flags:**
 

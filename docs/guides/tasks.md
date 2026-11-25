@@ -51,6 +51,12 @@ available. It reports each waiting episode once and continues through approval
 and later stages. Use `--timeout` to limit the watch; without it, there is no
 timeout. A timeout exits non-zero.
 
+Run the displayed `loopctl tasks approve <task-id>` command from another terminal
+using a user-owned API token. Successful approval prints `task <task-id> approved`.
+Add `--json` to get the task resource with `awaiting_human_gate` set to false and
+`awaiting_human_gate_stage` set to null. Add `--dry-run` to preview the request
+without sending it. The pipeline may advance after the command exits.
+
 With `--json`, approval notices go to stderr and stdout contains one final JSON
 document for a terminal or blocked task. A timeout produces
 `{"error":"timeout"}` on stdout. These rules also apply when adding `--watch`

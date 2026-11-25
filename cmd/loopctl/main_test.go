@@ -137,6 +137,9 @@ func TestAIJSON(t *testing.T) {
 	if tasksRef == nil {
 		t.Fatal("tasks command missing")
 	}
+	if findCommand(tasksRef.Subcommands, "approve") == nil {
+		t.Error("tasks approve missing from JSON reference")
+	}
 	comments := findCommand(tasksRef.Subcommands, "comments")
 	if comments == nil {
 		t.Fatal("tasks comments missing")
@@ -185,6 +188,11 @@ func TestAIMarkdown(t *testing.T) {
 		if !strings.Contains(got, want) {
 			t.Errorf("markdown missing %q; got:\n%s", want, got)
 		}
+	}
+	_, tasksSection, _ := strings.Cut(got, "\n## tasks\n")
+	tasksSection, _, _ = strings.Cut(tasksSection, "\n## ")
+	if !strings.Contains(tasksSection, "### approve <id>\n\nApprove the current human gate of a task") {
+		t.Error("tasks approve missing from Markdown reference")
 	}
 	if !strings.Contains(got, "| yes |") {
 		t.Errorf("markdown missing a required-flag row; got:\n%s", got)
@@ -257,6 +265,35 @@ func TestUsageInvalidPeriodExit(t *testing.T) {
 	t.Setenv("LOOPCTL_CONTEXT", "")
 	t.Setenv("LOOPCTL_BASE_URL", server.URL)
 	cmd := exec.CommandContext(t.Context(), binary, "usage", "--token", "usage-test-token", "--from", invalidDate)
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	stdout, err := cmd.Output()
+	var exitErr *exec.ExitError
+	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 1 || !strings.Contains(stderr.String(), detail) || len(stdout) != 0 {
+		t.Fatalf("want API detail on stderr and exit 1, got stdout=%q stderr=%q error=%v", stdout, stderr.String(), err)
+	}
+}
+
+func TestTasksApproveRefusalExit(t *testing.T) {
+	const detail = "Human gate approval requires a user."
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || r.URL.Path != "/api/tasks/1/gate_approval" {
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL)
+		}
+		w.Header().Set("Content-Type", "application/vnd.api+json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = fmt.Fprintf(w, `{"errors":[{"status":"403","detail":%q}]}`, detail)
+	}))
+	defer server.Close()
+
+	binary := filepath.Join(t.TempDir(), "loopctl")
+	if out, err := exec.CommandContext(t.Context(), "go", "build", "-o", binary, ".").CombinedOutput(); err != nil {
+		t.Fatalf("build loopctl: %v\n%s", err, out)
+	}
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv("LOOPCTL_CONTEXT", "")
+	t.Setenv("LOOPCTL_BASE_URL", server.URL)
+	cmd := exec.CommandContext(t.Context(), binary, "tasks", "approve", "1", "--token", "approval-test-token")
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	stdout, err := cmd.Output()

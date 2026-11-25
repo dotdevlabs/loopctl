@@ -165,6 +165,13 @@ func TestCommandResponseContracts(t *testing.T) {
 		{"tasks unblock 1", []responseStep{responseWith("POST", "/api/tasks/:task_id/unblock", map[string]any{
 			"/data/attributes/status": "implementing", "/data/attributes/stage": "resume-stage",
 		})}, `"stage": "resume-stage"`},
+		{"tasks approve 1", []responseStep{responseWith("POST", "/api/tasks/:task_id/gate_approval", map[string]any{
+			"/data/attributes/stage": "approval-stage", "/data/attributes/awaiting_human_gate": false,
+			"/data/attributes/awaiting_human_gate_stage": nil,
+		})}, `"stage": "approval-stage"`},
+		{"tasks approve 2", []responseStep{{method: "POST", path: "/api/tasks/:task_id/gate_approval", status: 409, overrides: map[string]any{
+			"/errors/0/detail": "The task is not awaiting human approval at the implementing stage.",
+		}}}, "The task is not awaiting human approval at the implementing stage."},
 		{"tasks watch 1 --timeout 1s", []responseStep{
 			responseWith("GET", task, map[string]any{"/data/links/self": "/api/tasks/2", "/data/attributes/status": "completed", "/data/attributes/terminal": true}),
 			response("GET", "/api/tasks/:task_id/activities"),
@@ -538,7 +545,7 @@ func checkResponseCaseRequest(t *testing.T, args string, r *http.Request) {
 		if got := string(request.Project["agent_size_id"]); got != want {
 			t.Errorf("agent_size_id on request = %q, want %q", got, want)
 		}
-	case strings.HasPrefix(args, "tasks cancel "), strings.HasPrefix(args, "tasks unblock "):
+	case strings.HasPrefix(args, "tasks cancel "), strings.HasPrefix(args, "tasks unblock "), strings.HasPrefix(args, "tasks approve "):
 		body, err := io.ReadAll(r.Body)
 		if err != nil || len(body) != 0 || r.Header.Get("Accept") != jsonAPI {
 			t.Errorf("expected bodyless JSON:API action, got %q, %v, %v", body, r.Header, err)

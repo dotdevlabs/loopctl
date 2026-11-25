@@ -88,6 +88,7 @@ func NewCmd() *cobra.Command {
 	cmd.AddCommand(watchCmd())
 	cmd.AddCommand(cancelCmd())
 	cmd.AddCommand(unblockCmd())
+	cmd.AddCommand(approveCmd())
 	cmd.AddCommand(commentsCmd())
 	cmd.AddCommand(todosCmd())
 	cmd.AddCommand(recordingsCmd())
@@ -476,6 +477,35 @@ func unblockCmd() *cobra.Command {
 	}
 }
 
+func approveCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "approve <id>",
+		Short: "Approve the current human gate of a task",
+		Long:  "Approve the current human gate of a task. Requires a user-owned API token.",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			ctx := cmd.Context()
+			flags := ctxutil.GlobalFlagsFrom(ctx)
+			out := cmd.OutOrStdout()
+			path := "/api/tasks/" + url.PathEscape(args[0]) + "/gate_approval"
+			if flags.DryRun {
+				_, _ = fmt.Fprintf(out, "dry-run: would POST %s\n", path)
+				return nil
+			}
+
+			res, err := apiclient.PostJSONAPIAction[TaskAttrs](ctx, ctxutil.ActiveContextFrom(ctx), path)
+			if err != nil {
+				return err
+			}
+			if flags.JSON {
+				return output.JSONTo(out, res)
+			}
+			_, _ = fmt.Fprintf(out, "task %s approved\n", args[0])
+			return nil
+		},
+	}
+}
+
 func computeCostStr(c *ComputeCost) string {
 	if c == nil {
 		return ""
@@ -602,7 +632,7 @@ func watchTask(
 			if t.PRURL != "" {
 				_, _ = fmt.Fprintf(progress, " (%s)", t.PRURL)
 			}
-			_, _ = fmt.Fprintln(progress)
+			_, _ = fmt.Fprintf(progress, ". Run: loopctl tasks approve %s\n", taskID)
 		}
 		waiting, waitingStage = t.AwaitingHumanGate, gateStage
 
