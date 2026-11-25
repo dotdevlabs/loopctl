@@ -19802,6 +19802,151 @@ paths:
                   identity: blocked_task_with_pr
             authentication: browserSession
         input_constraints: []
+  "/api/tasks/{task_id}/gate_approval":
+    post:
+      operationId: post-api-task-gate-approval
+      summary: Approves the current human gate of a task.
+      description: Requires a user-owned API token or browser session. Sends no
+        request body. Approval is recorded for the current gate visit and the
+        task may remain at the approved stage until the pipeline advances.
+      parameters:
+      - name: task_id
+        in: path
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: The task after approval, with awaiting_human_gate false
+            and awaiting_human_gate_stage null.
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/TaskDocument"
+        '401':
+          description: Missing or invalid credentials. The response body is empty.
+        '403':
+          description: The credential has no user to attribute the approval to.
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+        '404':
+          "$ref": "#/components/responses/NotFound"
+        '409':
+          description: The task has no unapproved human gate at its current stage.
+            The error names the current stage.
+          content:
+            application/vnd.api+json:
+              schema:
+                "$ref": "#/components/schemas/JsonApiErrors"
+      x-loopcontrol-contract:
+        scenarios:
+          success:
+            status: 200
+            setup:
+            - authenticated
+            path:
+              task_id:
+                fixture:
+                  resource: task
+                  identity: pending_task
+            media_type: application/vnd.api+json
+            assertions:
+            - pointer: "/data/attributes/awaiting_human_gate"
+              equals: false
+            - pointer: "/data/attributes/awaiting_human_gate_stage"
+              equals: null
+          error_403:
+            status: 403
+            setup:
+            - agent_authentication
+            path:
+              task_id:
+                fixture:
+                  resource: task
+                  identity: pending_task
+            media_type: application/vnd.api+json
+            assertions:
+            - pointer: "/errors/0/detail"
+              equals: Human gate approval requires a user.
+          error_409:
+            status: 409
+            setup:
+            - documented_error
+            path:
+              task_id:
+                fixture:
+                  resource: task
+                  identity: working_task
+            media_type: application/vnd.api+json
+            assertions:
+            - pointer: "/errors/0/detail"
+              equals: The task is not awaiting human approval at the implementing stage.
+          already_approved:
+            status: 409
+            setup:
+            - authenticated
+            path:
+              task_id:
+                fixture:
+                  resource: task
+                  identity: approved_task
+            media_type: application/vnd.api+json
+            assertions:
+            - pointer: "/errors/0/detail"
+              equals: The task is not awaiting human approval at the pending stage.
+          unauthenticated:
+            status: 401
+            setup:
+            - unauthenticated
+            path:
+              task_id:
+                fixture:
+                  resource: task
+                  identity: pending_task
+          foreign_account:
+            status: 404
+            setup:
+            - authenticated
+            path:
+              task_id:
+                fixture:
+                  resource: task
+                  identity: other_tenant_task
+          authentication_apiKeyAuth:
+            status: 200
+            setup:
+            - authenticated
+            path:
+              task_id:
+                fixture:
+                  resource: task
+                  identity: pending_task
+            authentication: apiKeyAuth
+            media_type: application/vnd.api+json
+            assertions:
+            - pointer: "/data/attributes/awaiting_human_gate"
+              equals: false
+            - pointer: "/data/attributes/awaiting_human_gate_stage"
+              equals: null
+          authentication_browserSession:
+            status: 200
+            setup:
+            - authenticated
+            path:
+              task_id:
+                fixture:
+                  resource: task
+                  identity: pending_task
+            authentication: browserSession
+            media_type: application/vnd.api+json
+            assertions:
+            - pointer: "/data/attributes/awaiting_human_gate"
+              equals: false
+            - pointer: "/data/attributes/awaiting_human_gate_stage"
+              equals: null
+        input_constraints: []
   "/api/planning_sessions/{planning_session_id}/drafts":
     get:
       operationId: get-api-planning-session-drafts

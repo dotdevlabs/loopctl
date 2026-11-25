@@ -45,7 +45,7 @@ func TestWatchServerState(t *testing.T) {
 					t.Fatalf("result=%s", out.String())
 				}
 			}
-			if strings.Count(progress, "waiting for approval at stage approval (https://example.com/pr/1)") != 2 {
+			if strings.Count(progress, "waiting for approval at stage approval (https://example.com/pr/1). Run: loopctl tasks approve t1") != 2 {
 				t.Fatalf("progress=%s", progress)
 			}
 		})
@@ -71,7 +71,7 @@ func TestWatchInitialGateAndTimeout(t *testing.T) {
 				t.Fatal(out.String())
 			}
 		}
-		if strings.Count(progress, "waiting for approval at stage custom") != 1 {
+		if strings.Count(progress, "waiting for approval at stage custom. Run: loopctl tasks approve t1") != 1 {
 			t.Fatal(progress)
 		}
 	}
@@ -162,7 +162,8 @@ func TestCreateWatchHumanGateContract(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
-		if strings.Count(progress, "waiting for approval at stage") != 2 {
+		if strings.Count(progress, "waiting for approval at stage") != 2 ||
+			strings.Count(progress, "loopctl tasks approve t1") != 2 {
 			t.Fatal(progress)
 		}
 	}

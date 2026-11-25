@@ -55,6 +55,7 @@ var Covered = map[OperationKey]OperationCoverage{
 	{Method: "PATCH", Path: "/api/tasks/:id"}:                                     {Command: "tasks update"},
 	{Method: "POST", Path: "/api/tasks/:task_id/cancellation"}:                    {Command: "tasks cancel"},
 	{Method: "POST", Path: "/api/tasks/:task_id/unblock"}:                         {Command: "tasks unblock"},
+	{Method: "POST", Path: "/api/tasks/:task_id/gate_approval"}:                   {Command: "tasks approve"},
 	{Method: "GET", Path: "/api/tasks/:task_id/activities"}:                       {Command: "tasks watch (internal poll)", Paginated: true},
 	{Method: "POST", Path: "/api/tasks/:task_id/comments"}:                        {Command: "tasks comments create"},
 	{Method: "GET", Path: "/api/tasks/:task_id/todos"}:                            {Command: "tasks todos list", QueryParams: []string{"stage_name"}, Paginated: true},
